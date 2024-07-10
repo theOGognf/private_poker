@@ -51,7 +51,7 @@ pub fn sort(cards: &[Card]) -> BinaryHeap<Hand> {
         // Keep a count of cards for each suit. If the suit count
         // reaches a flush, it's also checked for a straight
         // for the straight flush potential.
-        values_per_suit.entry(*suit).or_insert(vec![]).push(*value);
+        values_per_suit.entry(*suit).or_default().push(*value);
         let values_in_suit = values_per_suit.get(suit).unwrap();
 
         // Since aces appear in the cards twice, we need to make sure
@@ -112,13 +112,11 @@ pub fn sort(cards: &[Card]) -> BinaryHeap<Hand> {
 
         // Don't care about high cards unless they're the last one
         // in the hand and there're no better hands.
-        if card_idx == (cards.len() - 1) {
-            if hands.len() == 0 && rank_to_values.len() == 0 && *value_count == 1u8 {
-                rank_to_values
-                    .entry(Rank::HighCard)
-                    .or_insert(BTreeSet::new())
-                    .insert(*value);
-            }
+        if card_idx == (cards.len() - 1) && hands.is_empty() && rank_to_values.is_empty() && *value_count == 1u8 {
+            rank_to_values
+                .entry(Rank::HighCard)
+                .or_default()
+                .insert(*value);
         }
 
         match *value_count {
@@ -129,7 +127,7 @@ pub fn sort(cards: &[Card]) -> BinaryHeap<Hand> {
             2 => {
                 let rank_values = rank_to_values
                     .entry(Rank::OnePair)
-                    .or_insert(BTreeSet::new());
+                    .or_default();
                 rank_values.insert(*value);
 
                 // Check if a pair also occurs, then both pairs
@@ -137,7 +135,7 @@ pub fn sort(cards: &[Card]) -> BinaryHeap<Hand> {
                 if rank_values.len() >= 2 {
                     rank_to_values
                         .entry(Rank::TwoPair)
-                        .or_insert(BTreeSet::new())
+                        .or_default()
                         .insert(*value);
                 }
 
@@ -146,11 +144,11 @@ pub fn sort(cards: &[Card]) -> BinaryHeap<Hand> {
                 if rank_to_values.contains_key(&Rank::ThreeOfAKind) {
                     let three_of_a_kinds = rank_to_values.get(&Rank::ThreeOfAKind).unwrap();
                     if three_of_a_kinds.len() == 1 {
-                        let three_of_a_kind_value = three_of_a_kinds.iter().next().unwrap().clone();
+                        let three_of_a_kind_value = *three_of_a_kinds.iter().next().unwrap();
 
                         rank_to_values
                             .entry(Rank::FullHouse)
-                            .or_insert(BTreeSet::new())
+                            .or_default()
                             .insert(three_of_a_kind_value);
                     }
                 }
@@ -163,17 +161,17 @@ pub fn sort(cards: &[Card]) -> BinaryHeap<Hand> {
                     .remove(value);
                 rank_to_values
                     .entry(Rank::ThreeOfAKind)
-                    .or_insert(BTreeSet::new())
+                    .or_default()
                     .insert(*value);
 
                 // Check if a pair also occurs, then the three of a kind
                 // and the pair make a full house.
                 if rank_to_values.contains_key(&Rank::OnePair)
-                    && rank_to_values.get(&Rank::OnePair).unwrap().len() >= 1
+                    && !rank_to_values.get(&Rank::OnePair).unwrap().is_empty()
                 {
                     rank_to_values
                         .entry(Rank::FullHouse)
-                        .or_insert(BTreeSet::new())
+                        .or_default()
                         .insert(*value);
                 }
 
@@ -182,7 +180,7 @@ pub fn sort(cards: &[Card]) -> BinaryHeap<Hand> {
                 if rank_to_values.get(&Rank::ThreeOfAKind).unwrap().len() == 2 {
                     rank_to_values
                         .entry(Rank::FullHouse)
-                        .or_insert(BTreeSet::new())
+                        .or_default()
                         .insert(*value);
                 }
             }
@@ -194,7 +192,7 @@ pub fn sort(cards: &[Card]) -> BinaryHeap<Hand> {
                     .remove(value);
                 rank_to_values
                     .entry(Rank::FourOfAKind)
-                    .or_insert(BTreeSet::new())
+                    .or_default()
                     .insert(*value);
 
                 // You can't get a four of a kind and a straight flush
@@ -207,11 +205,11 @@ pub fn sort(cards: &[Card]) -> BinaryHeap<Hand> {
     }
     // Only need the max hand from the sets for comparison since we
     // only care about the highest ranking hand.
-    if rank_to_values.len() >= 1 {
+    if !rank_to_values.is_empty() {
         let (rank, set) = rank_to_values.iter().max().unwrap();
         hands.push((*rank, *set.iter().next_back().unwrap()));
     }
-    return hands;
+    hands
 }
 
 ///
@@ -231,7 +229,7 @@ pub fn argmax(hands: &[BinaryHeap<Hand>]) -> Vec<usize> {
             max_hand_indices.push(i)
         }
     }
-    return max_hand_indices;
+    max_hand_indices
 }
 
 #[cfg(test)]
