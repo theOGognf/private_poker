@@ -1,3 +1,6 @@
 mod poker;
 
-fn main() {}
+fn main() {
+    let deck = poker::new_deck();
+    print!("{deck:?}");
+}

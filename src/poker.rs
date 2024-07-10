@@ -16,17 +16,52 @@ pub enum Rank {
     StraightFlush,
 }
 
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Suit {
     Club,
     Spade,
     Diamond,
     Heart,
+    // Wild is used to initialize a deck of cards.
+    // It is never used in practice, but it would be
+    // a good choice for depicting a joker card.
+    Wild,
 }
 
+/// A card is a tuple of a uInt8 value (ace=1u8 ... ace=14u8)
+/// and a suit. A joker is depicted as 0u8.
 type Card = (u8, Suit);
 
 type Hand = (Rank, u8);
+
+/// Get the indices corresponding to the winning hands from an array
+/// of hands that were each created from `eval`.
+/// 
+/// # Examples
+/// 
+/// ```
+/// let cards1 = [(4u8, Suit::Club), (11u8, Suit::Spade)];
+/// let cards2 = [(4u8, Suit::Club), (12u8, Suit::Spade)];
+/// let value1 = eval(&cards1);
+/// let value2 = eval(&cards2);
+/// assert_eq!(argmax(&[value1, value2]), vec![1])
+/// ```
+pub fn argmax(hands: &[Hand]) -> Vec<usize> {
+    let mut max: Hand = (Rank::HighCard, 0u8);
+    let mut argmaxes: Vec<usize> = Vec::new();
+    for (i, hand) in hands.iter().enumerate() {
+        match hand.cmp(&max) {
+            Ordering::Equal => argmaxes.push(i),
+            Ordering::Greater => {
+                argmaxes.clear();
+                argmaxes.push(i);
+                max = *hand;
+            }
+            _ => {}
+        }
+    }
+    argmaxes
+}
 
 /// Group cards into hand rankings and insort them into a heap.
 /// The max value in the heap is the best hand and is returned.
@@ -229,33 +264,14 @@ pub fn eval(cards: &[Card]) -> Hand {
     *hands.peek().unwrap()
 }
 
-/// Get the indices corresponding to the winning hands from an array
-/// of hands that were each created from `eval`.
-/// 
-/// # Examples
-/// 
-/// ```
-/// let cards1 = [(4u8, Suit::Club), (11u8, Suit::Spade)];
-/// let cards2 = [(4u8, Suit::Club), (12u8, Suit::Spade)];
-/// let value1 = eval(&cards1);
-/// let value2 = eval(&cards2);
-/// assert_eq!(argmax(&[value1, value2]), vec![1])
-/// ```
-pub fn argmax(hands: &[Hand]) -> Vec<usize> {
-    let mut max: Hand = (Rank::HighCard, 0u8);
-    let mut argmaxes: Vec<usize> = Vec::new();
-    for (i, hand) in hands.iter().enumerate() {
-        match hand.cmp(&max) {
-            Ordering::Equal => argmaxes.push(i),
-            Ordering::Greater => {
-                argmaxes.clear();
-                argmaxes.push(i);
-                max = *hand;
-            }
-            _ => {}
+pub fn new_deck() -> [Card; 52] {
+    let mut deck: [Card; 52] = [(0u8, Suit::Wild); 52];
+    for (i, value) in (1u8..14u8).enumerate() {
+        for (j, suit) in [Suit::Club, Suit::Spade, Suit::Diamond, Suit::Heart].into_iter().enumerate() {
+            deck[4 * i + j] = (value, suit);
         }
     }
-    argmaxes
+    deck
 }
 
 #[cfg(test)]
