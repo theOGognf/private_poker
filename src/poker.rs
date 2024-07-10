@@ -101,12 +101,8 @@ pub fn sort(cards: &[Card]) -> BinaryHeap<Hand> {
             // We don't need to push the straight into the heap if something
             // better was already found.
             let max_hand = hands.peek();
-            if max_hand.is_none() {
+            if max_hand.is_none() || *max_hand.unwrap() < straight {
                 hands.push(straight);
-            } else {
-                if *max_hand.unwrap() < straight {
-                    hands.push(straight);
-                }
             }
         }
 
@@ -208,13 +204,12 @@ pub fn sort(cards: &[Card]) -> BinaryHeap<Hand> {
 
             _ => unreachable!("Cheater!"),
         }
-
-        // Only need the max hand from the sets for comparison since we
-        // only care about the highest ranking hand.
-        if rank_to_values.len() >= 1 {
-            let (rank, set) = rank_to_values.iter().max().unwrap();
-            hands.push((*rank, *set.iter().next_back().unwrap()));
-        }
+    }
+    // Only need the max hand from the sets for comparison since we
+    // only care about the highest ranking hand.
+    if rank_to_values.len() >= 1 {
+        let (rank, set) = rank_to_values.iter().max().unwrap();
+        hands.push((*rank, *set.iter().next_back().unwrap()));
     }
     return hands;
 }
@@ -237,4 +232,124 @@ pub fn argmax(hands: &[BinaryHeap<Hand>]) -> Vec<usize> {
         }
     }
     return max_hand_indices;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{argmax, sort, Rank, Suit};
+
+    macro_rules! sort_and_argmax_tests {
+        ($($name:ident: $value:expr,)*) => {
+        $(
+            #[test]
+            fn $name() {
+                let (expected_hand1_rank, hand1, expected_hand2_rank, hand2, expected_winner) = $value;
+                let hand1_sorted = sort(&hand1);
+                let hand2_sorted = sort(&hand2);
+                assert_eq!(expected_hand1_rank, hand1_sorted.peek().unwrap().0);
+                assert_eq!(expected_hand2_rank, hand2_sorted.peek().unwrap().0);
+                assert_eq!(expected_winner, argmax(&[hand1_sorted, hand2_sorted]));
+            }
+        )*
+        }
+    }
+
+    sort_and_argmax_tests! {
+        straight_loses_to_straight_flush: (Rank::Straight, [
+            (4u8, Suit::Heart),
+            (5u8, Suit::Heart),
+            (6u8, Suit::Club),
+            (7u8, Suit::Heart),
+            (8u8, Suit::Heart),
+        ], Rank::StraightFlush, [
+            (3u8, Suit::Diamond),
+            (4u8, Suit::Diamond),
+            (5u8, Suit::Diamond),
+            (6u8, Suit::Diamond),
+            (7u8, Suit::Diamond),
+        ], vec![1]),
+        flush_loses_to_straight_flush: (Rank::Flush, [
+            (4u8, Suit::Heart),
+            (5u8, Suit::Heart),
+            (6u8, Suit::Club),
+            (7u8, Suit::Heart),
+            (8u8, Suit::Heart),
+            (9u8, Suit::Heart),
+        ], Rank::StraightFlush, [
+            (3u8, Suit::Diamond),
+            (4u8, Suit::Diamond),
+            (5u8, Suit::Diamond),
+            (6u8, Suit::Diamond),
+            (7u8, Suit::Diamond),
+            (8u8, Suit::Diamond),
+        ], vec![1]),
+        high_card_wins_to_high_card: (Rank::HighCard, [
+            (4u8, Suit::Club),
+            (6u8, Suit::Heart),
+            (8u8, Suit::Diamond),
+            (10u8, Suit::Heart),
+            (12u8, Suit::Spade),
+        ], Rank::HighCard, [
+            (3u8, Suit::Club),
+            (5u8, Suit::Heart),
+            (7u8, Suit::Diamond),
+            (9u8, Suit::Heart),
+            (11u8, Suit::Spade),
+        ], vec![0]),
+        full_house_loses_to_full_house: (Rank::FullHouse, [
+            (4u8, Suit::Club),
+            (4u8, Suit::Heart),
+            (4u8, Suit::Diamond),
+            (6u8, Suit::Heart),
+            (6u8, Suit::Diamond),
+            (6u8, Suit::Club),
+            (8u8, Suit::Diamond),
+            (12u8, Suit::Spade),
+        ], Rank::FullHouse, [
+            (4u8, Suit::Club),
+            (4u8, Suit::Heart),
+            (4u8, Suit::Diamond),
+            (6u8, Suit::Heart),
+            (6u8, Suit::Diamond),
+            (11u8, Suit::Spade),
+        ], vec![0]),
+        two_pair_beats_two_pair: (Rank::TwoPair, [
+            (4u8, Suit::Club),
+            (4u8, Suit::Heart),
+            (6u8, Suit::Heart),
+            (8u8, Suit::Diamond),
+            (12u8, Suit::Club),
+            (12u8, Suit::Spade),
+        ], Rank::TwoPair, [
+            (4u8, Suit::Club),
+            (4u8, Suit::Heart),
+            (6u8, Suit::Heart),
+            (6u8, Suit::Diamond),
+            (11u8, Suit::Spade),
+        ], vec![0]),
+        four_of_a_kind_wins_to_two_pair: (Rank::FourOfAKind, [
+            (4u8, Suit::Club),
+            (4u8, Suit::Heart),
+            (4u8, Suit::Diamond),
+            (4u8, Suit::Spade),
+            (6u8, Suit::Heart),
+            (8u8, Suit::Diamond),
+            (12u8, Suit::Club),
+            (12u8, Suit::Spade),
+        ], Rank::TwoPair, [
+            (4u8, Suit::Club),
+            (4u8, Suit::Heart),
+            (6u8, Suit::Heart),
+            (6u8, Suit::Diamond),
+            (11u8, Suit::Spade),
+        ], vec![0]),
+        high_card_loses_to_one_pair: (Rank::HighCard, [
+            (4u8, Suit::Club),
+            (12u8, Suit::Spade),
+        ], Rank::OnePair, [
+            (4u8, Suit::Club),
+            (4u8, Suit::Heart),
+            (11u8, Suit::Spade),
+        ], vec![1]),
+    }
 }
