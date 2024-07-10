@@ -1,4 +1,7 @@
-use std::collections::{BTreeSet, BinaryHeap, HashMap};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeSet, BinaryHeap, HashMap},
+};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Rank {
@@ -25,6 +28,18 @@ type Card = (u8, Suit);
 
 type Hand = (Rank, u8);
 
+/// Group cards into hand rankings and insort them into a heap.
+/// The max value in the heap is the best hand. Multiple heaps
+/// can then be compared, and the winning hand(s) can be retrieved
+/// with the `argmax` function.
+/// 
+/// # Examples
+/// 
+/// ```
+/// let cards = [(4u8, Suit::Club), (4u8, Suit::Heart), (11u8, Suit::Spade)];
+/// let best_hand = sort(&cards).peek().unwrap();
+/// assert_eq!(best_hand, (Rank::OnePair, 4u8))
+/// ```
 pub fn sort(cards: &[Card]) -> BinaryHeap<Hand> {
     // Mapping of suit to (sorted) cards within that suit.
     // Used for tracking whether there's a flush or straight flush.
@@ -112,7 +127,11 @@ pub fn sort(cards: &[Card]) -> BinaryHeap<Hand> {
 
         // Don't care about high cards unless they're the last one
         // in the hand and there're no better hands.
-        if card_idx == (cards.len() - 1) && hands.is_empty() && rank_to_values.is_empty() && *value_count == 1u8 {
+        if card_idx == (cards.len() - 1)
+            && hands.is_empty()
+            && rank_to_values.is_empty()
+            && *value_count == 1u8
+        {
             rank_to_values
                 .entry(Rank::HighCard)
                 .or_default()
@@ -125,9 +144,7 @@ pub fn sort(cards: &[Card]) -> BinaryHeap<Hand> {
             1 => {}
 
             2 => {
-                let rank_values = rank_to_values
-                    .entry(Rank::OnePair)
-                    .or_default();
+                let rank_values = rank_to_values.entry(Rank::OnePair).or_default();
                 rank_values.insert(*value);
 
                 // Check if a pair also occurs, then both pairs
@@ -212,21 +229,32 @@ pub fn sort(cards: &[Card]) -> BinaryHeap<Hand> {
     hands
 }
 
-///
-///
-///
-///
+/// Get the indices corresponding to the winning hands from an array
+/// of hands that were created from `sort`.
+/// 
+/// # Examples
+/// 
+/// ```
+/// let cards1 = [(4u8, Suit::Club), (11u8, Suit::Spade)];
+/// let cards2 = [(4u8, Suit::Club), (12u8, Suit::Spade)];
+/// let best_hand1 = sort(&cards1).peek().unwrap();
+/// let best_hand2 = sort(&cards2).peek().unwrap();
+/// assert_eq!(argmax(&[best_hand1, best_hand2]), vec![1])
+/// ```
 pub fn argmax(hands: &[BinaryHeap<Hand>]) -> Vec<usize> {
     let mut max_hand: Hand = (Rank::HighCard, 0u8);
     let mut max_hand_indices: Vec<usize> = Vec::new();
     for (i, hand) in hands.iter().enumerate() {
-        let high_hand = *hand.iter().next().unwrap();
-        if high_hand > max_hand {
-            max_hand_indices.clear();
-            max_hand_indices.push(i);
-            max_hand = high_hand;
-        } else if high_hand == max_hand {
-            max_hand_indices.push(i)
+        // Get the best value in the heap.
+        let high_hand = *hand.peek().unwrap();
+        match high_hand.cmp(&max_hand) {
+            Ordering::Equal => max_hand_indices.push(i),
+            Ordering::Greater => {
+                max_hand_indices.clear();
+                max_hand_indices.push(i);
+                max_hand = high_hand;
+            }
+            _ => {}
         }
     }
     max_hand_indices
