@@ -29,18 +29,18 @@ type Card = (u8, Suit);
 type Hand = (Rank, u8);
 
 /// Group cards into hand rankings and insort them into a heap.
-/// The max value in the heap is the best hand. Multiple heaps
-/// can then be compared, and the winning hand(s) can be retrieved
-/// with the `argmax` function.
+/// The max value in the heap is the best hand and is returned.
+/// Multiple hands can then be compared, and the winning hand(s)
+/// can be retrieved with the `argmax` function.
 /// 
 /// # Examples
 /// 
 /// ```
 /// let cards = [(4u8, Suit::Club), (4u8, Suit::Heart), (11u8, Suit::Spade)];
-/// let best_hand = sort(&cards).peek().unwrap();
+/// let best_hand = eval(&cards).peek().unwrap();
 /// assert_eq!(best_hand, (Rank::OnePair, 4u8))
 /// ```
-pub fn sort(cards: &[Card]) -> BinaryHeap<Hand> {
+pub fn eval(cards: &[Card]) -> Hand {
     // Mapping of suit to (sorted) cards within that suit.
     // Used for tracking whether there's a flush or straight flush.
     let mut values_per_suit: HashMap<Suit, Vec<u8>> = HashMap::new();
@@ -226,43 +226,41 @@ pub fn sort(cards: &[Card]) -> BinaryHeap<Hand> {
         let (rank, set) = rank_to_values.iter().max().unwrap();
         hands.push((*rank, *set.iter().next_back().unwrap()));
     }
-    hands
+    *hands.peek().unwrap()
 }
 
 /// Get the indices corresponding to the winning hands from an array
-/// of hands that were created from `sort`.
+/// of hands that were each created from `eval`.
 /// 
 /// # Examples
 /// 
 /// ```
 /// let cards1 = [(4u8, Suit::Club), (11u8, Suit::Spade)];
 /// let cards2 = [(4u8, Suit::Club), (12u8, Suit::Spade)];
-/// let best_hand1 = sort(&cards1).peek().unwrap();
-/// let best_hand2 = sort(&cards2).peek().unwrap();
+/// let best_hand1 = eval(&cards1);
+/// let best_hand2 = eval(&cards2);
 /// assert_eq!(argmax(&[best_hand1, best_hand2]), vec![1])
 /// ```
-pub fn argmax(hands: &[BinaryHeap<Hand>]) -> Vec<usize> {
-    let mut max_hand: Hand = (Rank::HighCard, 0u8);
-    let mut max_hand_indices: Vec<usize> = Vec::new();
+pub fn argmax(hands: &[Hand]) -> Vec<usize> {
+    let mut max: Hand = (Rank::HighCard, 0u8);
+    let mut argmaxes: Vec<usize> = Vec::new();
     for (i, hand) in hands.iter().enumerate() {
-        // Get the best value in the heap.
-        let high_hand = *hand.peek().unwrap();
-        match high_hand.cmp(&max_hand) {
-            Ordering::Equal => max_hand_indices.push(i),
+        match hand.cmp(&max) {
+            Ordering::Equal => argmaxes.push(i),
             Ordering::Greater => {
-                max_hand_indices.clear();
-                max_hand_indices.push(i);
-                max_hand = high_hand;
+                argmaxes.clear();
+                argmaxes.push(i);
+                max = *hand;
             }
             _ => {}
         }
     }
-    max_hand_indices
+    argmaxes
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{argmax, sort, Rank, Suit};
+    use super::{argmax, eval, Rank, Suit};
 
     macro_rules! sort_and_argmax_tests {
         ($($name:ident: $value:expr,)*) => {
@@ -270,10 +268,10 @@ mod tests {
             #[test]
             fn $name() {
                 let (expected_hand1_rank, hand1, expected_hand2_rank, hand2, expected_winner) = $value;
-                let hand1_sorted = sort(&hand1);
-                let hand2_sorted = sort(&hand2);
-                assert_eq!(expected_hand1_rank, hand1_sorted.peek().unwrap().0);
-                assert_eq!(expected_hand2_rank, hand2_sorted.peek().unwrap().0);
+                let hand1_sorted = eval(&hand1);
+                let hand2_sorted = eval(&hand2);
+                assert_eq!(expected_hand1_rank, hand1_sorted.0);
+                assert_eq!(expected_hand2_rank, hand2_sorted.0);
                 assert_eq!(expected_winner, argmax(&[hand1_sorted, hand2_sorted]));
             }
         )*
