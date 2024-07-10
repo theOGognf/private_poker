@@ -237,9 +237,9 @@ pub fn eval(cards: &[Card]) -> Hand {
 /// ```
 /// let cards1 = [(4u8, Suit::Club), (11u8, Suit::Spade)];
 /// let cards2 = [(4u8, Suit::Club), (12u8, Suit::Spade)];
-/// let best_hand1 = eval(&cards1);
-/// let best_hand2 = eval(&cards2);
-/// assert_eq!(argmax(&[best_hand1, best_hand2]), vec![1])
+/// let value1 = eval(&cards1);
+/// let value2 = eval(&cards2);
+/// assert_eq!(argmax(&[value1, value2]), vec![1])
 /// ```
 pub fn argmax(hands: &[Hand]) -> Vec<usize> {
     let mut max: Hand = (Rank::HighCard, 0u8);
@@ -267,12 +267,12 @@ mod tests {
         $(
             #[test]
             fn $name() {
-                let (expected_hand1_rank, hand1, expected_hand2_rank, hand2, expected_winner) = $value;
-                let hand1_sorted = eval(&hand1);
-                let hand2_sorted = eval(&hand2);
-                assert_eq!(expected_hand1_rank, hand1_sorted.0);
-                assert_eq!(expected_hand2_rank, hand2_sorted.0);
-                assert_eq!(expected_winner, argmax(&[hand1_sorted, hand2_sorted]));
+                let (expected_value1, hand1, expected_value2, hand2, expected_winner) = $value;
+                let value1 = eval(&hand1);
+                let value2 = eval(&hand2);
+                assert_eq!(expected_value1, value1.0);
+                assert_eq!(expected_value2, value2.0);
+                assert_eq!(expected_winner, argmax(&[value1, value2]));
             }
         )*
         }
