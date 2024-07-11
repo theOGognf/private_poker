@@ -29,33 +29,9 @@ pub enum Suit {
 
 /// A card is a tuple of a uInt8 value (ace=1u8 ... ace=14u8)
 /// and a suit. A joker is depicted as 0u8.
-type Card = (u8, Suit);
+pub type Card = (u8, Suit);
 
-type Hand = (Rank, u8);
-
-pub enum PlayerState {
-    // Player is in the game but is waiting for their first move.
-    // This can happen when the game starts and players are being
-    // dealt cards.
-    Wait,
-    // Player forfeits their stake.
-    Fold,
-    // Player matches the last bet.
-    Call,
-    // Player wants to see the next card.
-    Check,
-    // Player ups their stake.
-    Raise,
-    // Player stakes all their stack.
-    AllIn,
-    // Player reveals their cards after the game is over.
-    Show,
-}
-
-pub struct Player {
-    name: String,
-    money: u16,
-}
+pub type Hand = (Rank, u8);
 
 /// Get the indices corresponding to the winning hands from an array
 /// of hands that were each created from `eval`.
@@ -110,7 +86,7 @@ pub fn eval(cards: &[Card]) -> Hand {
 
     // Mapping of rank to each value that meets that rank. Helps track
     // the highest value in each rank.
-    let mut rank_to_values: HashMap<Rank, BTreeSet<u8>> = HashMap::new();
+    let mut values_per_rank: HashMap<Rank, BTreeSet<u8>> = HashMap::new();
     // Count number of times a value appears. Helps track one pair,
     // two pair, etc.
     let mut value_counts: HashMap<u8, u8> = HashMap::new();
@@ -188,10 +164,10 @@ pub fn eval(cards: &[Card]) -> Hand {
         // in the hand and there're no better hands.
         if card_idx == (cards.len() - 1)
             && hands.is_empty()
-            && rank_to_values.is_empty()
+            && values_per_rank.is_empty()
             && *value_count == 1u8
         {
-            rank_to_values
+            values_per_rank
                 .entry(Rank::HighCard)
                 .or_default()
                 .insert(*value);
@@ -203,13 +179,13 @@ pub fn eval(cards: &[Card]) -> Hand {
             1 => {}
 
             2 => {
-                let rank_values = rank_to_values.entry(Rank::OnePair).or_default();
+                let rank_values = values_per_rank.entry(Rank::OnePair).or_default();
                 rank_values.insert(*value);
 
                 // Check if a pair also occurs, then both pairs
                 // make a two pair.
                 if rank_values.len() >= 2 {
-                    rank_to_values
+                    values_per_rank
                         .entry(Rank::TwoPair)
                         .or_default()
                         .insert(*value);
@@ -217,12 +193,12 @@ pub fn eval(cards: &[Card]) -> Hand {
 
                 // Check if a three of a kind also occurs, then the pair
                 // and three of a kind make a full house.
-                if rank_to_values.contains_key(&Rank::ThreeOfAKind) {
-                    let three_of_a_kinds = rank_to_values.get(&Rank::ThreeOfAKind).unwrap();
+                if values_per_rank.contains_key(&Rank::ThreeOfAKind) {
+                    let three_of_a_kinds = values_per_rank.get(&Rank::ThreeOfAKind).unwrap();
                     if three_of_a_kinds.len() == 1 {
                         let three_of_a_kind_value = *three_of_a_kinds.iter().next().unwrap();
 
-                        rank_to_values
+                        values_per_rank
                             .entry(Rank::FullHouse)
                             .or_default()
                             .insert(three_of_a_kind_value);
@@ -231,21 +207,21 @@ pub fn eval(cards: &[Card]) -> Hand {
             }
 
             3 => {
-                rank_to_values
+                values_per_rank
                     .get_mut(&Rank::OnePair)
                     .unwrap()
                     .remove(value);
-                rank_to_values
+                values_per_rank
                     .entry(Rank::ThreeOfAKind)
                     .or_default()
                     .insert(*value);
 
                 // Check if a pair also occurs, then the three of a kind
                 // and the pair make a full house.
-                if rank_to_values.contains_key(&Rank::OnePair)
-                    && !rank_to_values.get(&Rank::OnePair).unwrap().is_empty()
+                if values_per_rank.contains_key(&Rank::OnePair)
+                    && !values_per_rank.get(&Rank::OnePair).unwrap().is_empty()
                 {
-                    rank_to_values
+                    values_per_rank
                         .entry(Rank::FullHouse)
                         .or_default()
                         .insert(*value);
@@ -253,8 +229,8 @@ pub fn eval(cards: &[Card]) -> Hand {
 
                 // Check if another three of a kind occurs, then both three
                 // of a kinds make a full house.
-                if rank_to_values.get(&Rank::ThreeOfAKind).unwrap().len() == 2 {
-                    rank_to_values
+                if values_per_rank.get(&Rank::ThreeOfAKind).unwrap().len() == 2 {
+                    values_per_rank
                         .entry(Rank::FullHouse)
                         .or_default()
                         .insert(*value);
@@ -262,11 +238,11 @@ pub fn eval(cards: &[Card]) -> Hand {
             }
 
             4 => {
-                rank_to_values
+                values_per_rank
                     .get_mut(&Rank::ThreeOfAKind)
                     .unwrap()
                     .remove(value);
-                rank_to_values
+                values_per_rank
                     .entry(Rank::FourOfAKind)
                     .or_default()
                     .insert(*value);
@@ -281,8 +257,8 @@ pub fn eval(cards: &[Card]) -> Hand {
     }
     // Only need the max hand from the sets for comparison since we
     // only care about the highest ranking hand.
-    if !rank_to_values.is_empty() {
-        let (rank, set) = rank_to_values.iter().max().unwrap();
+    if !values_per_rank.is_empty() {
+        let (rank, set) = values_per_rank.iter().max().unwrap();
         hands.push((*rank, *set.iter().next_back().unwrap()));
     }
     *hands.peek().unwrap()
