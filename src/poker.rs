@@ -46,7 +46,7 @@ type Hand = (Rank, u8);
 /// let value2 = eval(&cards2);
 /// assert_eq!(argmax(&[value1, value2]), vec![1])
 /// ```
-pub fn argmax(hands: &Vec<Hand>) -> Vec<usize> {
+pub fn argmax(hands: &[Hand]) -> Vec<usize> {
     let mut max: Hand = (Rank::HighCard, 0u8);
     let mut argmaxes: Vec<usize> = Vec::new();
     for (i, hand) in hands.iter().enumerate() {
@@ -76,7 +76,7 @@ pub fn argmax(hands: &Vec<Hand>) -> Vec<usize> {
 /// let best_hand = eval(&cards).peek().unwrap();
 /// assert_eq!(best_hand, (Rank::OnePair, 4u8))
 /// ```
-pub fn eval(cards: &Vec<Card>) -> Hand {
+pub fn eval(cards: &[Card]) -> Hand {
     // Mapping of suit to (sorted) cards within that suit.
     // Used for tracking whether there's a flush or straight flush.
     let mut values_per_suit: HashMap<Suit, Vec<u8>> = HashMap::new();
