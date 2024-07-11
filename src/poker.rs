@@ -23,8 +23,7 @@ pub enum Suit {
     Diamond,
     Heart,
     // Wild is used to initialize a deck of cards.
-    // It is never used in practice, but it would be
-    // a good choice for depicting a joker card.
+    // Might be a good choice for a joker's suit.
     Wild,
 }
 
@@ -34,11 +33,35 @@ type Card = (u8, Suit);
 
 type Hand = (Rank, u8);
 
+pub enum PlayerState {
+    // Player is in the game but is waiting for their first move.
+    // This can happen when the game starts and players are being
+    // dealt cards.
+    Wait,
+    // Player forfeits their stake.
+    Fold,
+    // Player matches the last bet.
+    Call,
+    // Player wants to see the next card.
+    Check,
+    // Player ups their stake.
+    Raise,
+    // Player stakes all their stack.
+    AllIn,
+    // Player reveals their cards after the game is over.
+    Show,
+}
+
+pub struct Player {
+    name: String,
+    money: u16,
+}
+
 /// Get the indices corresponding to the winning hands from an array
 /// of hands that were each created from `eval`.
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// let cards1 = [(4u8, Suit::Club), (11u8, Suit::Spade)];
 /// let cards2 = [(4u8, Suit::Club), (12u8, Suit::Spade)];
@@ -68,9 +91,9 @@ pub fn argmax(hands: &[Hand]) -> Vec<usize> {
 /// The max value in the heap is the best hand and is returned.
 /// Multiple hands can then be compared, and the winning hand(s)
 /// can be retrieved with the `argmax` function.
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// let cards = [(4u8, Suit::Club), (4u8, Suit::Heart), (11u8, Suit::Spade)];
 /// let best_hand = eval(&cards).peek().unwrap();
@@ -267,20 +290,23 @@ pub fn eval(cards: &[Card]) -> Hand {
 
 /// Create a new, unshuffled deck of cards.
 /// Shuffle the deck using `rand::shuffle`.
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// use rand::thread_rng;
 /// use rand::seq::SliceRandom;
-/// 
+///
 /// let mut deck = new_deck();
 /// deck.shuffle(&mut thread_rng());
 /// ```
 pub fn new_deck() -> [Card; 52] {
     let mut deck: [Card; 52] = [(0u8, Suit::Wild); 52];
     for (i, value) in (1u8..14u8).enumerate() {
-        for (j, suit) in [Suit::Club, Suit::Spade, Suit::Diamond, Suit::Heart].into_iter().enumerate() {
+        for (j, suit) in [Suit::Club, Suit::Spade, Suit::Diamond, Suit::Heart]
+            .into_iter()
+            .enumerate()
+        {
             deck[4 * i + j] = (value, suit);
         }
     }
@@ -301,34 +327,34 @@ mod tests {
                 let value2 = eval(&hand2);
                 assert_eq!(expected_value1, value1.0);
                 assert_eq!(expected_value2, value2.0);
-                assert_eq!(expected_winner, argmax(&vec![value1, value2]));
+                assert_eq!(expected_winner, argmax(&[value1, value2]));
             }
         )*
         }
     }
 
     eval_and_argmax_tests! {
-        straight_loses_to_straight_flush: (Rank::Straight, vec![
+        straight_loses_to_straight_flush: (Rank::Straight, [
             (4u8, Suit::Heart),
             (5u8, Suit::Heart),
             (6u8, Suit::Club),
             (7u8, Suit::Heart),
             (8u8, Suit::Heart),
-        ], Rank::StraightFlush, vec![
+        ], Rank::StraightFlush, [
             (3u8, Suit::Diamond),
             (4u8, Suit::Diamond),
             (5u8, Suit::Diamond),
             (6u8, Suit::Diamond),
             (7u8, Suit::Diamond),
         ], vec![1]),
-        flush_loses_to_straight_flush: (Rank::Flush, vec![
+        flush_loses_to_straight_flush: (Rank::Flush, [
             (4u8, Suit::Heart),
             (5u8, Suit::Heart),
             (6u8, Suit::Club),
             (7u8, Suit::Heart),
             (8u8, Suit::Heart),
             (9u8, Suit::Heart),
-        ], Rank::StraightFlush, vec![
+        ], Rank::StraightFlush, [
             (3u8, Suit::Diamond),
             (4u8, Suit::Diamond),
             (5u8, Suit::Diamond),
@@ -336,20 +362,20 @@ mod tests {
             (7u8, Suit::Diamond),
             (8u8, Suit::Diamond),
         ], vec![1]),
-        high_card_wins_to_high_card: (Rank::HighCard, vec![
+        high_card_wins_to_high_card: (Rank::HighCard, [
             (4u8, Suit::Club),
             (6u8, Suit::Heart),
             (8u8, Suit::Diamond),
             (10u8, Suit::Heart),
             (12u8, Suit::Spade),
-        ], Rank::HighCard, vec![
+        ], Rank::HighCard, [
             (3u8, Suit::Club),
             (5u8, Suit::Heart),
             (7u8, Suit::Diamond),
             (9u8, Suit::Heart),
             (11u8, Suit::Spade),
         ], vec![0]),
-        full_house_loses_to_full_house: (Rank::FullHouse, vec![
+        full_house_loses_to_full_house: (Rank::FullHouse, [
             (4u8, Suit::Club),
             (4u8, Suit::Heart),
             (4u8, Suit::Diamond),
@@ -358,7 +384,7 @@ mod tests {
             (6u8, Suit::Club),
             (8u8, Suit::Diamond),
             (12u8, Suit::Spade),
-        ], Rank::FullHouse, vec![
+        ], Rank::FullHouse, [
             (4u8, Suit::Club),
             (4u8, Suit::Heart),
             (4u8, Suit::Diamond),
@@ -366,21 +392,21 @@ mod tests {
             (6u8, Suit::Diamond),
             (11u8, Suit::Spade),
         ], vec![0]),
-        two_pair_beats_two_pair: (Rank::TwoPair, vec![
+        two_pair_beats_two_pair: (Rank::TwoPair, [
             (4u8, Suit::Club),
             (4u8, Suit::Heart),
             (6u8, Suit::Heart),
             (8u8, Suit::Diamond),
             (12u8, Suit::Club),
             (12u8, Suit::Spade),
-        ], Rank::TwoPair, vec![
+        ], Rank::TwoPair, [
             (4u8, Suit::Club),
             (4u8, Suit::Heart),
             (6u8, Suit::Heart),
             (6u8, Suit::Diamond),
             (11u8, Suit::Spade),
         ], vec![0]),
-        four_of_a_kind_wins_to_two_pair: (Rank::FourOfAKind, vec![
+        four_of_a_kind_wins_to_two_pair: (Rank::FourOfAKind, [
             (4u8, Suit::Club),
             (4u8, Suit::Heart),
             (4u8, Suit::Diamond),
@@ -389,17 +415,17 @@ mod tests {
             (8u8, Suit::Diamond),
             (12u8, Suit::Club),
             (12u8, Suit::Spade),
-        ], Rank::TwoPair, vec![
+        ], Rank::TwoPair, [
             (4u8, Suit::Club),
             (4u8, Suit::Heart),
             (6u8, Suit::Heart),
             (6u8, Suit::Diamond),
             (11u8, Suit::Spade),
         ], vec![0]),
-        high_card_loses_to_one_pair: (Rank::HighCard, vec![
+        high_card_loses_to_one_pair: (Rank::HighCard, [
             (4u8, Suit::Club),
             (12u8, Suit::Spade),
-        ], Rank::OnePair, vec![
+        ], Rank::OnePair, [
             (4u8, Suit::Club),
             (4u8, Suit::Heart),
             (11u8, Suit::Spade),
