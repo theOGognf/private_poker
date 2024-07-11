@@ -291,7 +291,7 @@ pub fn new_deck() -> [Card; 52] {
 mod tests {
     use super::{argmax, eval, Rank, Suit};
 
-    macro_rules! sort_and_argmax_tests {
+    macro_rules! eval_and_argmax_tests {
         ($($name:ident: $value:expr,)*) => {
         $(
             #[test]
@@ -307,7 +307,7 @@ mod tests {
         }
     }
 
-    sort_and_argmax_tests! {
+    eval_and_argmax_tests! {
         straight_loses_to_straight_flush: (Rank::Straight, vec![
             (4u8, Suit::Heart),
             (5u8, Suit::Heart),
