@@ -63,6 +63,12 @@ pub struct Player {
 }
 
 impl Player {
+    pub fn clear(&mut self) {
+        self.name = "".to_string();
+        self.state = PlayerState::Wait;
+        self.cards.clear();
+    }
+
     pub fn new(name: &str) -> Player {
         Player {
             name: name.to_string(),
@@ -74,11 +80,11 @@ impl Player {
 
 #[derive(Debug)]
 pub enum UserError {
-    UserDoesNotExistError,
-    UserAlreadyExistsError,
-    MaxUsersError,
-    EnqueueUserError,
-    SpectateUserError,
+    DoesNotExist,
+    AlreadyExists,
+    CapacityReached,
+    Enqueue,
+    Spectate,
 }
 
 pub struct Game {
@@ -90,7 +96,6 @@ pub struct Game {
     queued_players: VecDeque<String>,
     players: [Player; MAX_PLAYERS],
     pots: Vec<(u16, Vec<usize>)>,
-
     num_players: usize,
     dealer_idx: usize,
     small_blind_idx: usize,
@@ -115,32 +120,60 @@ impl Game {
         }
     }
 
-    pub fn new_user(& mut self, username: &str) -> Result<usize, UserError> {
-        if self.users.len() >= self.users.capacity() {
-            Err(UserError::MaxUsersError)
+    pub fn new_user(&mut self, username: &str) -> Result<usize, UserError> {
+        if self.users.len() == self.users.capacity() {
+            return Err(UserError::CapacityReached);
         } else if self.users.contains_key(username) {
-            Err(UserError::UserAlreadyExistsError)
-        } else {
-            self.users.insert(username.to_string(), User::new());
-            self.spectators.insert(username.to_string());
-            Ok(self.users.len())
+            return Err(UserError::AlreadyExists);
         }
+        self.users.insert(username.to_string(), User::new());
+        self.spectators.insert(username.to_string());
+        Ok(self.users.len())
     }
 
-    pub fn queue_user(& mut self, username: &str) -> Result<usize, UserError> {
-        let user = self.users.get(username);
-        if user.is_none() {
-            return Err(UserError::UserDoesNotExistError)
+    pub fn queue_user(&mut self, username: &str) -> Result<usize, UserError> {
+        let maybe_user = self.users.get_mut(username);
+        if maybe_user.is_none() {
+            return Err(UserError::DoesNotExist);
         }
-        if user.unwrap().state != UserState::Spectating {
-            return Err(UserError::EnqueueUserError)
+        let user = maybe_user.unwrap();
+        if user.state != UserState::Spectating {
+            return Err(UserError::Enqueue);
         }
         self.queued_players.push_back(username.to_string());
-        self.users.get_mut(username).unwrap().state = UserState::Queued;
+        user.state = UserState::Queued;
         Ok(self.queued_players.len())
     }
 
-    pub fn spectate_user(& mut self, username: &str) -> Result<usize, UserError> {
-        
+    pub fn spectate_user(&mut self, username: &str) -> Result<usize, UserError> {
+        let maybe_user = self.users.get_mut(username);
+        if maybe_user.is_none() {
+            return Err(UserError::DoesNotExist);
+        }
+        let user = maybe_user.unwrap();
+        match user.state {
+            UserState::Queued => {
+                let player_idx = self
+                    .queued_players
+                    .iter()
+                    .position(|x| x == username)
+                    .unwrap();
+                self.queued_players.remove(player_idx);
+            }
+            UserState::Playing => {
+                let player_idx = self
+                    .players
+                    .iter()
+                    .position(|x| x.name == username)
+                    .unwrap();
+                self.players[player_idx].clear();
+            }
+            UserState::Spectating => {
+                return Err(UserError::Spectate);
+            }
+        }
+        self.spectators.insert(username.to_string());
+        user.state = UserState::Spectating;
+        Ok(self.spectators.len())
     }
 }
