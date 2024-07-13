@@ -1,5 +1,7 @@
 use crate::poker;
 
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 use std::collections::{HashMap, HashSet, VecDeque};
 
 // Don't want too many people waiting to play the game.
@@ -15,6 +17,15 @@ pub const MAX_CARDS: usize = 11;
 pub const STARTING_STACK: u16 = 200;
 pub const MIN_BIG_BLIND: u16 = STARTING_STACK / 20;
 pub const MIN_SMALL_BLIND: u16 = MIN_BIG_BLIND / 2;
+
+#[derive(Debug)]
+pub enum UserError {
+    DoesNotExist,
+    AlreadyExists,
+    CapacityReached,
+    AlreadyPlaying,
+    InsufficientFunds,
+}
 
 #[derive(Eq, PartialEq)]
 pub enum UserState {
@@ -63,12 +74,6 @@ pub struct Player {
 }
 
 impl Player {
-    pub fn clear(&mut self) {
-        self.name = "".to_string();
-        self.state = PlayerState::Wait;
-        self.cards.clear();
-    }
-
     pub fn new(name: &str) -> Player {
         Player {
             name: name.to_string(),
@@ -79,12 +84,8 @@ impl Player {
 }
 
 #[derive(Debug)]
-pub enum UserError {
-    DoesNotExist,
-    AlreadyExists,
-    CapacityReached,
-    Enqueue,
-    Spectate,
+pub enum GameError {
+    NotEnoughPlayers,
 }
 
 pub struct Game {
@@ -94,15 +95,37 @@ pub struct Game {
     users: HashMap<String, User>,
     spectators: HashSet<String>,
     queued_players: VecDeque<String>,
-    players: [Player; MAX_PLAYERS],
+    table: [Option<Player>; MAX_PLAYERS],
     pots: Vec<(u16, Vec<usize>)>,
     num_players: usize,
-    dealer_idx: usize,
+    starting_player_idx: usize,
     small_blind_idx: usize,
     big_blind_idx: usize,
 }
 
 impl Game {
+    pub fn end_hand(&mut self) {
+        
+    }
+
+    pub fn move_button(&mut self) -> Result<usize, GameError> {
+        if self.num_players == 1 {
+            return Err(GameError::NotEnoughPlayers);
+        }
+        // Move the big blind position and starting position.
+        let mut table = self.table.iter().cycle();
+        table.nth(self.big_blind_idx + 1);
+        self.big_blind_idx = table.position(|p| p.is_some()).unwrap();
+        self.starting_player_idx = table.position(|p| p.is_some()).unwrap();
+        // Reverse the table search to find the small blind position relative
+        // to the big blind position.
+        let mut table = self.table.iter();
+        table.nth(self.big_blind_idx);
+        let mut reverse_table = table.rev().cycle();
+        self.small_blind_idx = reverse_table.position(|p| p.is_some()).unwrap();
+        Ok(self.starting_player_idx)
+    }
+
     pub fn new() -> Game {
         Game {
             deck: poker::new_deck(),
@@ -111,12 +134,12 @@ impl Game {
             users: HashMap::with_capacity(MAX_USERS),
             spectators: HashSet::with_capacity(MAX_USERS),
             queued_players: VecDeque::with_capacity(MAX_USERS),
-            players: core::array::from_fn(|_| Player::new("")),
+            table: [const { None }; MAX_PLAYERS],
             pots: Vec::with_capacity(MAX_POTS),
             num_players: 0,
-            dealer_idx: 0,
-            small_blind_idx: 1,
-            big_blind_idx: 2,
+            small_blind_idx: 0,
+            big_blind_idx: 1,
+            starting_player_idx: 2,
         }
     }
 
@@ -137,12 +160,36 @@ impl Game {
             return Err(UserError::DoesNotExist);
         }
         let user = maybe_user.unwrap();
-        if user.state != UserState::Spectating {
-            return Err(UserError::Enqueue);
+        match user.state {
+            UserState::Spectating => {
+                if user.money < self.big_blind {
+                    return Err(UserError::InsufficientFunds);
+                }
+                self.spectators.remove(username);
+                self.queued_players.push_back(username.to_string());
+                user.state = UserState::Queued;
+            },
+            _ => ()
         }
-        self.queued_players.push_back(username.to_string());
-        user.state = UserState::Queued;
         Ok(self.queued_players.len())
+    }
+
+    pub fn seat_players(&mut self) -> usize {
+        let mut i: usize = 0;
+        while self.num_players < MAX_PLAYERS && !self.queued_players.is_empty() {
+            if self.table[i].is_none() {
+                let username = self.queued_players.pop_front().unwrap();
+                let user = self.users.get(&username).unwrap();
+                if user.money < self.big_blind {
+                    self.spectate_user(&username).ok();
+                    continue;
+                }
+                self.table[i] = Some(Player::new(&username));
+                self.num_players += 1;
+            }
+            i += 1;
+        }
+        self.num_players
     }
 
     pub fn spectate_user(&mut self, username: &str) -> Result<usize, UserError> {
@@ -152,25 +199,23 @@ impl Game {
         }
         let user = maybe_user.unwrap();
         match user.state {
+            UserState::Playing => {
+                let player_idx = self
+                    .table
+                    .iter()
+                    .position(|o| o.as_ref().is_some_and(|p| p.name == username))
+                    .unwrap();
+                self.table[player_idx] = None;
+            }
             UserState::Queued => {
                 let player_idx = self
                     .queued_players
                     .iter()
-                    .position(|x| x == username)
+                    .position(|u| u == username)
                     .unwrap();
                 self.queued_players.remove(player_idx);
             }
-            UserState::Playing => {
-                let player_idx = self
-                    .players
-                    .iter()
-                    .position(|x| x.name == username)
-                    .unwrap();
-                self.players[player_idx].clear();
-            }
-            UserState::Spectating => {
-                return Err(UserError::Spectate);
-            }
+            UserState::Spectating => return Ok(self.spectators.len()),
         }
         self.spectators.insert(username.to_string());
         user.state = UserState::Spectating;
