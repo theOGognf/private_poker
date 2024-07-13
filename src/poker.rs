@@ -1,5 +1,4 @@
 use std::{
-    cmp::Ordering,
     collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet},
 };
 
@@ -322,12 +321,10 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
     hand.push(subhand);
     while hand[0].rank < Rank::Straight && num_cards < 5 {
         let subhand = hands.pop().unwrap();
-        if subhand.rank == Rank::HighCard {
-            if !cards_in_hand.contains(&subhand.cards[0]) {
-                cards_in_hand.insert(subhand.cards[0]);
-                num_cards += 1;
-                hand.push(subhand);
-            }
+        if subhand.rank == Rank::HighCard && !cards_in_hand.contains(&subhand.cards[0]) {
+            cards_in_hand.insert(subhand.cards[0]);
+            num_cards += 1;
+            hand.push(subhand);
         }
     }
     hand

@@ -1,7 +1,5 @@
 use crate::poker;
 
-use rand::seq::SliceRandom;
-use rand::thread_rng;
 use std::collections::{HashMap, HashSet, VecDeque};
 
 // Don't want too many people waiting to play the game.
