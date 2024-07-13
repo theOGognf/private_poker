@@ -141,11 +141,11 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
         // A flush was found.
         if flush_count >= 5 {
             let maybe_straight_flush_start_idx = values_in_suit.len() - 5;
-            let maybe_straight_flush_slice = &values_in_suit[maybe_straight_flush_start_idx..];
+            let maybe_straight_flush_cards = &values_in_suit[maybe_straight_flush_start_idx..];
             let mut is_straight_flush = true;
             for flush_idx in 0..3 {
-                if (maybe_straight_flush_slice[flush_idx] + 1)
-                    != maybe_straight_flush_slice[flush_idx + 1]
+                if (maybe_straight_flush_cards[flush_idx] + 1)
+                    != maybe_straight_flush_cards[flush_idx + 1]
                 {
                     is_straight_flush = false;
                     break;
@@ -153,9 +153,9 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
             }
 
             if is_straight_flush {
-                hands.push(SubHand{rank: Rank::StraightFlush, cards: Vec::from(maybe_straight_flush_slice)})
+                hands.push(SubHand{rank: Rank::StraightFlush, cards: Vec::from(maybe_straight_flush_cards)})
             } else {
-                hands.push(SubHand{rank: Rank::Flush, cards: Vec::from(maybe_straight_flush_slice)})
+                hands.push(SubHand{rank: Rank::Flush, cards: Vec::from(maybe_straight_flush_cards)})
             }
         }
 
@@ -197,7 +197,7 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
             }
 
             2 => {
-                let one_pair_subhand = SubHand{rank: Rank::OnePair, cards: vec![*value]};
+                let one_pair_subhand = SubHand{rank: Rank::OnePair, cards: vec![*value; 2]};
                 let subhand = subhands_per_rank.entry(Rank::OnePair).or_default();
                 subhand.insert(one_pair_subhand);
 
@@ -314,7 +314,7 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
     let mut num_cards: usize = 0;
     let mut hand: Vec<SubHand> = Vec::with_capacity(5);
 
-    // Manually do the first iteration.
+    // Manually do the first iteration to fill the max subhand.
     let subhand = hands.pop().unwrap();
     num_cards += subhand.cards.len();
     cards_in_hand.extend(subhand.cards.clone());
