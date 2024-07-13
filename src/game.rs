@@ -102,9 +102,7 @@ pub struct Game {
 }
 
 impl Game {
-    pub fn end_hand(&mut self) {
-        
-    }
+    pub fn end_hand(&mut self) {}
 
     pub fn move_button(&mut self) -> Result<usize, GameError> {
         if self.num_players == 1 {
@@ -166,8 +164,8 @@ impl Game {
                 self.spectators.remove(username);
                 self.queued_players.push_back(username.to_string());
                 user.state = UserState::Queued;
-            },
-            _ => ()
+            }
+            _ => (),
         }
         Ok(self.queued_players.len())
     }

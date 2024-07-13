@@ -1,6 +1,5 @@
-use std::{
-    collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet},
-};
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Rank {
@@ -58,34 +57,25 @@ pub struct SubHand {
 /// let value2 = eval(&cards2);
 /// assert_eq!(argmax(&[value1, value2]), vec![1])
 /// ```
-// pub fn argmax(hands: &[BinaryHeap<SubHand>]) -> Vec<usize> {
-//     let mut max: SubHand = (Rank::HighCard, (0u8, None));
-//     let mut argmaxes: Vec<usize> = Vec::new();
-//     for (i, hand) in hands.iter_mut().enumerate() {
-//         loop {
-//             let subhand = hand.pop();
-//             if subhand.is_some() {
-//                 match subhand.unwrap().cmp(&max) {
-//                     Ordering::Equal => {
-
-//                     }
-//                 }
-//             }
-//         }
-//         match hand.peek().unwrap().cmp(&max) {
-//             Ordering::Equal => {
-//                 while hand.peek()
-//             },
-//             Ordering::Greater => {
-//                 argmaxes.clear();
-//                 argmaxes.push(i);
-//                 max = hand;
-//             }
-//             _ => {}
-//         }
-//     }
-//     argmaxes
-// }
+pub fn argmax(hands: &[Vec<SubHand>]) -> Vec<usize> {
+    let mut max = vec![SubHand {
+        rank: Rank::HighCard,
+        cards: vec![0u8],
+    }];
+    let mut argmaxes: Vec<usize> = Vec::new();
+    for (i, hand) in hands.iter().enumerate() {
+        match hand.cmp(&max) {
+            Ordering::Equal => argmaxes.push(i),
+            Ordering::Greater => {
+                argmaxes.clear();
+                argmaxes.push(i);
+                max = hand.clone();
+            }
+            _ => {}
+        }
+    }
+    argmaxes
+}
 
 /// This function assumes the cards are already sorted in increasing order.
 /// Group cards into hand rankings and insort them into a heap.
@@ -153,9 +143,15 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
             }
 
             if is_straight_flush {
-                hands.push(SubHand{rank: Rank::StraightFlush, cards: Vec::from(maybe_straight_flush_cards)})
+                hands.push(SubHand {
+                    rank: Rank::StraightFlush,
+                    cards: Vec::from(maybe_straight_flush_cards),
+                })
             } else {
-                hands.push(SubHand{rank: Rank::Flush, cards: Vec::from(maybe_straight_flush_cards)})
+                hands.push(SubHand {
+                    rank: Rank::Flush,
+                    cards: Vec::from(maybe_straight_flush_cards),
+                })
             }
         }
 
@@ -172,7 +168,10 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
         // A straight was found.
         straight_prev_value = *value;
         if straight_count >= 5 {
-            let straight_subhand = SubHand{rank: Rank::Straight, cards: (*value-4..*value).rev().collect()};
+            let straight_subhand = SubHand {
+                rank: Rank::Straight,
+                cards: (*value - 4..*value).rev().collect(),
+            };
             // We don't need to push the straight into the heap if something
             // better was already found.
             let max_hand = hands.peek();
@@ -187,27 +186,34 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
 
         match *value_count {
             1 => {
-                let high_card_subhand = SubHand{rank: Rank::HighCard, cards: vec![*value]};
-                // Keep all high cards just in case.
-                hands.push(high_card_subhand.clone());
+                let high_card_subhand = SubHand {
+                    rank: Rank::HighCard,
+                    cards: vec![*value],
+                };
                 subhands_per_rank
-                .entry(Rank::HighCard)
-                .or_default()
-                .insert(high_card_subhand);
+                    .entry(Rank::HighCard)
+                    .or_default()
+                    .insert(high_card_subhand);
             }
 
             2 => {
-                let one_pair_subhand = SubHand{rank: Rank::OnePair, cards: vec![*value; 2]};
+                let one_pair_subhand = SubHand {
+                    rank: Rank::OnePair,
+                    cards: vec![*value; 2],
+                };
                 let subhand = subhands_per_rank.entry(Rank::OnePair).or_default();
                 subhand.insert(one_pair_subhand);
 
                 // Check if a pair also occurs, then both pairs
                 // make a two pair.
                 if subhand.len() >= 2 {
-                    let one_pairs =                     subhands_per_rank                    .get(&Rank::TwoPair).unwrap();
+                    let one_pairs = subhands_per_rank.get(&Rank::OnePair).unwrap();
                     let mut two_pair_cards = vec![*value; 2];
                     two_pair_cards.extend(one_pairs.iter().nth_back(1).unwrap().cards.clone());
-                    let two_pair_subhand = SubHand{rank: Rank::TwoPair, cards: two_pair_cards};
+                    let two_pair_subhand = SubHand {
+                        rank: Rank::TwoPair,
+                        cards: two_pair_cards,
+                    };
                     subhands_per_rank
                         .entry(Rank::TwoPair)
                         .or_default()
@@ -218,9 +224,18 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                 // and three of a kind make a full house.
                 let three_of_a_kinds = subhands_per_rank.get(&Rank::ThreeOfAKind);
                 if three_of_a_kinds.is_some_and(|s| s.len() == 1) {
-                    let mut full_house_cards = three_of_a_kinds.unwrap().iter().next().unwrap().cards.clone();
+                    let mut full_house_cards = three_of_a_kinds
+                        .unwrap()
+                        .iter()
+                        .next()
+                        .unwrap()
+                        .cards
+                        .clone();
                     full_house_cards.extend(vec![*value; 2]);
-                    let full_house_subhand = SubHand{rank: Rank::FullHouse, cards: full_house_cards};
+                    let full_house_subhand = SubHand {
+                        rank: Rank::FullHouse,
+                        cards: full_house_cards,
+                    };
                     subhands_per_rank
                         .entry(Rank::FullHouse)
                         .or_default()
@@ -229,8 +244,14 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
             }
 
             3 => {
-                let one_pair_subhand = SubHand{rank: Rank::OnePair, cards: vec![*value; 2]};
-                let three_of_a_kind_subhand = SubHand{rank: Rank::ThreeOfAKind, cards: vec![*value; 3]};
+                let one_pair_subhand = SubHand {
+                    rank: Rank::OnePair,
+                    cards: vec![*value; 2],
+                };
+                let three_of_a_kind_subhand = SubHand {
+                    rank: Rank::ThreeOfAKind,
+                    cards: vec![*value; 3],
+                };
                 subhands_per_rank
                     .get_mut(&Rank::OnePair)
                     .unwrap()
@@ -243,11 +264,14 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                 // Check if a pair also occurs, then the three of a kind
                 // and the pair make a full house.
                 let one_pairs = subhands_per_rank.get(&Rank::OnePair);
-                if one_pairs.is_some_and(|s| !s.is_empty())
-                {
+                if one_pairs.is_some_and(|s| !s.is_empty()) {
                     let mut full_house_cards = vec![*value; 3];
-                    full_house_cards.extend(one_pairs.unwrap().iter().next_back().unwrap().cards.clone());
-                    let full_house_subhand = SubHand{rank: Rank::FullHouse, cards: full_house_cards};
+                    full_house_cards
+                        .extend(one_pairs.unwrap().iter().next_back().unwrap().cards.clone());
+                    let full_house_subhand = SubHand {
+                        rank: Rank::FullHouse,
+                        cards: full_house_cards,
+                    };
                     subhands_per_rank
                         .entry(Rank::FullHouse)
                         .or_default()
@@ -258,10 +282,19 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                 // of a kinds make a full house.
                 let three_of_a_kinds = subhands_per_rank.get(&Rank::ThreeOfAKind);
                 if three_of_a_kinds.is_some_and(|s| s.len() == 2) {
-                    let other_three_of_a_kind_cards = three_of_a_kinds.unwrap().iter().nth_back(1).unwrap().cards.clone();
+                    let other_three_of_a_kind_cards = three_of_a_kinds
+                        .unwrap()
+                        .iter()
+                        .nth_back(1)
+                        .unwrap()
+                        .cards
+                        .clone();
                     let mut full_house_cards = vec![*value; 3];
                     full_house_cards.extend(vec![other_three_of_a_kind_cards[0]; 2]);
-                    let full_house_subhand = SubHand{rank: Rank::FullHouse, cards: full_house_cards};
+                    let full_house_subhand = SubHand {
+                        rank: Rank::FullHouse,
+                        cards: full_house_cards,
+                    };
                     subhands_per_rank
                         .entry(Rank::FullHouse)
                         .or_default()
@@ -270,8 +303,14 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
             }
 
             4 => {
-                let three_of_a_kind_subhand = SubHand{rank: Rank::OnePair, cards: vec![*value; 3]};
-                let four_of_a_kind_subhand = SubHand{rank: Rank::ThreeOfAKind, cards: vec![*value; 4]};
+                let three_of_a_kind_subhand = SubHand {
+                    rank: Rank::OnePair,
+                    cards: vec![*value; 3],
+                };
+                let four_of_a_kind_subhand = SubHand {
+                    rank: Rank::ThreeOfAKind,
+                    cards: vec![*value; 4],
+                };
                 subhands_per_rank
                     .get_mut(&Rank::ThreeOfAKind)
                     .unwrap()
@@ -296,8 +335,12 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
     while hands.peek().unwrap().rank < Rank::Straight && !subhands_per_rank.is_empty() {
         let (rank, subhands) = &mut subhands_per_rank.pop_last().unwrap();
         match rank {
-            // High cards are already pushed, so we can skip them.
-            Rank::HighCard => (),
+            Rank::HighCard => {
+                while !subhands.is_empty() {
+                    let best_subhand = subhands.pop_last().unwrap();
+                    hands.push(best_subhand);
+                }
+            }
             _ => {
                 if !subhands.is_empty() {
                     let best_subhand = subhands.pop_last().unwrap();
@@ -355,122 +398,122 @@ pub fn new_deck() -> [Card; 52] {
     deck
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::{argmax, eval, Rank, Suit};
+#[cfg(test)]
+mod tests {
+    use super::{argmax, eval, Rank, Suit};
 
-//     macro_rules! eval_and_argmax_tests {
-//         ($($name:ident: $value:expr,)*) => {
-//         $(
-//             #[test]
-//             fn $name() {
-//                 let (expected_value1, hand1, expected_value2, hand2, expected_winner) = $value;
-//                 let value1 = eval(&hand1);
-//                 let value2 = eval(&hand2);
-//                 assert_eq!(expected_value1, value1.0);
-//                 assert_eq!(expected_value2, value2.0);
-//                 assert_eq!(expected_winner, argmax(&[value1, value2]));
-//             }
-//         )*
-//         }
-//     }
+    macro_rules! eval_and_argmax_tests {
+        ($($name:ident: $value:expr,)*) => {
+        $(
+            #[test]
+            fn $name() {
+                let (expected_subhand1, cards1, expected_subhand2, cards2, expected_winner) = $value;
+                let hand1 = eval(&cards1);
+                let hand2 = eval(&cards2);
+                assert_eq!(expected_subhand1, hand1[0].rank);
+                assert_eq!(expected_subhand2, hand2[0].rank);
+                assert_eq!(expected_winner, argmax(&[hand1, hand2]));
+            }
+        )*
+        }
+    }
 
-//     eval_and_argmax_tests! {
-//         straight_loses_to_straight_flush: (Rank::Straight, [
-//             (4u8, Suit::Heart),
-//             (5u8, Suit::Heart),
-//             (6u8, Suit::Club),
-//             (7u8, Suit::Heart),
-//             (8u8, Suit::Heart),
-//         ], Rank::StraightFlush, [
-//             (3u8, Suit::Diamond),
-//             (4u8, Suit::Diamond),
-//             (5u8, Suit::Diamond),
-//             (6u8, Suit::Diamond),
-//             (7u8, Suit::Diamond),
-//         ], vec![1]),
-//         flush_loses_to_straight_flush: (Rank::Flush, [
-//             (4u8, Suit::Heart),
-//             (5u8, Suit::Heart),
-//             (6u8, Suit::Club),
-//             (7u8, Suit::Heart),
-//             (8u8, Suit::Heart),
-//             (9u8, Suit::Heart),
-//         ], Rank::StraightFlush, [
-//             (3u8, Suit::Diamond),
-//             (4u8, Suit::Diamond),
-//             (5u8, Suit::Diamond),
-//             (6u8, Suit::Diamond),
-//             (7u8, Suit::Diamond),
-//             (8u8, Suit::Diamond),
-//         ], vec![1]),
-//         high_card_wins_to_high_card: (Rank::HighCard, [
-//             (4u8, Suit::Club),
-//             (6u8, Suit::Heart),
-//             (8u8, Suit::Diamond),
-//             (10u8, Suit::Heart),
-//             (12u8, Suit::Spade),
-//         ], Rank::HighCard, [
-//             (3u8, Suit::Club),
-//             (5u8, Suit::Heart),
-//             (7u8, Suit::Diamond),
-//             (9u8, Suit::Heart),
-//             (11u8, Suit::Spade),
-//         ], vec![0]),
-//         full_house_loses_to_full_house: (Rank::FullHouse, [
-//             (4u8, Suit::Club),
-//             (4u8, Suit::Heart),
-//             (4u8, Suit::Diamond),
-//             (6u8, Suit::Heart),
-//             (6u8, Suit::Diamond),
-//             (6u8, Suit::Club),
-//             (8u8, Suit::Diamond),
-//             (12u8, Suit::Spade),
-//         ], Rank::FullHouse, [
-//             (4u8, Suit::Club),
-//             (4u8, Suit::Heart),
-//             (4u8, Suit::Diamond),
-//             (6u8, Suit::Heart),
-//             (6u8, Suit::Diamond),
-//             (11u8, Suit::Spade),
-//         ], vec![0]),
-//         two_pair_beats_two_pair: (Rank::TwoPair, [
-//             (4u8, Suit::Club),
-//             (4u8, Suit::Heart),
-//             (6u8, Suit::Heart),
-//             (8u8, Suit::Diamond),
-//             (12u8, Suit::Club),
-//             (12u8, Suit::Spade),
-//         ], Rank::TwoPair, [
-//             (4u8, Suit::Club),
-//             (4u8, Suit::Heart),
-//             (6u8, Suit::Heart),
-//             (6u8, Suit::Diamond),
-//             (11u8, Suit::Spade),
-//         ], vec![0]),
-//         four_of_a_kind_wins_to_two_pair: (Rank::FourOfAKind, [
-//             (4u8, Suit::Club),
-//             (4u8, Suit::Heart),
-//             (4u8, Suit::Diamond),
-//             (4u8, Suit::Spade),
-//             (6u8, Suit::Heart),
-//             (8u8, Suit::Diamond),
-//             (12u8, Suit::Club),
-//             (12u8, Suit::Spade),
-//         ], Rank::TwoPair, [
-//             (4u8, Suit::Club),
-//             (4u8, Suit::Heart),
-//             (6u8, Suit::Heart),
-//             (6u8, Suit::Diamond),
-//             (11u8, Suit::Spade),
-//         ], vec![0]),
-//         high_card_loses_to_one_pair: (Rank::HighCard, [
-//             (4u8, Suit::Club),
-//             (12u8, Suit::Spade),
-//         ], Rank::OnePair, [
-//             (4u8, Suit::Club),
-//             (4u8, Suit::Heart),
-//             (11u8, Suit::Spade),
-//         ], vec![1]),
-//     }
-// }
+    eval_and_argmax_tests! {
+        straight_loses_to_straight_flush: (Rank::Straight, [
+            (4u8, Suit::Heart),
+            (5u8, Suit::Heart),
+            (6u8, Suit::Club),
+            (7u8, Suit::Heart),
+            (8u8, Suit::Heart),
+        ], Rank::StraightFlush, [
+            (3u8, Suit::Diamond),
+            (4u8, Suit::Diamond),
+            (5u8, Suit::Diamond),
+            (6u8, Suit::Diamond),
+            (7u8, Suit::Diamond),
+        ], vec![1]),
+        flush_loses_to_straight_flush: (Rank::Flush, [
+            (4u8, Suit::Heart),
+            (5u8, Suit::Heart),
+            (6u8, Suit::Club),
+            (7u8, Suit::Heart),
+            (8u8, Suit::Heart),
+            (9u8, Suit::Heart),
+        ], Rank::StraightFlush, [
+            (3u8, Suit::Diamond),
+            (4u8, Suit::Diamond),
+            (5u8, Suit::Diamond),
+            (6u8, Suit::Diamond),
+            (7u8, Suit::Diamond),
+            (8u8, Suit::Diamond),
+        ], vec![1]),
+        high_card_wins_to_high_card: (Rank::HighCard, [
+            (4u8, Suit::Club),
+            (6u8, Suit::Heart),
+            (8u8, Suit::Diamond),
+            (10u8, Suit::Heart),
+            (12u8, Suit::Spade),
+        ], Rank::HighCard, [
+            (3u8, Suit::Club),
+            (5u8, Suit::Heart),
+            (7u8, Suit::Diamond),
+            (9u8, Suit::Heart),
+            (11u8, Suit::Spade),
+        ], vec![0]),
+        full_house_loses_to_full_house: (Rank::FullHouse, [
+            (4u8, Suit::Club),
+            (4u8, Suit::Heart),
+            (4u8, Suit::Diamond),
+            (6u8, Suit::Heart),
+            (6u8, Suit::Diamond),
+            (6u8, Suit::Club),
+            (8u8, Suit::Diamond),
+            (12u8, Suit::Spade),
+        ], Rank::FullHouse, [
+            (4u8, Suit::Club),
+            (4u8, Suit::Heart),
+            (4u8, Suit::Diamond),
+            (6u8, Suit::Heart),
+            (6u8, Suit::Diamond),
+            (11u8, Suit::Spade),
+        ], vec![0]),
+        two_pair_beats_two_pair: (Rank::TwoPair, [
+            (4u8, Suit::Club),
+            (4u8, Suit::Heart),
+            (6u8, Suit::Heart),
+            (8u8, Suit::Diamond),
+            (12u8, Suit::Club),
+            (12u8, Suit::Spade),
+        ], Rank::TwoPair, [
+            (4u8, Suit::Club),
+            (4u8, Suit::Heart),
+            (6u8, Suit::Heart),
+            (6u8, Suit::Diamond),
+            (11u8, Suit::Spade),
+        ], vec![0]),
+        four_of_a_kind_wins_to_two_pair: (Rank::FourOfAKind, [
+            (4u8, Suit::Club),
+            (4u8, Suit::Heart),
+            (4u8, Suit::Diamond),
+            (4u8, Suit::Spade),
+            (6u8, Suit::Heart),
+            (8u8, Suit::Diamond),
+            (12u8, Suit::Club),
+            (12u8, Suit::Spade),
+        ], Rank::TwoPair, [
+            (4u8, Suit::Club),
+            (4u8, Suit::Heart),
+            (6u8, Suit::Heart),
+            (6u8, Suit::Diamond),
+            (11u8, Suit::Spade),
+        ], vec![0]),
+        high_card_loses_to_one_pair: (Rank::HighCard, [
+            (4u8, Suit::Club),
+            (12u8, Suit::Spade),
+        ], Rank::OnePair, [
+            (4u8, Suit::Club),
+            (4u8, Suit::Heart),
+            (11u8, Suit::Spade),
+        ], vec![1]),
+    }
+}
