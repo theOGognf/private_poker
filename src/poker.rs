@@ -339,11 +339,9 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                 let best_subhand = subhands.pop_last().unwrap();
                 hands.push(best_subhand);
             }
-        } else {
-            if !subhands.is_empty() {
-                let best_subhand = subhands.pop_last().unwrap();
-                hands.push(best_subhand);
-            }
+        } else if !subhands.is_empty() {
+            let best_subhand = subhands.pop_last().unwrap();
+            hands.push(best_subhand);
         }
     }
 
