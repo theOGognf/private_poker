@@ -156,16 +156,13 @@ impl Game {
             return Err(UserError::DoesNotExist);
         }
         let user = maybe_user.unwrap();
-        match user.state {
-            UserState::Spectating => {
-                if user.money < self.big_blind {
-                    return Err(UserError::InsufficientFunds);
-                }
-                self.spectators.remove(username);
-                self.queued_players.push_back(username.to_string());
-                user.state = UserState::Queued;
+        if user.state == UserState::Spectating {
+            if user.money < self.big_blind {
+                return Err(UserError::InsufficientFunds);
             }
-            _ => (),
+            self.spectators.remove(username);
+            self.queued_players.push_back(username.to_string());
+            user.state = UserState::Queued;
         }
         Ok(self.queued_players.len())
     }
