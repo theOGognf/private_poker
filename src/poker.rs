@@ -43,9 +43,9 @@ pub struct SubHand {
 /// ```
 /// let cards1 = [(4u8, Suit::Club), (11u8, Suit::Spade)];
 /// let cards2 = [(4u8, Suit::Club), (12u8, Suit::Spade)];
-/// let value1 = eval(&cards1);
-/// let value2 = eval(&cards2);
-/// assert_eq!(argmax(&[value1, value2]), vec![1])
+/// let hand1 = eval(&cards1);
+/// let hand2 = eval(&cards2);
+/// assert_eq!(argmax(&[hand1, hand2]), vec![1])
 /// ```
 pub fn argmax(hands: &[Vec<SubHand>]) -> Vec<usize> {
     let mut max = vec![SubHand {
@@ -77,8 +77,8 @@ pub fn argmax(hands: &[Vec<SubHand>]) -> Vec<usize> {
 ///
 /// ```
 /// let cards = [(4u8, Suit::Club), (4u8, Suit::Heart), (11u8, Suit::Spade)];
-/// let best_hand = eval(&cards).peek().unwrap();
-/// assert_eq!(best_hand, (Rank::OnePair, 4u8))
+/// let best_subhand = eval(&cards)[0];
+/// assert_eq!(best_subhand.rank, Rank::OnePair)
 /// ```
 pub fn eval(cards: &[Card]) -> Vec<SubHand> {
     // Mapping of suit to (sorted) cards within that suit.
