@@ -92,7 +92,7 @@ pub struct Game {
     big_blind: u16,
     users: HashMap<String, User>,
     spectators: HashSet<String>,
-    queued_players: VecDeque<String>,
+    players_to_seat: VecDeque<String>,
     table: [Option<Player>; MAX_PLAYERS],
     pots: Vec<(u16, Vec<usize>)>,
     num_players: usize,
@@ -102,7 +102,22 @@ pub struct Game {
 }
 
 impl Game {
-    pub fn end_hand(&mut self) {}
+    pub fn boot_players(&mut self) -> usize {
+        for seat in self.table.iter_mut() {
+            if seat.is_some() {
+                let player = seat.as_ref().unwrap();
+                let maybe_user = self.users.get_mut(&player.name);
+                if maybe_user.is_some() {
+                    let user = maybe_user.unwrap();
+                    if user.money < self.big_blind {
+                        self.users.remove(&player.name);
+                        self.num_players -= 1;
+                    }
+                }
+            }
+        }
+        self.num_players
+    }
 
     pub fn move_button(&mut self) -> Result<usize, GameError> {
         if self.num_players == 1 {
@@ -129,7 +144,7 @@ impl Game {
             big_blind: MIN_BIG_BLIND,
             users: HashMap::with_capacity(MAX_USERS),
             spectators: HashSet::with_capacity(MAX_USERS),
-            queued_players: VecDeque::with_capacity(MAX_USERS),
+            players_to_seat: VecDeque::with_capacity(MAX_USERS),
             table: [const { None }; MAX_PLAYERS],
             pots: Vec::with_capacity(MAX_POTS),
             num_players: 0,
@@ -161,17 +176,17 @@ impl Game {
                 return Err(UserError::InsufficientFunds);
             }
             self.spectators.remove(username);
-            self.queued_players.push_back(username.to_string());
+            self.players_to_seat.push_back(username.to_string());
             user.state = UserState::Queued;
         }
-        Ok(self.queued_players.len())
+        Ok(self.players_to_seat.len())
     }
 
     pub fn seat_players(&mut self) -> usize {
         let mut i: usize = 0;
-        while self.num_players < MAX_PLAYERS && !self.queued_players.is_empty() {
+        while self.num_players < MAX_PLAYERS && !self.players_to_seat.is_empty() {
             if self.table[i].is_none() {
-                let username = self.queued_players.pop_front().unwrap();
+                let username = self.players_to_seat.pop_front().unwrap();
                 let user = self.users.get(&username).unwrap();
                 if user.money < self.big_blind {
                     self.spectate_user(&username).ok();
@@ -202,11 +217,11 @@ impl Game {
             }
             UserState::Queued => {
                 let player_idx = self
-                    .queued_players
+                    .players_to_seat
                     .iter()
                     .position(|u| u == username)
                     .unwrap();
-                self.queued_players.remove(player_idx);
+                self.players_to_seat.remove(player_idx);
             }
             UserState::Spectating => return Ok(self.spectators.len()),
         }
