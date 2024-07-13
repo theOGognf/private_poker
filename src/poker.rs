@@ -4,21 +4,13 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Rank {
     HighCard,
-    // Only keep high cards.
     OnePair,
-    // Only keep high cards.
     TwoPair,
-    // Only keep high cards.
     ThreeOfAKind,
-    // Don't keep anything else.
     Straight,
-    // Don't keep anything else.
     Flush,
-    // Don't keep anything else.
     FullHouse,
-    // Don't keep anything else.
     FourOfAKind,
-    // Don't keep anything else.
     StraightFlush,
 }
 
@@ -97,10 +89,10 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
     let mut straight_count: u8 = 0;
     let mut straight_prev_value: u8 = 0;
 
-    // Mapping of rank to each value that meets that rank. Helps track
-    // the highest value in each rank.
+    // Mapping of rank to each subhand for that rank. Helps track
+    // the highest subhand in each rank.
     let mut subhands_per_rank: BTreeMap<Rank, BTreeSet<SubHand>> = BTreeMap::new();
-    // Count number of times a value appears. Helps track one pair,
+    // Count number of times a card value appears. Helps track one pair,
     // two pair, etc.
     let mut value_counts: HashMap<u8, u8> = HashMap::new();
 
@@ -352,7 +344,8 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
     let mut num_cards: usize = 0;
     let mut hand: Vec<SubHand> = Vec::with_capacity(5);
 
-    // Manually do the first iteration to fill the max subhand.
+    // Manually do the first iteration to fill the hand with the
+    // best subhand first.
     let subhand = hands.pop().unwrap();
     num_cards += subhand.cards.len();
     cards_in_hand.extend(subhand.cards.clone());
@@ -575,6 +568,17 @@ mod tests {
             (4u8, Suit::Club),
             (4u8, Suit::Heart),
             (11u8, Suit::Spade),
+        ], vec![1]),
+        three_of_a_kind_loses_to_three_of_a_kind: (Rank::ThreeOfAKind, [
+            (6u8, Suit::Heart),
+            (14u8, Suit::Spade),
+            (14u8, Suit::Diamond),
+            (14u8, Suit::Heart),
+        ], Rank::ThreeOfAKind, [
+            (7u8, Suit::Heart),
+            (14u8, Suit::Spade),
+            (14u8, Suit::Diamond),
+            (14u8, Suit::Heart),
         ], vec![1]),
     }
 }
