@@ -252,7 +252,7 @@ impl Game {
                 if self.next_state == GameState::SeatPlayers
                     || self.next_state >= GameState::RemovePlayers
                 {
-                    self.spectate_user(&username).ok();
+                    self.spectate_user(username).ok();
                     self.spectators.remove(username);
                 } else {
                     // The player is still at the table while the game is ongoing.
