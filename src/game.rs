@@ -1,6 +1,11 @@
 use crate::poker;
 
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use rand::seq::SliceRandom;
+use rand::thread_rng;
+use std::{
+    collections::{BTreeSet, HashMap, HashSet, VecDeque},
+    u16::MAX,
+};
 
 // Don't want too many people waiting to play the game.
 pub const MAX_PLAYERS: usize = 10;
@@ -81,6 +86,20 @@ impl Player {
     }
 }
 
+pub struct Pot {
+    pub size: u16,
+    pub seat_indices: Vec<usize>,
+}
+
+impl Pot {
+    pub fn new() -> Pot {
+        Pot {
+            size: 0,
+            seat_indices: Vec::with_capacity(MAX_PLAYERS),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum GameError {
     NotEnoughPlayers,
@@ -99,8 +118,9 @@ pub struct Game {
     players_to_spectate: BTreeSet<String>,
     users_to_remove: BTreeSet<String>,
     table: [Option<Player>; MAX_PLAYERS],
-    pots: Vec<(u16, Vec<usize>)>,
+    pots: Vec<Pot>,
     num_players: usize,
+    deck_idx: usize,
     small_blind_idx: usize,
     big_blind_idx: usize,
     next_action_idx: usize,
@@ -114,7 +134,6 @@ impl Game {
                 let user = self.users.get(&player.name).unwrap();
                 if user.money < self.big_blind {
                     self.players_to_spectate.insert(player.name.clone());
-                    self.num_players -= 1;
                 }
             }
         }
@@ -127,7 +146,37 @@ impl Game {
         self.num_players
     }
 
-    pub fn collect_blinds(&mut self) {}
+    pub fn collect_blinds(&mut self) {
+        self.pots.clear();
+        self.pots.push(Pot::new());
+        let pot = &mut self.pots[0];
+        for (seat_idx, blind) in [
+            (self.small_blind_idx, self.small_blind),
+            (self.big_blind_idx, self.big_blind),
+        ] {
+            let player = self.table[seat_idx].as_ref().unwrap();
+            let user = self.users.get_mut(&player.name).unwrap();
+            pot.size += blind;
+            user.money -= blind;
+        }
+    }
+
+    pub fn deal(&mut self) -> usize {
+        self.deck.shuffle(&mut thread_rng());
+        self.deck_idx = 0;
+
+        let mut table = (0..MAX_PLAYERS).cycle().skip(self.small_blind_idx);
+        // Deal 2 cards per player, looping over players and dealing them 1 card
+        // at a time.
+        while self.deck_idx < (2 * self.num_players) {
+            let deal_idx = table.find(|&idx| self.table[idx].is_some()).unwrap();
+            let player = self.table[deal_idx].as_mut().unwrap();
+            player.cards.clear();
+            player.cards.push(self.deck[deal_idx]);
+            self.deck_idx += 1;
+        }
+        self.next_action_idx
+    }
 
     pub fn divide_donations(&mut self) {
         let num_users = self.users.len();
@@ -136,6 +185,7 @@ impl Game {
             for (_, user) in self.users.iter_mut() {
                 user.money += donation_per_user;
             }
+            self.donations = 0;
         }
     }
 
@@ -172,6 +222,7 @@ impl Game {
             table: [const { None }; MAX_PLAYERS],
             pots: Vec::with_capacity(MAX_POTS),
             num_players: 0,
+            deck_idx: 0,
             small_blind_idx: 0,
             big_blind_idx: 1,
             next_action_idx: 2,
@@ -233,13 +284,14 @@ impl Game {
         while self.num_players < MAX_PLAYERS && !self.players_to_seat.is_empty() {
             if self.table[i].is_none() {
                 let username = self.players_to_seat.pop_front().unwrap();
-                let user = self.users.get(&username).unwrap();
+                let user = self.users.get_mut(&username).unwrap();
                 if user.money < self.big_blind {
                     self.spectate_user(&username).ok();
-                    continue;
+                } else {
+                    self.table[i] = Some(Player::new(&username));
+                    user.state = UserState::Playing;
+                    self.num_players += 1;
                 }
-                self.table[i] = Some(Player::new(&username));
-                self.num_players += 1;
             }
             i += 1;
         }
@@ -277,5 +329,16 @@ impl Game {
         Ok(self.spectators.len())
     }
 
-    pub fn update_blinds(&mut self) {}
+    pub fn update_blinds(&mut self) {
+        let mut min_money = MAX;
+        for (_, user) in self.users.iter() {
+            if user.money < min_money {
+                min_money = user.money;
+            }
+        }
+        if min_money < MAX && min_money > (2 * self.big_blind) {
+            self.small_blind *= 2;
+            self.big_blind *= 2;
+        }
+    }
 }
