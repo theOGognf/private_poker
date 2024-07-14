@@ -124,7 +124,7 @@ pub enum GameState {
     BootPlayers,
 }
 
-pub struct ActionOptions {
+pub struct ActionData {
     next_state: GameState,
     next_action_idx: Option<usize>,
     board: Vec<poker::Card>,
@@ -230,6 +230,11 @@ impl Game {
         if maybe_user.is_none() {
             return Err(UserError::DoesNotExist);
         }
+        // The player has already been queued for removal. Just wait for
+        // the next removal phase.
+        if self.players_to_remove.contains(username) {
+            return Ok(false);
+        }
         let user = maybe_user.unwrap();
         match user.state {
             // If the user is already playing, we can only remove them
@@ -282,6 +287,11 @@ impl Game {
         let maybe_user = self.users.get_mut(username);
         if maybe_user.is_none() {
             return Err(UserError::DoesNotExist);
+        }
+        // The player has already been queued for spectate. Just wait for
+        // the next spectate phase.
+        if self.players_to_spectate.contains(username) {
+            return Ok(false);
         }
         let user = maybe_user.unwrap();
         match user.state {
@@ -384,7 +394,7 @@ impl Game {
         Ok(self.next_state)
     }
 
-    pub fn deal(&mut self) -> Result<ActionOptions, GameError> {
+    pub fn deal(&mut self) -> Result<ActionData, GameError> {
         if self.next_state != GameState::Deal {
             return Err(GameError::StateTransition);
         }
@@ -401,7 +411,7 @@ impl Game {
             self.deck_idx += 1;
         }
         self.next_state = GameState::TakeAction;
-        Ok(ActionOptions {
+        Ok(ActionData {
             next_state: self.next_state,
             next_action_idx: Some(self.next_action_idx),
             board: Vec::with_capacity(5),
