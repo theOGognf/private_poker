@@ -128,12 +128,14 @@ pub struct Game {
 
 impl Game {
     pub fn boot_players(&mut self) -> usize {
-        for seat in self.table.iter() {
+        for seat in self.table.iter_mut() {
             if seat.is_some() {
-                let player = seat.as_ref().unwrap();
+                let player = seat.as_mut().unwrap();
                 let user = self.users.get(&player.name).unwrap();
                 if user.money < self.big_blind {
                     self.players_to_spectate.insert(player.name.clone());
+                } else {
+                    player.cards.clear();
                 }
             }
         }
@@ -171,7 +173,6 @@ impl Game {
         while self.deck_idx < (2 * self.num_players) {
             let deal_idx = table.find(|&idx| self.table[idx].is_some()).unwrap();
             let player = self.table[deal_idx].as_mut().unwrap();
-            player.cards.clear();
             player.cards.push(self.deck[deal_idx]);
             self.deck_idx += 1;
         }
