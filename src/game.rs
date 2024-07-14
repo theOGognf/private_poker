@@ -74,6 +74,7 @@ pub struct Player {
     pub name: String,
     pub state: PlayerState,
     pub cards: Vec<poker::Card>,
+    pub investment: u16,
 }
 
 impl Player {
@@ -82,11 +83,13 @@ impl Player {
             name: name.to_string(),
             state: PlayerState::Wait,
             cards: Vec::with_capacity(MAX_CARDS),
+            investment: 0,
         }
     }
 }
 
 pub struct Pot {
+    pub call: u16,
     pub size: u16,
     pub seat_indices: Vec<usize>,
 }
@@ -94,6 +97,7 @@ pub struct Pot {
 impl Pot {
     pub fn new() -> Pot {
         Pot {
+            call: 0,
             size: 0,
             seat_indices: Vec::with_capacity(MAX_PLAYERS),
         }
@@ -149,6 +153,33 @@ pub struct Game {
     small_blind_idx: usize,
     big_blind_idx: usize,
     next_action_idx: usize,
+    prev_raise_idx: usize,
+}
+
+/// General game methods.
+impl Game {
+    pub fn new() -> Game {
+        Game {
+            next_state: GameState::SeatPlayers,
+            deck: poker::new_deck(),
+            donations: 0,
+            small_blind: MIN_SMALL_BLIND,
+            big_blind: MIN_BIG_BLIND,
+            users: HashMap::with_capacity(MAX_USERS),
+            spectators: HashSet::with_capacity(MAX_USERS),
+            waitlist: VecDeque::with_capacity(MAX_USERS),
+            table: [const { None }; MAX_PLAYERS],
+            num_players: 0,
+            pots: Vec::with_capacity(MAX_POTS),
+            players_to_remove: BTreeSet::new(),
+            players_to_spectate: BTreeSet::new(),
+            deck_idx: 0,
+            small_blind_idx: 0,
+            big_blind_idx: 1,
+            next_action_idx: 2,
+            prev_raise_idx: 1,
+        }
+    }
 }
 
 /// Methods for managing players.
@@ -272,8 +303,8 @@ impl Game {
             }
             UserState::Waitlisted => {
                 // We can remove the user from the waitlist anytime we want.
-                let player_idx = self.waitlist.iter().position(|u| u == username).unwrap();
-                self.waitlist.remove(player_idx);
+                let waitlist_idx = self.waitlist.iter().position(|u| u == username).unwrap();
+                self.waitlist.remove(waitlist_idx);
             }
         }
         let user = self.users.get_mut(username).unwrap();
@@ -315,12 +346,12 @@ impl Game {
                 if self.next_state == GameState::SeatPlayers
                     || self.next_state >= GameState::RemovePlayers
                 {
-                    let player_idx = self
+                    let seat_idx = self
                         .table
                         .iter()
                         .position(|o| o.as_ref().is_some_and(|p| p.name == username))
                         .unwrap();
-                    self.table[player_idx] = None;
+                    self.table[seat_idx] = None;
                     self.num_players -= 1;
                 } else {
                     self.players_to_spectate.insert(username.to_string());
@@ -331,8 +362,8 @@ impl Game {
             // say that they're spectating.
             UserState::Spectating => return Ok(true),
             UserState::Waitlisted => {
-                let player_idx = self.waitlist.iter().position(|u| u == username).unwrap();
-                self.waitlist.remove(player_idx);
+                let waitlist_idx = self.waitlist.iter().position(|u| u == username).unwrap();
+                self.waitlist.remove(waitlist_idx);
             }
         }
         self.spectators.insert(username.to_string());
@@ -445,6 +476,7 @@ impl Game {
         let mut table = self.table.iter().cycle();
         table.nth(self.big_blind_idx + 1);
         self.big_blind_idx = table.position(|p| p.is_some()).unwrap();
+        self.prev_raise_idx = self.big_blind_idx;
         self.next_action_idx = table.position(|p| p.is_some()).unwrap();
         // Reverse the table search to find the small blind position relative
         // to the big blind position since the small blind must always trail the big
@@ -455,28 +487,6 @@ impl Game {
         self.small_blind_idx = reverse_table.position(|p| p.is_some()).unwrap();
         self.next_state = GameState::CollectBlinds;
         Ok(self.next_state)
-    }
-
-    pub fn new() -> Game {
-        Game {
-            next_state: GameState::SeatPlayers,
-            deck: poker::new_deck(),
-            donations: 0,
-            small_blind: MIN_SMALL_BLIND,
-            big_blind: MIN_BIG_BLIND,
-            users: HashMap::with_capacity(MAX_USERS),
-            spectators: HashSet::with_capacity(MAX_USERS),
-            waitlist: VecDeque::with_capacity(MAX_USERS),
-            table: [const { None }; MAX_PLAYERS],
-            num_players: 0,
-            pots: Vec::with_capacity(MAX_POTS),
-            players_to_remove: BTreeSet::new(),
-            players_to_spectate: BTreeSet::new(),
-            deck_idx: 0,
-            small_blind_idx: 0,
-            big_blind_idx: 1,
-            next_action_idx: 2,
-        }
     }
 
     pub fn update_blinds(&mut self) -> Result<GameState, GameError> {
