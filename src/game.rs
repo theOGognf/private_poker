@@ -599,7 +599,7 @@ impl Game {
         }
 
         // Only up to 4 players can split the pot (only four suits per card value).
-        let mut winnings_per_winner: HashMap<usize, u16> = HashMap::with_capacity(4);
+        let mut money_per_player: HashMap<usize, u16> = HashMap::with_capacity(4);
         let mut winner_indices = poker::argmax(&hands_in_pot);
         let num_winners = winner_indices.len();
         match num_winners {
@@ -607,20 +607,41 @@ impl Game {
             // Give the whole pot to the winner.
             1 => {
                 let winner_idx = winner_indices.pop().unwrap();
-                let seat_idx = seats_in_pot[winner_idx];
-                winnings_per_winner.insert(seat_idx, pot.size);
+                let winner_seat_idx = seats_in_pot[winner_idx];
+                let (_, winner_investment) =
+                    pot.investments.remove_entry(&winner_seat_idx).unwrap();
+                for (seat_idx, investment) in pot.investments.iter() {
+                    if *investment > winner_investment {
+                        let remainder = investment - winner_investment;
+                        money_per_player.insert(*seat_idx, remainder);
+                        pot.size -= remainder;
+                    }
+                }
+                money_per_player.insert(winner_seat_idx, pot.size);
             }
             // Split pot amongst winners.
             _ => {
+                let mut max_winner_investment = u16::MIN;
                 for winner_idx in winner_indices {
-                    let seat_idx = seats_in_pot[winner_idx];
-                    let investment = pot.investments.get(&seat_idx).unwrap();
-                    winnings_per_winner.insert(seat_idx, *investment);
-                    pot.size -= investment;
+                    let winner_seat_idx = seats_in_pot[winner_idx];
+                    let (_, winner_investment) =
+                        pot.investments.remove_entry(&winner_seat_idx).unwrap();
+                    if winner_investment > max_winner_investment {
+                        max_winner_investment = winner_investment;
+                    }
+                    money_per_player.insert(winner_seat_idx, winner_investment);
+                    pot.size -= winner_investment;
+                }
+                for (seat_idx, investment) in pot.investments.iter() {
+                    if *investment > max_winner_investment {
+                        let remainder = investment - max_winner_investment;
+                        money_per_player.insert(*seat_idx, remainder);
+                        pot.size -= remainder;
+                    }
                 }
                 let split = pot.size / num_winners as u16;
-                for (_, winnings) in winnings_per_winner.iter_mut() {
-                    *winnings += split;
+                for (_, money) in money_per_player.iter_mut() {
+                    *money += split;
                 }
             }
         }
@@ -634,7 +655,7 @@ impl Game {
         }
         Ok(ShowdownData {
             next_state: self.next_state,
-            winners: winnings_per_winner,
+            winners: money_per_player,
         })
     }
 
