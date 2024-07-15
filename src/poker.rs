@@ -29,10 +29,10 @@ pub enum Suit {
 impl fmt::Display for Suit {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Suit::Club => write!(f, "♣"),
-            Suit::Spade => write!(f, "♠"),
-            Suit::Diamond => write!(f, "♢"),
-            Suit::Heart => write!(f, "♡"),
+            Suit::Club => write!(f, "♧"),
+            Suit::Spade => write!(f, "♤"),
+            Suit::Diamond => write!(f, "♦"),
+            Suit::Heart => write!(f, "♥"),
             Suit::Wild => write!(f, "*"),
         }
     }

@@ -59,6 +59,13 @@ pub enum Actions {
     Raise,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum SidePotConditions {
+    AllIn,
+    Raise,
+    CallOrReraise,
+}
+
 /// For users that're in a pot.
 pub enum PlayerState {
     // Player is in the pot but is waiting for their move.
@@ -83,6 +90,16 @@ impl Player {
             cards: Vec::with_capacity(MAX_CARDS),
         }
     }
+
+    pub fn reset(&mut self) {
+        self.state = PlayerState::Wait;
+        self.cards.clear();
+    }
+}
+
+pub struct Bet {
+    pub action: Actions,
+    pub amount: u16,
 }
 
 pub struct Pot {
@@ -90,16 +107,42 @@ pub struct Pot {
     pub call: u16,
     // Size is just the sum of all investments.
     pub size: u16,
-    // Map players to their investment in the pot.
-    pub investments: HashMap<String, u16>,
+    // Map seat indices (players) to their investment in the pot.
+    pub investments: HashMap<usize, u16>,
+    // Used to check whether to spawn a side pot from this pot.
+    // Should be `None` if no side pot conditions are met.
+    pub side_pot_state: Option<SidePotConditions>,
 }
 
 impl Pot {
+    pub fn bet(&mut self, seat_idx: usize, bet: Bet) -> bool {
+        if bet.amount > self.call {
+            self.call += bet.amount - self.call;
+            self.size += bet.amount;
+            let investment = self.investments.entry(seat_idx).or_default();
+            *investment += bet.amount;
+        }
+        let mut create_side_pot = false;
+        match (bet.action, self.side_pot_state) {
+            (Actions::AllIn, None) => self.side_pot_state = Some(SidePotConditions::AllIn),
+            (Actions::Raise, Some(SidePotConditions::AllIn)) => {
+                self.side_pot_state = Some(SidePotConditions::Raise)
+            }
+            (Actions::Call | Actions::Raise, Some(SidePotConditions::Raise)) => {
+                self.side_pot_state = Some(SidePotConditions::CallOrReraise);
+                create_side_pot = true;
+            }
+            _ => (),
+        }
+        create_side_pot
+    }
+
     pub fn new() -> Pot {
         Pot {
             call: 0,
             size: 0,
             investments: HashMap::with_capacity(MAX_PLAYERS),
+            side_pot_state: None,
         }
     }
 }
@@ -256,7 +299,14 @@ impl Game {
         if self.users.len() == self.users.capacity() {
             return Err(UserError::CapacityReached);
         } else if self.users.contains_key(username) {
-            return Err(UserError::AlreadyExists);
+            // Check if player already exists but is queued for removal.
+            // This probably means the user disconnected and are trying
+            // to reconnect.
+            if !self.players_to_remove.remove(username) {
+                return Err(UserError::AlreadyExists);
+            } else {
+                return Ok(self.users.len());
+            }
         }
         self.users.insert(username.to_string(), User::new());
         self.spectators.insert(username.to_string());
@@ -425,7 +475,13 @@ impl Game {
         ] {
             let player = self.table[seat_idx].as_ref().unwrap();
             let user = self.users.get_mut(&player.name).unwrap();
-            pot.size += blind;
+            pot.bet(
+                seat_idx,
+                Bet {
+                    action: Actions::Raise,
+                    amount: blind,
+                },
+            );
             user.money -= blind;
         }
         self.next_state = GameState::Deal;
@@ -526,20 +582,23 @@ impl Game {
         })
     }
 
-    pub fn showdown(&mut self) -> Result<ShowdownData, GameError> {
-        if self.next_state != GameState::Showdown {
-            return Err(GameError::StateTransition);
-        }
-        let pot = self.pots.pop().unwrap();
-        // Get all players in the pot that haven't folded and compare their
-        // hands to one another. Get the winning indices and distribute
-        // the pot accordingly. If there's a tie, winners are given their
-        // original investments and then split the remainder. If there's
-        // a sole winer, then everyone else can only lose as much as the winner
-        // had invested. This prevents folks that went all-in but have
-        // much higher money than the winner from losing the extra
-        // money.
-    }
+    // pub fn showdown(&mut self) -> Result<ShowdownData, GameError> {
+    //     if self.next_state != GameState::Showdown {
+    //         return Err(GameError::StateTransition);
+    //     }
+    //     let pot = self.pots.pop().unwrap();
+    //     // Get all players in the pot that haven't folded and compare their
+    //     // hands to one another. Get the winning indices and distribute
+    //     // the pot accordingly. If there's a tie, winners are given their
+    //     // original investments and then split the remainder. If there's
+    //     // a sole winer, then everyone else can only lose as much as the winner
+    //     // had invested. This prevents folks that went all-in, but have
+    //     // much higher money than the winner, from losing the extra
+    //     // money.
+
+    //     // We have to keep doing showdowns so long as there's another pot
+    //     // to determine the winners of.
+    // }
 
     pub fn turn(&mut self) -> Result<ActionData, GameError> {
         if self.next_state != GameState::Turn {
@@ -559,13 +618,13 @@ impl Game {
         if self.next_state != GameState::UpdateBlinds {
             return Err(GameError::StateTransition);
         }
-        let mut min_money = MAX;
+        let mut min_money = u16::MAX;
         for (_, user) in self.users.iter() {
             if user.money < min_money {
                 min_money = user.money;
             }
         }
-        if min_money < MAX && min_money > (2 * self.big_blind) {
+        if min_money < u16::MAX && min_money > (2 * self.big_blind) {
             self.small_blind *= 2;
             self.big_blind *= 2;
         }
