@@ -51,7 +51,7 @@ impl User {
     }
 }
 
-pub enum Actions {
+pub enum Action {
     AllIn,
     Call,
     Check,
@@ -60,7 +60,7 @@ pub enum Actions {
 }
 
 #[derive(Clone, Copy, PartialEq)]
-pub enum SidePotConditions {
+pub enum SidePotState {
     AllIn,
     Raise,
     CallOrReraise,
@@ -98,7 +98,7 @@ impl Player {
 }
 
 pub struct Bet {
-    pub action: Actions,
+    pub action: Action,
     pub amount: u16,
 }
 
@@ -111,7 +111,7 @@ pub struct Pot {
     pub investments: HashMap<usize, u16>,
     // Used to check whether to spawn a side pot from this pot.
     // Should be `None` if no side pot conditions are met.
-    pub side_pot_state: Option<SidePotConditions>,
+    pub side_pot_state: Option<SidePotState>,
 }
 
 impl Pot {
@@ -124,12 +124,12 @@ impl Pot {
         }
         let mut create_side_pot = false;
         match (bet.action, self.side_pot_state) {
-            (Actions::AllIn, None) => self.side_pot_state = Some(SidePotConditions::AllIn),
-            (Actions::Raise, Some(SidePotConditions::AllIn)) => {
-                self.side_pot_state = Some(SidePotConditions::Raise)
+            (Action::AllIn, None) => self.side_pot_state = Some(SidePotState::AllIn),
+            (Action::Raise, Some(SidePotState::AllIn)) => {
+                self.side_pot_state = Some(SidePotState::Raise)
             }
-            (Actions::Call | Actions::Raise, Some(SidePotConditions::Raise)) => {
-                self.side_pot_state = Some(SidePotConditions::CallOrReraise);
+            (Action::Call | Action::Raise, Some(SidePotState::Raise)) => {
+                self.side_pot_state = Some(SidePotState::CallOrReraise);
                 create_side_pot = true;
             }
             _ => (),
@@ -478,7 +478,7 @@ impl Game {
             pot.bet(
                 seat_idx,
                 Bet {
-                    action: Actions::Raise,
+                    action: Action::Raise,
                     amount: blind,
                 },
             );
@@ -597,7 +597,7 @@ impl Game {
     //     // money.
 
     //     // We have to keep doing showdowns so long as there's another pot
-    //     // to determine the winners of.
+    //     // where the winners need to be determined.
     // }
 
     pub fn turn(&mut self) -> Result<ActionData, GameError> {
