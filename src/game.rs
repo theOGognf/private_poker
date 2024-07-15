@@ -8,11 +8,11 @@ use std::{
 };
 
 // Don't want too many people waiting to play the game.
-pub const MAX_PLAYERS: usize = 10;
+pub const MAX_PLAYERS: usize = 12;
 pub const MAX_USERS: usize = MAX_PLAYERS + 6;
 // In the wild case that players have monotonically increasing
 // stacks and they all go all-in.
-pub const MAX_POTS: usize = MAX_PLAYERS - 1;
+pub const MAX_POTS: usize = MAX_PLAYERS / 3;
 // Technically a hand can only consist of 7 cards, but we treat aces
 // as two separate cards (1u8 and 14u8).
 pub const MAX_CARDS: usize = 11;
@@ -67,6 +67,7 @@ pub enum SidePotState {
 }
 
 /// For users that're in a pot.
+#[derive(PartialEq)]
 pub enum PlayerState {
     // Player is in the pot but is waiting for their move.
     Wait,
@@ -178,8 +179,8 @@ pub struct ActionData {
 
 pub struct ShowdownData {
     next_state: GameState,
-    // Map usernames to winnings.
-    winners: HashMap<String, u16>,
+    // Map seat indices to winnings.
+    winners: HashMap<usize, u16>,
 }
 
 /// A poker game.
@@ -334,13 +335,9 @@ impl Game {
             // players that've been queued for removal, and 2) we can alter the
             // game state just fine before the next seat players state.
             UserState::Playing => {
-                // Need to remove the player from the spectate set just in
-                // case they wanted to spectate, but then changed their
-                // mind and just want to leave.
-                //
-                // We don't need to remove the player from the removal set because
-                // the only time this method can be used and the removal set is
-                // affected is when the user gets queued for removal.
+                // Need to remove the player from other queues just in
+                // case they changed their mind.
+                self.players_to_remove.remove(username);
                 self.players_to_spectate.remove(username);
                 if self.next_state == GameState::SeatPlayers
                     || self.next_state >= GameState::RemovePlayers
@@ -392,14 +389,10 @@ impl Game {
             // players that've been queued for removal, and 2) we can alter the
             // game state just fine before the next seat players state.
             UserState::Playing => {
-                // Need to remove the player from the removal set just in
-                // case they wanted to leave, but then changed their
-                // mind and just want to spectate.
-                //
-                // We don't need to remove the player from the spectate set because
-                // the only time this method can be used and the spectate set is
-                // affected is when the user gets queued for spectating.
+                // Need to remove the player from other queues just in
+                // case they changed their mind.
                 self.players_to_remove.remove(username);
+                self.players_to_spectate.remove(username);
                 if self.next_state == GameState::SeatPlayers
                     || self.next_state >= GameState::RemovePlayers
                 {
@@ -582,23 +575,68 @@ impl Game {
         })
     }
 
-    // pub fn showdown(&mut self) -> Result<ShowdownData, GameError> {
-    //     if self.next_state != GameState::Showdown {
-    //         return Err(GameError::StateTransition);
-    //     }
-    //     let pot = self.pots.pop().unwrap();
-    //     // Get all players in the pot that haven't folded and compare their
-    //     // hands to one another. Get the winning indices and distribute
-    //     // the pot accordingly. If there's a tie, winners are given their
-    //     // original investments and then split the remainder. If there's
-    //     // a sole winer, then everyone else can only lose as much as the winner
-    //     // had invested. This prevents folks that went all-in, but have
-    //     // much higher money than the winner, from losing the extra
-    //     // money.
+    /// Get all players in the pot that haven't folded and compare their
+    /// hands to one another. Get the winning indices and distribute
+    /// the pot accordingly. If there's a tie, winners are given their
+    /// original investments and then split the remainder. If there's
+    /// a sole winner, then everyone else can only lose as much as the winner
+    /// had invested. This prevents folks that went all-in, but have
+    /// much higher money than the winner, from losing the extra
+    /// money.
+    pub fn showdown(&mut self) -> Result<ShowdownData, GameError> {
+        if self.next_state != GameState::Showdown {
+            return Err(GameError::StateTransition);
+        }
+        let mut pot = self.pots.pop().unwrap();
+        let mut seats_in_pot = Vec::with_capacity(MAX_PLAYERS);
+        let mut hands_in_pot = Vec::with_capacity(MAX_PLAYERS);
+        for (seat_idx, _) in pot.investments.iter() {
+            let player = self.table[*seat_idx].as_ref().unwrap();
+            if player.state != PlayerState::Fold {
+                seats_in_pot.push(*seat_idx);
+                hands_in_pot.push(poker::eval(&player.cards));
+            }
+        }
 
-    //     // We have to keep doing showdowns so long as there's another pot
-    //     // where the winners need to be determined.
-    // }
+        // Only up to 4 players can split the pot (only four suits per card value).
+        let mut winnings_per_winner: HashMap<usize, u16> = HashMap::with_capacity(4);
+        let mut winner_indices = poker::argmax(&hands_in_pot);
+        let num_winners = winner_indices.len();
+        match num_winners {
+            0 => unreachable!("There is always at least one player in the pot."),
+            // Give the whole pot to the winner.
+            1 => {
+                let winner_idx = winner_indices.pop().unwrap();
+                let seat_idx = seats_in_pot[winner_idx];
+                winnings_per_winner.insert(seat_idx, pot.size);
+            }
+            // Split pot amongst winners.
+            _ => {
+                for winner_idx in winner_indices {
+                    let seat_idx = seats_in_pot[winner_idx];
+                    let investment = pot.investments.get(&seat_idx).unwrap();
+                    winnings_per_winner.insert(seat_idx, *investment);
+                    pot.size -= investment;
+                }
+                let split = pot.size / num_winners as u16;
+                for (_, winnings) in winnings_per_winner.iter_mut() {
+                    *winnings += split;
+                }
+            }
+        }
+
+        // We have to keep doing showdowns so long as there's another pot
+        // where the winners need to be determined.
+        if !self.pots.is_empty() {
+            self.next_state = GameState::Showdown;
+        } else {
+            self.next_state = GameState::RemovePlayers;
+        }
+        Ok(ShowdownData {
+            next_state: self.next_state,
+            winners: winnings_per_winner,
+        })
+    }
 
     pub fn turn(&mut self) -> Result<ActionData, GameError> {
         if self.next_state != GameState::Turn {
