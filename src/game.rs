@@ -51,23 +51,22 @@ impl User {
     }
 }
 
+pub enum Actions {
+    AllIn,
+    Raise,
+    Call,
+    Fold,
+    Check
+}
+
 /// For users that're in a pot.
 pub enum PlayerState {
-    // Player is in the pot but is waiting for their first move
-    // or for another pot to conclude.
+    // Player is in the pot but is waiting for their move.
     Wait,
-    // Player reveals their cards after the pot is over.
-    Show,
-    // Player stakes all their stack.
+    // Player put in their whole stack.
     AllIn,
-    // Player ups their stake.
-    Raise,
-    // Player matches the last bet.
-    Call,
-    // Player forfeits their stake.
+    // Player forfeited their stack for the pot.
     Fold,
-    // Player wants to see the next card.
-    Check,
 }
 
 pub struct Player {
@@ -92,6 +91,7 @@ pub struct Pot {
     pub call: u16,
     pub size: u16,
     pub seat_indices: Vec<usize>,
+    pub betting_round: Vec<Actions>,
 }
 
 impl Pot {
@@ -100,6 +100,7 @@ impl Pot {
             call: 0,
             size: 0,
             seat_indices: Vec::with_capacity(MAX_PLAYERS),
+            betting_round: Vec:: with_capacity(MAX_PLAYERS),
         }
     }
 }
@@ -134,6 +135,11 @@ pub struct ActionData {
     board: Vec<poker::Card>,
 }
 
+pub struct PotEvaluationData {
+    next_state: GameState,
+    winners: Vec<usize>,
+}
+
 /// A poker game.
 pub struct Game {
     next_state: GameState,
@@ -145,6 +151,7 @@ pub struct Game {
     spectators: HashSet<String>,
     waitlist: VecDeque<String>,
     table: [Option<Player>; MAX_PLAYERS],
+    board: Vec<poker::Card>,
     num_players: usize,
     pots: Vec<Pot>,
     players_to_spectate: BTreeSet<String>,
@@ -169,6 +176,7 @@ impl Game {
             spectators: HashSet::with_capacity(MAX_USERS),
             waitlist: VecDeque::with_capacity(MAX_USERS),
             table: [const { None }; MAX_PLAYERS],
+            board: Vec::with_capacity(5),
             num_players: 0,
             pots: Vec::with_capacity(MAX_POTS),
             players_to_remove: BTreeSet::new(),
@@ -179,6 +187,26 @@ impl Game {
             next_action_idx: 2,
             prev_raise_idx: 1,
         }
+    }
+}
+
+/// Methods for managing the pots.
+impl Game {
+    pub fn eval_pot(&mut self) -> Result<PotEvaluationData, GameError> {
+        if self.next_state != GameState::EvalPot {
+            return Err(GameError::StateTransition);
+        }
+        let pot = self.pots.last().unwrap();
+
+
+    }
+
+    pub fn award_pot(&mut self) -> Result<PotWinningsData, GameError> {
+        if self.next_state != GameState::EvalPot {
+            return Err(GameError::StateTransition);
+        }
+        let pot = self.pots.last().unwrap();
+
     }
 }
 
@@ -438,14 +466,14 @@ impl Game {
         while self.deck_idx < (2 * self.num_players) {
             let deal_idx = table.find(|&idx| self.table[idx].is_some()).unwrap();
             let player = self.table[deal_idx].as_mut().unwrap();
-            player.cards.push(self.deck[deal_idx]);
+            player.cards.push(self.deck[self.deck_idx]);
             self.deck_idx += 1;
         }
         self.next_state = GameState::TakeAction;
         Ok(ActionData {
             next_state: self.next_state,
             next_action_idx: Some(self.next_action_idx),
-            board: Vec::with_capacity(5),
+            board: self.board.clone(),
         })
     }
 
@@ -463,6 +491,22 @@ impl Game {
         }
         self.next_state = GameState::UpdateBlinds;
         Ok(self.next_state)
+    }
+
+    pub fn flop(&mut self) -> Result<ActionData, GameError> {
+        if self.next_state != GameState::Flop {
+            return Err(GameError::StateTransition);
+        }
+        for _ in 0..3 {
+            self.board.push(self.deck[self.deck_idx]);
+            self.deck_idx += 1;
+        }
+        self.next_state = GameState::TakeAction;
+        Ok(ActionData {
+            next_state: self.next_state,
+            next_action_idx: Some(self.next_action_idx),
+            board: self.board.clone(),
+        })
     }
 
     pub fn move_button(&mut self) -> Result<GameState, GameError> {
@@ -487,6 +531,34 @@ impl Game {
         self.small_blind_idx = reverse_table.position(|p| p.is_some()).unwrap();
         self.next_state = GameState::CollectBlinds;
         Ok(self.next_state)
+    }
+
+    pub fn river(&mut self) -> Result<ActionData, GameError> {
+        if self.next_state != GameState::River {
+            return Err(GameError::StateTransition);
+        }
+        self.board.push(self.deck[self.deck_idx]);
+        self.deck_idx += 1;
+        self.next_state = GameState::TakeAction;
+        Ok(ActionData {
+            next_state: self.next_state,
+            next_action_idx: Some(self.next_action_idx),
+            board: self.board.clone(),
+        })
+    }
+
+    pub fn turn(&mut self) -> Result<ActionData, GameError> {
+        if self.next_state != GameState::Turn {
+            return Err(GameError::StateTransition);
+        }
+        self.board.push(self.deck[self.deck_idx]);
+        self.deck_idx += 1;
+        self.next_state = GameState::TakeAction;
+        Ok(ActionData {
+            next_state: self.next_state,
+            next_action_idx: Some(self.next_action_idx),
+            board: self.board.clone(),
+        })
     }
 
     pub fn update_blinds(&mut self) -> Result<GameState, GameError> {

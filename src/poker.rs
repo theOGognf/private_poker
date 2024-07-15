@@ -1,3 +1,4 @@
+use std::fmt;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 
@@ -23,6 +24,18 @@ pub enum Suit {
     // Wild is used to initialize a deck of cards.
     // Might be a good choice for a joker's suit.
     Wild,
+}
+
+impl fmt::Display for Suit {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+       match self {
+            Suit::Club => write!(f, "♣"),
+           Suit::Spade => write!(f, "♠"),
+           Suit::Diamond => write!(f, "♢"),
+           Suit::Heart => write!(f, "♡"),
+           Suit::Wild => write!(f, "*"),
+       }
+    }
 }
 
 /// A card is a tuple of a uInt8 value (ace=1u8 ... ace=14u8)
