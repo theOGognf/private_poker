@@ -1,6 +1,6 @@
-use std::fmt;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
+use std::fmt;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Rank {
@@ -28,13 +28,13 @@ pub enum Suit {
 
 impl fmt::Display for Suit {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-       match self {
+        match self {
             Suit::Club => write!(f, "♣"),
-           Suit::Spade => write!(f, "♠"),
-           Suit::Diamond => write!(f, "♢"),
-           Suit::Heart => write!(f, "♡"),
-           Suit::Wild => write!(f, "*"),
-       }
+            Suit::Spade => write!(f, "♠"),
+            Suit::Diamond => write!(f, "♢"),
+            Suit::Heart => write!(f, "♡"),
+            Suit::Wild => write!(f, "*"),
+        }
     }
 }
 

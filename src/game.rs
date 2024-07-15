@@ -53,10 +53,10 @@ impl User {
 
 pub enum Actions {
     AllIn,
-    Raise,
     Call,
+    Check,
     Fold,
-    Check
+    Raise,
 }
 
 /// For users that're in a pot.
@@ -73,7 +73,6 @@ pub struct Player {
     pub name: String,
     pub state: PlayerState,
     pub cards: Vec<poker::Card>,
-    pub investment: u16,
 }
 
 impl Player {
@@ -82,16 +81,17 @@ impl Player {
             name: name.to_string(),
             state: PlayerState::Wait,
             cards: Vec::with_capacity(MAX_CARDS),
-            investment: 0,
         }
     }
 }
 
 pub struct Pot {
+    // The total investment for each player to remain in the hand.
     pub call: u16,
+    // Size is just the sum of all investments.
     pub size: u16,
-    pub seat_indices: Vec<usize>,
-    pub betting_round: Vec<Actions>,
+    // Map players to their investment in the pot.
+    pub investments: HashMap<String, u16>,
 }
 
 impl Pot {
@@ -99,8 +99,7 @@ impl Pot {
         Pot {
             call: 0,
             size: 0,
-            seat_indices: Vec::with_capacity(MAX_PLAYERS),
-            betting_round: Vec:: with_capacity(MAX_PLAYERS),
+            investments: HashMap::with_capacity(MAX_PLAYERS),
         }
     }
 }
@@ -121,8 +120,7 @@ pub enum GameState {
     Flop,
     Turn,
     River,
-    EvalPot,
-    AwardPot,
+    Showdown,
     RemovePlayers,
     DivideDonations,
     UpdateBlinds,
@@ -135,9 +133,10 @@ pub struct ActionData {
     board: Vec<poker::Card>,
 }
 
-pub struct PotEvaluationData {
+pub struct ShowdownData {
     next_state: GameState,
-    winners: Vec<usize>,
+    // Map usernames to winnings.
+    winners: HashMap<String, u16>,
 }
 
 /// A poker game.
@@ -187,26 +186,6 @@ impl Game {
             next_action_idx: 2,
             prev_raise_idx: 1,
         }
-    }
-}
-
-/// Methods for managing the pots.
-impl Game {
-    pub fn eval_pot(&mut self) -> Result<PotEvaluationData, GameError> {
-        if self.next_state != GameState::EvalPot {
-            return Err(GameError::StateTransition);
-        }
-        let pot = self.pots.last().unwrap();
-
-
-    }
-
-    pub fn award_pot(&mut self) -> Result<PotWinningsData, GameError> {
-        if self.next_state != GameState::EvalPot {
-            return Err(GameError::StateTransition);
-        }
-        let pot = self.pots.last().unwrap();
-
     }
 }
 
@@ -545,6 +524,21 @@ impl Game {
             next_action_idx: Some(self.next_action_idx),
             board: self.board.clone(),
         })
+    }
+
+    pub fn showdown(&mut self) -> Result<ShowdownData, GameError> {
+        if self.next_state != GameState::Showdown {
+            return Err(GameError::StateTransition);
+        }
+        let pot = self.pots.pop().unwrap();
+        // Get all players in the pot that haven't folded and compare their
+        // hands to one another. Get the winning indices and distribute
+        // the pot accordingly. If there's a tie, winners are given their
+        // original investments and then split the remainder. If there's
+        // a sole winer, then everyone else can only lose as much as the winner
+        // had invested. This prevents folks that went all-in but have
+        // much higher money than the winner from losing the extra
+        // money.
     }
 
     pub fn turn(&mut self) -> Result<ActionData, GameError> {
