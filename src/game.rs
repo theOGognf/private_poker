@@ -4,7 +4,6 @@ use rand::seq::SliceRandom;
 use rand::thread_rng;
 use std::{
     collections::{BTreeSet, HashMap, HashSet, VecDeque},
-    u16::MAX,
 };
 
 // Don't want too many people waiting to play the game.
@@ -51,6 +50,7 @@ impl User {
     }
 }
 
+#[derive(Clone, Copy)]
 pub enum Action {
     AllIn,
     Call,
@@ -116,26 +116,39 @@ pub struct Pot {
 }
 
 impl Pot {
-    pub fn bet(&mut self, seat_idx: usize, bet: Bet) -> bool {
-        if bet.amount > self.call {
-            self.call += bet.amount - self.call;
-            self.size += bet.amount;
-            let investment = self.investments.entry(seat_idx).or_default();
-            *investment += bet.amount;
-        }
-        let mut create_side_pot = false;
+    pub fn bet(&mut self, seat_idx: usize, bet: Bet) -> Option<Pot> {
+        let mut call_increase = bet.amount - self.call;
+        let mut size_increase = bet.amount;
+        let mut side_pot = None;
         match (bet.action, self.side_pot_state) {
             (Action::AllIn, None) => self.side_pot_state = Some(SidePotState::AllIn),
             (Action::Raise, Some(SidePotState::AllIn)) => {
-                self.side_pot_state = Some(SidePotState::Raise)
-            }
-            (Action::Call | Action::Raise, Some(SidePotState::Raise)) => {
-                self.side_pot_state = Some(SidePotState::CallOrReraise);
-                create_side_pot = true;
+                self.side_pot_state = Some(SidePotState::Raise);
+                side_pot = Some(Pot::new());
+                side_pot.as_mut().unwrap().bet(
+                    seat_idx,
+                    Bet {
+                        action: bet.action,
+                        amount: call_increase,
+                    },
+                );
+                call_increase = 0;
+                size_increase = self.call;
             }
             _ => (),
         }
-        create_side_pot
+        if bet.amount > self.call {
+            self.call += call_increase;
+            self.size += size_increase;
+            let investment = self.investments.entry(seat_idx).or_default();
+            *investment += size_increase;
+        }
+        side_pot
+    }
+
+    pub fn get_call_for_player(&mut self, seat_idx: usize) -> u16 {
+        let investment = self.investments.entry(seat_idx).or_default();
+        self.call - *investment
     }
 
     pub fn new() -> Pot {
