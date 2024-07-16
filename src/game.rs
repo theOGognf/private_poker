@@ -2,9 +2,7 @@ use crate::poker;
 
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use std::{
-    collections::{BTreeSet, HashMap, HashSet, VecDeque},
-};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
 // Don't want too many people waiting to play the game.
 pub const MAX_PLAYERS: usize = 12;
@@ -50,7 +48,7 @@ impl User {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub enum Action {
     AllIn,
     Call,
@@ -188,6 +186,7 @@ pub struct ActionData {
     next_state: GameState,
     next_action_idx: Option<usize>,
     board: Vec<poker::Card>,
+    options: HashSet<Action>,
 }
 
 pub struct ShowdownData {
@@ -215,7 +214,7 @@ pub struct Game {
     deck_idx: usize,
     small_blind_idx: usize,
     big_blind_idx: usize,
-    next_action_idx: usize,
+    next_action_idx: Option<usize>,
     prev_raise_idx: usize,
 }
 
@@ -240,7 +239,7 @@ impl Game {
             deck_idx: 0,
             small_blind_idx: 0,
             big_blind_idx: 1,
-            next_action_idx: 2,
+            next_action_idx: Some(2),
             prev_raise_idx: 1,
         }
     }
@@ -513,8 +512,9 @@ impl Game {
         self.next_state = GameState::TakeAction;
         Ok(ActionData {
             next_state: self.next_state,
-            next_action_idx: Some(self.next_action_idx),
+            next_action_idx: self.next_action_idx,
             board: self.board.clone(),
+            options: HashSet::from_iter([Action::AllIn, Action::Call, Action::Fold, Action::Raise]),
         })
     }
 
@@ -562,7 +562,7 @@ impl Game {
         table.nth(self.big_blind_idx + 1);
         self.big_blind_idx = table.position(|p| p.is_some()).unwrap();
         self.prev_raise_idx = self.big_blind_idx;
-        self.next_action_idx = table.position(|p| p.is_some()).unwrap();
+        self.next_action_idx = Some(table.position(|p| p.is_some()).unwrap());
         // Reverse the table search to find the small blind position relative
         // to the big blind position since the small blind must always trail the big
         // blind.
@@ -632,8 +632,13 @@ impl Game {
                 }
                 money_per_player.insert(winner_seat_idx, pot.size);
             }
-            // Split pot amongst winners.
+            // Split pot amongst multiple winners.
             _ => {
+                // Need to first give each winner's original investment back
+                // to them so the pot can be split fairly. The max winner
+                // investment is tracked to handle the edge case of some
+                // whale going all-in with no one else to call them.
+                let mut money_per_winner: HashMap<usize, u16> = HashMap::with_capacity(4);
                 let mut max_winner_investment = u16::MIN;
                 for winner_idx in winner_indices {
                     let winner_seat_idx = seats_in_pot[winner_idx];
@@ -642,7 +647,7 @@ impl Game {
                     if winner_investment > max_winner_investment {
                         max_winner_investment = winner_investment;
                     }
-                    money_per_player.insert(winner_seat_idx, winner_investment);
+                    money_per_winner.insert(winner_seat_idx, winner_investment);
                     pot.size -= winner_investment;
                 }
                 for (seat_idx, investment) in pot.investments.iter() {
@@ -652,9 +657,10 @@ impl Game {
                         pot.size -= remainder;
                     }
                 }
+                // Finally, split the pot amongst all the winners.
                 let split = pot.size / num_winners as u16;
-                for (_, money) in money_per_player.iter_mut() {
-                    *money += split;
+                for (winner_seat_idx, money) in money_per_winner.drain() {
+                    money_per_player.insert(winner_seat_idx, money + split);
                 }
             }
         }
