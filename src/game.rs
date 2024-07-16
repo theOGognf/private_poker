@@ -146,7 +146,7 @@ impl Pot {
                 new_call = new_investment;
             }
             Action::AllIn => {
-                if bet.amount > self.call {
+                if new_investment > self.call {
                     new_call = new_investment;
                 }
             }
@@ -169,19 +169,25 @@ impl Pot {
                     side_pot = Some(Pot::new());
                     side_pot.as_mut().unwrap().bet(
                         seat_idx,
+                        // The original bet for the new pot is always considered
+                        // a raise.
                         &Bet {
-                            action: bet.action,
+                            action: Action::Raise,
+                            // The call excess starts the call for the new pot.
                             amount: new_investment - self.call,
                         },
                     );
+                    // The call for the pot hasn't change.
                     new_call = self.call;
-                    pot_increase = self.call;
+                    // The pot increase is just the pot's call remaining for the player.
+                    pot_increase = self.call - *investment;
+                    // The player has now matched the call for the pot.
                     new_investment = self.call;
                 }
             }
             _ => (),
         }
-        // Finally, update the call, pot, and the player's investment
+        // Finally, update the call, the pot, and the player's investment
         // in the current pot.
         self.call = new_call;
         self.size += pot_increase;
