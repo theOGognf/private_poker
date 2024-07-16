@@ -19,6 +19,15 @@ pub const MIN_BIG_BLIND: u16 = STARTING_STACK / 20;
 pub const MIN_SMALL_BLIND: u16 = MIN_BIG_BLIND / 2;
 
 #[derive(Debug)]
+pub enum GameError {
+    // A bet is considered a game error because it should never be
+    // possible for a player to place an invalid bet.
+    InvalidBet,
+    NotEnoughPlayers,
+    StateTransition,
+}
+
+#[derive(Debug)]
 pub enum UserError {
     AlreadyExists,
     AlreadyPlaying,
@@ -104,7 +113,7 @@ pub struct Bet {
 pub struct Pot {
     // The total investment for each player to remain in the hand.
     pub call: u16,
-    // Size is just the sum of all investments.
+    // Size is just the sum of all investments in the pot.
     pub size: u16,
     // Map seat indices (players) to their investment in the pot.
     pub investments: HashMap<usize, u16>,
@@ -114,39 +123,77 @@ pub struct Pot {
 }
 
 impl Pot {
-    pub fn bet(&mut self, seat_idx: usize, bet: Bet) -> Option<Pot> {
-        let mut call_increase = bet.amount - self.call;
-        let mut size_increase = bet.amount;
+    pub fn bet(&mut self, seat_idx: usize, bet: &Bet) -> Result<Option<Pot>, GameError> {
+        let investment = self.investments.entry(seat_idx).or_default();
+        let mut new_call = self.call;
+        let mut new_investment = *investment + bet.amount;
+        let mut pot_increase = bet.amount;
+        // A call must match the call amount. A raise must match the min raise
+        // amount. There's an exception for all-ins; an all-in is treated as
+        // a call without affecting the call if the all-in is less than the
+        // previous call. An all-in is treated as a raise if the all-in is
+        // greater than the call.
+        match bet.action {
+            Action::Call => {
+                if new_investment != self.call {
+                    return Err(GameError::InvalidBet);
+                }
+            }
+            Action::Raise => {
+                if new_investment < (2 * self.call) {
+                    return Err(GameError::InvalidBet);
+                }
+                new_call = new_investment;
+            }
+            Action::AllIn => {
+                if bet.amount > self.call {
+                    new_call = new_investment;
+                }
+            }
+            // A bet must call, raise, or all-in.
+            _ => return Err(GameError::InvalidBet),
+        }
+        // Need to check whether a side pot is created. A side pot is created
+        // when a player all-ins and then a subsequent player raises (an all-in
+        // that is more than the previous all-in is considered a raise).
+        // In this case, the call for the current pot remains unchanged, and
+        // the pot is only increased by the original call. The excess
+        // is used to start a new pot.
         let mut side_pot = None;
         match (bet.action, self.side_pot_state) {
             (Action::AllIn, None) => self.side_pot_state = Some(SidePotState::AllIn),
-            (Action::Raise, Some(SidePotState::AllIn)) => {
-                self.side_pot_state = Some(SidePotState::Raise);
-                side_pot = Some(Pot::new());
-                side_pot.as_mut().unwrap().bet(
-                    seat_idx,
-                    Bet {
-                        action: bet.action,
-                        amount: call_increase,
-                    },
-                );
-                call_increase = 0;
-                size_increase = self.call;
+            (Action::AllIn, Some(SidePotState::AllIn))
+            | (Action::Raise, Some(SidePotState::AllIn)) => {
+                if new_investment > self.call {
+                    self.side_pot_state = Some(SidePotState::Raise);
+                    side_pot = Some(Pot::new());
+                    side_pot.as_mut().unwrap().bet(
+                        seat_idx,
+                        &Bet {
+                            action: bet.action,
+                            amount: new_investment - self.call,
+                        },
+                    );
+                    new_call = self.call;
+                    pot_increase = self.call;
+                    new_investment = self.call;
+                }
             }
             _ => (),
         }
-        if bet.amount > self.call {
-            self.call += call_increase;
-            self.size += size_increase;
-            let investment = self.investments.entry(seat_idx).or_default();
-            *investment += size_increase;
-        }
-        side_pot
+        // Finally, update the call, pot, and the player's investment
+        // in the current pot.
+        self.call = new_call;
+        self.size += pot_increase;
+        *investment = new_investment;
+        Ok(side_pot)
     }
 
-    pub fn get_call_for_player(&mut self, seat_idx: usize) -> u16 {
-        let investment = self.investments.entry(seat_idx).or_default();
-        self.call - *investment
+    /// Return the amount the player must bet to remain in the hand, and
+    /// the minimum the player must raise by for it to be considered
+    /// a valid raise.
+    pub fn get_next_call(&mut self, seat_idx: usize) -> u16 {
+        self.call - *self.investments.entry(seat_idx).or_default()
     }
 
     pub fn new() -> Pot {
@@ -157,12 +204,6 @@ impl Pot {
             side_pot_state: None,
         }
     }
-}
-
-#[derive(Debug)]
-pub enum GameError {
-    NotEnoughPlayers,
-    StateTransition,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd)]
@@ -192,7 +233,7 @@ pub struct ActionData {
 pub struct ShowdownData {
     next_state: GameState,
     // Map seat indices to winnings.
-    winners: HashMap<usize, u16>,
+    money_per_player: HashMap<usize, u16>,
 }
 
 /// A poker game.
@@ -258,7 +299,7 @@ impl Game {
                 if user.money < self.big_blind {
                     self.players_to_spectate.insert(player.name.clone());
                 } else {
-                    player.cards.clear();
+                    player.reset();
                 }
             }
         }
@@ -349,7 +390,6 @@ impl Game {
             UserState::Playing => {
                 // Need to remove the player from other queues just in
                 // case they changed their mind.
-                self.players_to_remove.remove(username);
                 self.players_to_spectate.remove(username);
                 if self.next_state == GameState::SeatPlayers
                     || self.next_state >= GameState::RemovePlayers
@@ -404,7 +444,6 @@ impl Game {
                 // Need to remove the player from other queues just in
                 // case they changed their mind.
                 self.players_to_remove.remove(username);
-                self.players_to_spectate.remove(username);
                 if self.next_state == GameState::SeatPlayers
                     || self.next_state >= GameState::RemovePlayers
                 {
@@ -482,7 +521,7 @@ impl Game {
             let user = self.users.get_mut(&player.name).unwrap();
             pot.bet(
                 seat_idx,
-                Bet {
+                &Bet {
                     action: Action::Raise,
                     amount: blind,
                 },
@@ -545,7 +584,7 @@ impl Game {
         self.next_state = GameState::TakeAction;
         Ok(ActionData {
             next_state: self.next_state,
-            next_action_idx: Some(self.next_action_idx),
+            next_action_idx: self.next_action_idx,
             board: self.board.clone(),
         })
     }
@@ -583,7 +622,7 @@ impl Game {
         self.next_state = GameState::TakeAction;
         Ok(ActionData {
             next_state: self.next_state,
-            next_action_idx: Some(self.next_action_idx),
+            next_action_idx: self.next_action_idx,
             board: self.board.clone(),
         })
     }
@@ -593,7 +632,7 @@ impl Game {
     /// the pot accordingly. If there's a tie, winners are given their
     /// original investments and then split the remainder. If there's
     /// a sole winner, then everyone else can only lose as much as the winner
-    /// had invested. This prevents folks that went all-in, but have
+    /// has invested. This prevents folks that went all-in, but have
     /// much higher money than the winner, from losing the extra
     /// money.
     pub fn showdown(&mut self) -> Result<ShowdownData, GameError> {
@@ -604,9 +643,10 @@ impl Game {
         let mut seats_in_pot = Vec::with_capacity(MAX_PLAYERS);
         let mut hands_in_pot = Vec::with_capacity(MAX_PLAYERS);
         for (seat_idx, _) in pot.investments.iter() {
-            let player = self.table[*seat_idx].as_ref().unwrap();
+            let player = self.table[*seat_idx].as_mut().unwrap();
             if player.state != PlayerState::Fold {
                 seats_in_pot.push(*seat_idx);
+                player.cards.sort_unstable();
                 hands_in_pot.push(poker::eval(&player.cards));
             }
         }
@@ -657,7 +697,7 @@ impl Game {
                         pot.size -= remainder;
                     }
                 }
-                // Finally, split the pot amongst all the winners.
+                // Finally, split the remaining pot amongst all the winners.
                 let split = pot.size / num_winners as u16;
                 for (winner_seat_idx, money) in money_per_winner.drain() {
                     money_per_player.insert(winner_seat_idx, money + split);
@@ -674,7 +714,7 @@ impl Game {
         }
         Ok(ShowdownData {
             next_state: self.next_state,
-            winners: money_per_player,
+            money_per_player,
         })
     }
 
@@ -687,7 +727,7 @@ impl Game {
         self.next_state = GameState::TakeAction;
         Ok(ActionData {
             next_state: self.next_state,
-            next_action_idx: Some(self.next_action_idx),
+            next_action_idx: self.next_action_idx,
             board: self.board.clone(),
         })
     }
