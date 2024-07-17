@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Rank {
+enum Rank {
     HighCard,
     OnePair,
     TwoPair,

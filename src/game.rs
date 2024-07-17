@@ -5,21 +5,21 @@ use rand::thread_rng;
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
 // Don't want too many people waiting to play the game.
-pub const MAX_PLAYERS: usize = 12;
-pub const MAX_USERS: usize = MAX_PLAYERS + 6;
+const MAX_PLAYERS: usize = 12;
+const MAX_USERS: usize = MAX_PLAYERS + 6;
 // In the wild case that players have monotonically increasing
 // stacks and they all go all-in.
-pub const MAX_POTS: usize = MAX_PLAYERS / 3;
+const MAX_POTS: usize = MAX_PLAYERS / 3;
 // Technically a hand can only consist of 7 cards, but we treat aces
 // as two separate cards (1u8 and 14u8).
-pub const MAX_CARDS: usize = 11;
+const MAX_CARDS: usize = 11;
 // A player will be cleaned if they fold 20 rounds with the big blind.
-pub const STARTING_STACK: u16 = 200;
-pub const MIN_BIG_BLIND: u16 = STARTING_STACK / 20;
-pub const MIN_SMALL_BLIND: u16 = MIN_BIG_BLIND / 2;
+const STARTING_STACK: u16 = 200;
+const MIN_BIG_BLIND: u16 = STARTING_STACK / 20;
+const MIN_SMALL_BLIND: u16 = MIN_BIG_BLIND / 2;
 
 #[derive(Debug)]
-pub enum GameError {
+enum GameError {
     // A bet is considered a game error because it should never be
     // possible for a player to place an invalid bet.
     InvalidBet,
@@ -28,7 +28,7 @@ pub enum GameError {
 }
 
 #[derive(Debug)]
-pub enum UserError {
+enum UserError {
     AlreadyExists,
     AlreadyPlaying,
     CapacityReached,
@@ -37,19 +37,19 @@ pub enum UserError {
 }
 
 #[derive(Eq, PartialEq)]
-pub enum UserState {
+enum UserState {
     Spectating,
     Playing,
     Waitlisted,
 }
 
-pub struct User {
+struct User {
     money: u16,
     state: UserState,
 }
 
 impl User {
-    pub fn new() -> User {
+    fn new() -> User {
         User {
             money: STARTING_STACK,
             state: UserState::Spectating,
@@ -58,7 +58,7 @@ impl User {
 }
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
-pub enum Action {
+enum Action {
     AllIn,
     Call,
     Check,
@@ -67,7 +67,7 @@ pub enum Action {
 }
 
 #[derive(Clone, Copy, PartialEq)]
-pub enum SidePotState {
+enum SidePotState {
     AllIn,
     Raise,
     CallOrReraise,
@@ -75,7 +75,7 @@ pub enum SidePotState {
 
 /// For users that're in a pot.
 #[derive(PartialEq)]
-pub enum PlayerState {
+enum PlayerState {
     // Player is in the pot but is waiting for their move.
     Wait,
     // Player put in their whole stack.
@@ -84,14 +84,14 @@ pub enum PlayerState {
     Fold,
 }
 
-pub struct Player {
-    pub name: String,
-    pub state: PlayerState,
-    pub cards: Vec<poker::Card>,
+struct Player {
+    name: String,
+    state: PlayerState,
+    cards: Vec<poker::Card>,
 }
 
 impl Player {
-    pub fn new(name: &str) -> Player {
+    fn new(name: &str) -> Player {
         Player {
             name: name.to_string(),
             state: PlayerState::Wait,
@@ -99,31 +99,31 @@ impl Player {
         }
     }
 
-    pub fn reset(&mut self) {
+    fn reset(&mut self) {
         self.state = PlayerState::Wait;
         self.cards.clear();
     }
 }
 
-pub struct Bet {
-    pub action: Action,
-    pub amount: u16,
+struct Bet {
+    action: Action,
+    amount: u16,
 }
 
-pub struct Pot {
+struct Pot {
     // The total investment for each player to remain in the hand.
-    pub call: u16,
+    call: u16,
     // Size is just the sum of all investments in the pot.
-    pub size: u16,
+    size: u16,
     // Map seat indices (players) to their investment in the pot.
-    pub investments: HashMap<usize, u16>,
+    investments: HashMap<usize, u16>,
     // Used to check whether to spawn a side pot from this pot.
     // Should be `None` if no side pot conditions are met.
-    pub side_pot_state: Option<SidePotState>,
+    side_pot_state: Option<SidePotState>,
 }
 
 impl Pot {
-    pub fn bet(&mut self, seat_idx: usize, bet: &Bet) -> Result<Option<Pot>, GameError> {
+    fn bet(&mut self, seat_idx: usize, bet: &Bet) -> Result<Option<Pot>, GameError> {
         let investment = self.investments.entry(seat_idx).or_default();
         let mut new_call = self.call;
         let mut new_investment = *investment + bet.amount;
@@ -198,11 +198,11 @@ impl Pot {
     /// Return the amount the player must bet to remain in the hand, and
     /// the minimum the player must raise by for it to be considered
     /// a valid raise.
-    pub fn get_next_call(&mut self, seat_idx: usize) -> u16 {
+    fn get_next_call(&mut self, seat_idx: usize) -> u16 {
         self.call - *self.investments.entry(seat_idx).or_default()
     }
 
-    pub fn new() -> Pot {
+    fn new() -> Pot {
         Pot {
             call: 0,
             size: 0,
@@ -213,7 +213,7 @@ impl Pot {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd)]
-pub enum GameState {
+enum GameState {
     SeatPlayers,
     MoveButton,
     CollectBlinds,
@@ -229,21 +229,21 @@ pub enum GameState {
     BootPlayers,
 }
 
-pub struct ActionData {
+struct ActionData {
     next_state: GameState,
     next_action_idx: Option<usize>,
     board: Vec<poker::Card>,
     options: HashSet<Action>,
 }
 
-pub struct ShowdownData {
+struct ShowdownData {
     next_state: GameState,
     // Map seat indices to winnings.
     money_per_player: HashMap<usize, u16>,
 }
 
 /// A poker game.
-pub struct Game {
+struct Game {
     next_state: GameState,
     deck: [poker::Card; 52],
     donations: u16,
@@ -287,7 +287,7 @@ impl Game {
         num_players_remaining == 1 || num_all_in >= num_players_remaining - 1
     }
 
-    pub fn new() -> Game {
+    fn new() -> Game {
         Game {
             next_state: GameState::SeatPlayers,
             deck: poker::new_deck(),
@@ -314,7 +314,7 @@ impl Game {
 
 /// Methods for managing players.
 impl Game {
-    pub fn boot_players(&mut self) -> Result<GameState, GameError> {
+    fn boot_players(&mut self) -> Result<GameState, GameError> {
         if self.next_state != GameState::BootPlayers {
             return Err(GameError::StateTransition);
         }
@@ -337,7 +337,7 @@ impl Game {
         Ok(self.next_state)
     }
 
-    pub fn remove_players(&mut self) -> Result<GameState, GameError> {
+    fn remove_players(&mut self) -> Result<GameState, GameError> {
         if self.next_state != GameState::RemovePlayers {
             return Err(GameError::StateTransition);
         }
@@ -349,7 +349,7 @@ impl Game {
         Ok(self.next_state)
     }
 
-    pub fn seat_players(&mut self) -> Result<GameState, GameError> {
+    fn seat_players(&mut self) -> Result<GameState, GameError> {
         if self.next_state != GameState::SeatPlayers {
             return Err(GameError::StateTransition);
         }
@@ -375,7 +375,7 @@ impl Game {
 
 /// Methods for managing users.
 impl Game {
-    pub fn new_user(&mut self, username: &str) -> Result<usize, UserError> {
+    fn new_user(&mut self, username: &str) -> Result<usize, UserError> {
         if self.users.len() == self.users.capacity() {
             return Err(UserError::CapacityReached);
         } else if self.users.contains_key(username) {
@@ -393,7 +393,7 @@ impl Game {
         Ok(self.users.len())
     }
 
-    pub fn remove_user(&mut self, username: &str) -> Result<bool, UserError> {
+    fn remove_user(&mut self, username: &str) -> Result<bool, UserError> {
         let maybe_user = self.users.get_mut(username);
         if maybe_user.is_none() {
             return Err(UserError::DoesNotExist);
@@ -446,7 +446,7 @@ impl Game {
         Ok(true)
     }
 
-    pub fn spectate_user(&mut self, username: &str) -> Result<bool, UserError> {
+    fn spectate_user(&mut self, username: &str) -> Result<bool, UserError> {
         let maybe_user = self.users.get_mut(username);
         if maybe_user.is_none() {
             return Err(UserError::DoesNotExist);
@@ -498,7 +498,7 @@ impl Game {
         Ok(true)
     }
 
-    pub fn waitlist_user(&mut self, username: &str) -> Result<bool, UserError> {
+    fn waitlist_user(&mut self, username: &str) -> Result<bool, UserError> {
         let maybe_user = self.users.get_mut(username);
         if maybe_user.is_none() {
             return Err(UserError::DoesNotExist);
@@ -536,7 +536,7 @@ impl Game {
     ///
     /// This method can only be called immediately after `move_button`
     /// and immediately before `deal`.
-    pub fn collect_blinds(&mut self) -> Result<GameState, GameError> {
+    fn collect_blinds(&mut self) -> Result<GameState, GameError> {
         if self.next_state != GameState::CollectBlinds {
             return Err(GameError::StateTransition);
         }
@@ -566,7 +566,7 @@ impl Game {
     ///
     /// This method can only be called immediately after `collect_blinds`
     /// and immediately before `act`.
-    pub fn deal(&mut self) -> Result<ActionData, GameError> {
+    fn deal(&mut self) -> Result<ActionData, GameError> {
         if self.next_state != GameState::Deal {
             return Err(GameError::StateTransition);
         }
@@ -602,7 +602,7 @@ impl Game {
     ///
     /// This method can only be called immediately after `remove_players`
     /// and immediately before `update_blinds`.
-    pub fn divide_donations(&mut self) -> Result<GameState, GameError> {
+    fn divide_donations(&mut self) -> Result<GameState, GameError> {
         if self.next_state != GameState::DivideDonations {
             return Err(GameError::StateTransition);
         }
@@ -628,7 +628,7 @@ impl Game {
     ///
     /// This method can only be called if `act` sets the game state to the
     /// appropriate value.
-    pub fn flop(&mut self) -> Result<ActionData, GameError> {
+    fn flop(&mut self) -> Result<ActionData, GameError> {
         if self.next_state != GameState::Flop {
             return Err(GameError::StateTransition);
         }
@@ -657,7 +657,7 @@ impl Game {
     ///
     /// This method can only be called after `seat_players` and before
     /// `collect_blinds`.
-    pub fn move_button(&mut self) -> Result<GameState, GameError> {
+    fn move_button(&mut self) -> Result<GameState, GameError> {
         if self.next_state != GameState::MoveButton {
             return Err(GameError::StateTransition);
         }
@@ -691,7 +691,7 @@ impl Game {
     ///
     /// This method can only be called if `act` sets the game state to the
     /// appropriate value.
-    pub fn river(&mut self) -> Result<ActionData, GameError> {
+    fn river(&mut self) -> Result<ActionData, GameError> {
         if self.next_state != GameState::River {
             return Err(GameError::StateTransition);
         }
@@ -723,7 +723,7 @@ impl Game {
     ///
     /// This method can only be called if `act` sets the game state to the
     /// appropriate value.
-    pub fn showdown(&mut self) -> Result<ShowdownData, GameError> {
+    fn showdown(&mut self) -> Result<ShowdownData, GameError> {
         if self.next_state != GameState::Showdown {
             return Err(GameError::StateTransition);
         }
@@ -816,7 +816,7 @@ impl Game {
     ///
     /// This method can only be called if `act` sets the game state to the
     /// appropriate value.
-    pub fn turn(&mut self) -> Result<ActionData, GameError> {
+    fn turn(&mut self) -> Result<ActionData, GameError> {
         if self.next_state != GameState::Turn {
             return Err(GameError::StateTransition);
         }
@@ -850,7 +850,7 @@ impl Game {
     /// a chance that a player that doesn't have enough for the big blind
     /// will still qualify if they get enough from donations. If they don't,
     /// they'll be removed when `remove_players` is called.
-    pub fn update_blinds(&mut self) -> Result<GameState, GameError> {
+    fn update_blinds(&mut self) -> Result<GameState, GameError> {
         if self.next_state != GameState::UpdateBlinds {
             return Err(GameError::StateTransition);
         }
@@ -868,3 +868,6 @@ impl Game {
         Ok(self.next_state)
     }
 }
+
+#[cfg(test)]
+mod tests {}
