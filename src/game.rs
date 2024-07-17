@@ -2,7 +2,10 @@ use crate::poker;
 
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::{
+    collections::{BTreeSet, HashMap, HashSet, VecDeque},
+    option,
+};
 
 // Don't want too many people waiting to play the game.
 pub const MAX_PLAYERS: usize = 12;
@@ -176,7 +179,7 @@ impl Pot {
                             // The call excess starts the call for the new pot.
                             amount: new_investment - self.call,
                         },
-                    );
+                    )?;
                     // The call for the pot hasn't change.
                     new_call = self.call;
                     // The pot increase is just the pot's call remaining for the player.
@@ -267,6 +270,26 @@ pub struct Game {
 
 /// General game methods.
 impl Game {
+    fn is_ready_for_showdown(&self) -> bool {
+        let mut num_players_remaining: usize = 0;
+        let mut num_all_in: usize = 0;
+        for seat in self.table.iter() {
+            if seat.is_some() {
+                let player = seat.as_ref().unwrap();
+                match player.state {
+                    PlayerState::AllIn => {
+                        num_players_remaining += 1;
+                        num_all_in += 1;
+                    }
+                    PlayerState::Wait => num_players_remaining += 1,
+                    _ => (),
+                }
+            }
+        }
+        // If no one else is left to make a move, then proceed to the showdown.
+        num_players_remaining == 1 || num_all_in >= num_players_remaining - 1
+    }
+
     pub fn new() -> Game {
         Game {
             next_state: GameState::SeatPlayers,
@@ -512,6 +535,10 @@ impl Game {
 
 /// Methods for managing poker gameplay.
 impl Game {
+    /// Collect blinds.
+    ///
+    /// This method can only be called immediately after `move_button`
+    /// and immediately before `deal`.
     pub fn collect_blinds(&mut self) -> Result<GameState, GameError> {
         if self.next_state != GameState::CollectBlinds {
             return Err(GameError::StateTransition);
@@ -531,13 +558,17 @@ impl Game {
                     action: Action::Raise,
                     amount: blind,
                 },
-            );
+            )?;
             user.money -= blind;
         }
         self.next_state = GameState::Deal;
         Ok(self.next_state)
     }
 
+    /// Shuffle the game's deck and deal 2 cards to each player.
+    ///
+    /// This method can only be called immediately after `collect_blinds`
+    /// and immediately before `act`.
     pub fn deal(&mut self) -> Result<ActionData, GameError> {
         if self.next_state != GameState::Deal {
             return Err(GameError::StateTransition);
@@ -563,6 +594,17 @@ impl Game {
         })
     }
 
+    /// Empty the community donations pot and split it equally amongst
+    /// all users. The community donations pot is filled with money from
+    /// users that left the game. Redistributing the money back to remaining
+    /// users helps keep games going. It especially helps to continue
+    /// gameplay if a user aggregates most of the money and then leaves.
+    /// Rather than taking their money with them, their money is distributed
+    /// to all the poor folks so they can keep playing and don't have to
+    /// create a new game.
+    ///
+    /// This method can only be called immediately after `remove_players`
+    /// and immediately before `update_blinds`.
     pub fn divide_donations(&mut self) -> Result<GameState, GameError> {
         if self.next_state != GameState::DivideDonations {
             return Err(GameError::StateTransition);
@@ -579,6 +621,16 @@ impl Game {
         Ok(self.next_state)
     }
 
+    /// Put the first 3 cards on the board. This method could set the game state
+    /// to be the turn or for players to take more actions. Set the next game
+    /// state to the turn if one of the following are true:
+    ///
+    ///   - there's already a winner (all but one person folded)
+    ///   - everyone is ready to see the river (all the remaining players are
+    ///     all-in, or all but one are all-in)
+    ///
+    /// This method can only be called if `act` sets the game state to the
+    /// appropriate value.
     pub fn flop(&mut self) -> Result<ActionData, GameError> {
         if self.next_state != GameState::Flop {
             return Err(GameError::StateTransition);
@@ -587,14 +639,27 @@ impl Game {
             self.board.push(self.deck[self.deck_idx]);
             self.deck_idx += 1;
         }
-        self.next_state = GameState::TakeAction;
+        let mut options = HashSet::new();
+        if self.is_ready_for_showdown() {
+            self.next_state = GameState::Turn;
+        } else {
+            self.next_state = GameState::TakeAction;
+            options.extend([Action::AllIn, Action::Check, Action::Fold, Action::Raise])
+        }
         Ok(ActionData {
             next_state: self.next_state,
             next_action_idx: self.next_action_idx,
             board: self.board.clone(),
+            options,
         })
     }
 
+    /// Move the blind and next action indices, preparing the next game
+    /// by determining who will be paying blinds and who will be making
+    /// the first action.
+    ///
+    /// This method can only be called after `seat_players` and before
+    /// `collect_blinds`.
     pub fn move_button(&mut self) -> Result<GameState, GameError> {
         if self.next_state != GameState::MoveButton {
             return Err(GameError::StateTransition);
@@ -619,28 +684,48 @@ impl Game {
         Ok(self.next_state)
     }
 
+    /// Put another card on the board. This method could set the game state
+    /// to be the showdown or for players to take more actions. Set the next game
+    /// state to the showdown if one of the following are true:
+    ///
+    ///   - there's already a winner (all but one person folded)
+    ///   - everyone is ready to see the river (all the remaining players are
+    ///     all-in, or all but one are all-in)
+    ///
+    /// This method can only be called if `act` sets the game state to the
+    /// appropriate value.
     pub fn river(&mut self) -> Result<ActionData, GameError> {
         if self.next_state != GameState::River {
             return Err(GameError::StateTransition);
         }
         self.board.push(self.deck[self.deck_idx]);
         self.deck_idx += 1;
-        self.next_state = GameState::TakeAction;
+        let mut options = HashSet::new();
+        if self.is_ready_for_showdown() {
+            self.next_state = GameState::Showdown;
+        } else {
+            self.next_state = GameState::TakeAction;
+            options.extend([Action::AllIn, Action::Check, Action::Fold, Action::Raise])
+        }
         Ok(ActionData {
             next_state: self.next_state,
             next_action_idx: self.next_action_idx,
             board: self.board.clone(),
+            options,
         })
     }
 
     /// Get all players in the pot that haven't folded and compare their
     /// hands to one another. Get the winning indices and distribute
     /// the pot accordingly. If there's a tie, winners are given their
-    /// original investments and then split the remainder. If there's
-    /// a sole winner, then everyone else can only lose as much as the winner
-    /// has invested. This prevents folks that went all-in, but have
-    /// much higher money than the winner, from losing the extra
-    /// money.
+    /// original investments and then split the remainder. Everyone
+    /// can only lose as much as they had originally invested or as much
+    /// as a winner had invested, whichever is lower. This prevents folks
+    /// that went all-in, but have much more money than the winner, from
+    /// losing the extra money.
+    ///
+    /// This method can only be called if `act` sets the game state to the
+    /// appropriate value.
     pub fn showdown(&mut self) -> Result<ShowdownData, GameError> {
         if self.next_state != GameState::Showdown {
             return Err(GameError::StateTransition);
@@ -669,10 +754,10 @@ impl Game {
                 let winner_seat_idx = seats_in_pot[winner_idx];
                 let (_, winner_investment) =
                     pot.investments.remove_entry(&winner_seat_idx).unwrap();
-                for (seat_idx, investment) in pot.investments.iter() {
-                    if *investment > winner_investment {
+                for (seat_idx, investment) in pot.investments {
+                    if investment > winner_investment {
                         let remainder = investment - winner_investment;
-                        money_per_player.insert(*seat_idx, remainder);
+                        money_per_player.insert(seat_idx, remainder);
                         pot.size -= remainder;
                     }
                 }
@@ -696,16 +781,16 @@ impl Game {
                     money_per_winner.insert(winner_seat_idx, winner_investment);
                     pot.size -= winner_investment;
                 }
-                for (seat_idx, investment) in pot.investments.iter() {
-                    if *investment > max_winner_investment {
+                for (seat_idx, investment) in pot.investments {
+                    if investment > max_winner_investment {
                         let remainder = investment - max_winner_investment;
-                        money_per_player.insert(*seat_idx, remainder);
+                        money_per_player.insert(seat_idx, remainder);
                         pot.size -= remainder;
                     }
                 }
                 // Finally, split the remaining pot amongst all the winners.
                 let split = pot.size / num_winners as u16;
-                for (winner_seat_idx, money) in money_per_winner.drain() {
+                for (winner_seat_idx, money) in money_per_winner {
                     money_per_player.insert(winner_seat_idx, money + split);
                 }
             }
@@ -724,20 +809,50 @@ impl Game {
         })
     }
 
+    /// Put another card on the board. This method could set the game state
+    /// to be the river or for players to take more actions. Set the next game
+    /// state to the river if one of the following are true:
+    ///
+    ///   - there's already a winner (all but one person folded)
+    ///   - everyone is ready to see the river (all the remaining players are
+    ///     all-in, or all but one are all-in)
+    ///
+    /// This method can only be called if `act` sets the game state to the
+    /// appropriate value.
     pub fn turn(&mut self) -> Result<ActionData, GameError> {
         if self.next_state != GameState::Turn {
             return Err(GameError::StateTransition);
         }
         self.board.push(self.deck[self.deck_idx]);
         self.deck_idx += 1;
-        self.next_state = GameState::TakeAction;
+        let mut options = HashSet::new();
+        if self.is_ready_for_showdown() {
+            self.next_state = GameState::River;
+        } else {
+            self.next_state = GameState::TakeAction;
+            options.extend([Action::AllIn, Action::Check, Action::Fold, Action::Raise])
+        }
         Ok(ActionData {
             next_state: self.next_state,
             next_action_idx: self.next_action_idx,
             board: self.board.clone(),
+            options,
         })
     }
 
+    /// Update the blinds, checking if the minimum stack size for all users
+    /// is larger than twice the blind. If it is, blinds are doubled. This
+    /// helps progress the game, increasing the investment each player must
+    /// make in each hand. This prevents longer games where a handful of
+    /// players have large stacks and can afford to fold many times without
+    /// any action.
+    ///
+    /// This method must be called after `divide_donations`, but before
+    /// `remove_players`. `divide_donations` will divide the donations
+    /// from users that left the server amongst all remaining users. There's
+    /// a chance that a player that doesn't have enough for the big blind
+    /// will still qualify if they get enough from donations. If they don't,
+    /// they'll be removed when `remove_players` is called.
     pub fn update_blinds(&mut self) -> Result<GameState, GameError> {
         if self.next_state != GameState::UpdateBlinds {
             return Err(GameError::StateTransition);
