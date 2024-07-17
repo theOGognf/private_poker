@@ -27,7 +27,7 @@ enum GameError {
     StateTransition,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 enum UserError {
     AlreadyExists,
     AlreadyPlaying,
@@ -36,11 +36,11 @@ enum UserError {
     InsufficientFunds,
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 enum UserState {
     Spectating,
     Playing,
-    Waitlisted,
+    Waiting,
 }
 
 struct User {
@@ -376,7 +376,7 @@ impl Game {
 /// Methods for managing users.
 impl Game {
     fn new_user(&mut self, username: &str) -> Result<usize, UserError> {
-        if self.users.len() == self.users.capacity() {
+        if self.users.len() == MAX_USERS {
             return Err(UserError::CapacityReached);
         } else if self.users.contains_key(username) {
             // Check if player already exists but is queued for removal.
@@ -433,7 +433,7 @@ impl Game {
             UserState::Spectating => {
                 self.spectators.remove(username);
             }
-            UserState::Waitlisted => {
+            UserState::Waiting => {
                 // We can remove the user from the waitlist anytime we want.
                 let waitlist_idx = self.waitlist.iter().position(|u| u == username).unwrap();
                 self.waitlist.remove(waitlist_idx);
@@ -488,7 +488,7 @@ impl Game {
             // The user is already spectating, so we can just quietly
             // say that they're spectating.
             UserState::Spectating => return Ok(true),
-            UserState::Waitlisted => {
+            UserState::Waiting => {
                 let waitlist_idx = self.waitlist.iter().position(|u| u == username).unwrap();
                 self.waitlist.remove(waitlist_idx);
             }
@@ -520,12 +520,12 @@ impl Game {
                 }
                 self.spectators.remove(username);
                 self.waitlist.push_back(username.to_string());
-                user.state = UserState::Waitlisted;
+                user.state = UserState::Waiting;
                 Ok(true)
             }
             // The user is already waitlisted, so we can just quietly
             // say that they're waitlisted.
-            UserState::Waitlisted => Ok(true),
+            UserState::Waiting => Ok(true),
         }
     }
 }
@@ -870,4 +870,87 @@ impl Game {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use crate::game::{UserError, UserState, MAX_USERS};
+
+    use super::Game;
+
+    #[test]
+    fn manipulate_user_in_lobby() {
+        let mut game = Game::new();
+        let username = "ognf";
+
+        // Add new user, make sure they exist and are spectating.
+        game.new_user(&username).ok();
+        assert!(game.users.contains_key(username));
+        assert!(game.spectators.contains(username));
+        assert_eq!(
+            game.users.get(username).unwrap().state,
+            UserState::Spectating
+        );
+
+        // Make sure we can't add another user of the same name.
+        assert_eq!(
+            game.new_user(&username).err(),
+            Some(UserError::AlreadyExists)
+        );
+
+        // Try some user state transitions.
+        // Waitlisting.
+        game.waitlist_user(username).ok();
+        assert!(game.waitlist.contains(&username.to_string()));
+        assert_eq!(game.users.get(username).unwrap().state, UserState::Waiting);
+
+        // Back to spectating.
+        game.spectate_user(username).ok();
+        assert!(game.spectators.contains(username));
+        assert_eq!(
+            game.users.get(username).unwrap().state,
+            UserState::Spectating
+        );
+
+        // Remove them.
+        game.remove_user(username).ok();
+        assert!(!game.users.contains_key(username));
+        assert!(!game.spectators.contains(username));
+
+        // Try to do stuff when they don't exist.
+        assert_eq!(
+            game.remove_user(username).err(),
+            Some(UserError::DoesNotExist)
+        );
+        assert_eq!(
+            game.waitlist_user(username).err(),
+            Some(UserError::DoesNotExist)
+        );
+        assert_eq!(
+            game.spectate_user(username).err(),
+            Some(UserError::DoesNotExist)
+        );
+
+        // Add them again.
+        game.new_user(&username).ok();
+        assert!(game.users.contains_key(username));
+        assert!(game.spectators.contains(username));
+
+        // Waitlist them again.
+        game.waitlist_user(username).ok();
+        assert!(game.waitlist.contains(&username.to_string()));
+        assert_eq!(game.users.get(username).unwrap().state, UserState::Waiting);
+
+        // Remove them again.
+        game.remove_user(username).ok();
+        assert!(!game.users.contains_key(username));
+        assert!(!game.waitlist.contains(&username.to_string()));
+
+        // Finally, add a bunch of users until capacity is reached.
+        for i in 0..MAX_USERS {
+            game.new_user(&i.to_string()).ok();
+        }
+        // The game should now be full.
+        assert_eq!(
+            game.new_user(&username).err(),
+            Some(UserError::CapacityReached)
+        );
+    }
+}
