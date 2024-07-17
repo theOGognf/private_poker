@@ -2,10 +2,7 @@ use crate::poker;
 
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use std::{
-    collections::{BTreeSet, HashMap, HashSet, VecDeque},
-    option,
-};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
 // Don't want too many people waiting to play the game.
 pub const MAX_PLAYERS: usize = 12;
