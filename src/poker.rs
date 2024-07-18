@@ -119,8 +119,8 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
         // Keep a count of cards for each suit. If the suit count
         // reaches a flush, it's also checked for a straight
         // for the straight flush potential.
-        values_per_suit.entry(*suit).or_default().push(*value);
-        let values_in_suit = values_per_suit.get(suit).unwrap();
+        let values_in_suit = values_per_suit.entry(*suit).or_default();
+        values_in_suit.push(*value);
 
         // Since aces appear in the cards twice, we need to make sure
         // they aren't counted twice for the flush. To get around this,
@@ -177,9 +177,14 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
             };
             // We don't need to push the straight into the heap if something
             // better was already found.
-            let max_hand = hands.peek();
-            if max_hand.is_none() || *max_hand.unwrap() < straight_subhand {
-                hands.push(straight_subhand);
+            let best_subhand = hands.peek();
+            match best_subhand {
+                None => hands.push(straight_subhand),
+                Some(subhand) => {
+                    if *subhand < straight_subhand {
+                        hands.push(straight_subhand);
+                    }
+                }
             }
         }
 
@@ -204,15 +209,14 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                     rank: Rank::OnePair,
                     cards: vec![*value; 2],
                 };
-                let subhand = subhands_per_rank.entry(Rank::OnePair).or_default();
-                subhand.insert(one_pair_subhand);
+                let one_pairs = subhands_per_rank.entry(Rank::OnePair).or_default();
+                one_pairs.insert(one_pair_subhand);
 
                 // Check if a pair also occurs, then both pairs
                 // make a two pair.
-                if subhand.len() >= 2 {
-                    let one_pairs = subhands_per_rank.get(&Rank::OnePair).unwrap();
+                if let Some(next_best_one_pair) = one_pairs.iter().nth_back(1) {
                     let mut two_pair_cards = vec![*value; 2];
-                    two_pair_cards.extend(one_pairs.iter().nth_back(1).unwrap().cards.clone());
+                    two_pair_cards.extend(next_best_one_pair.cards.clone());
                     let two_pair_subhand = SubHand {
                         rank: Rank::TwoPair,
                         cards: two_pair_cards,
@@ -225,24 +229,20 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
 
                 // Check if a three of a kind also occurs, then the pair
                 // and three of a kind make a full house.
-                let three_of_a_kinds = subhands_per_rank.get(&Rank::ThreeOfAKind);
-                if three_of_a_kinds.is_some_and(|s| s.len() == 1) {
-                    let mut full_house_cards = three_of_a_kinds
-                        .unwrap()
-                        .iter()
-                        .next()
-                        .unwrap()
-                        .cards
-                        .clone();
-                    full_house_cards.extend(vec![*value; 2]);
-                    let full_house_subhand = SubHand {
-                        rank: Rank::FullHouse,
-                        cards: full_house_cards,
-                    };
-                    subhands_per_rank
-                        .entry(Rank::FullHouse)
-                        .or_default()
-                        .insert(full_house_subhand);
+                if let Some(three_of_a_kinds) = subhands_per_rank.get(&Rank::ThreeOfAKind) {
+                    if let Some(best_three_of_a_kind) = three_of_a_kinds.iter().next() {
+                        let mut full_house_cards = best_three_of_a_kind.cards.clone();
+                        full_house_cards.extend(vec![*value; 2]);
+                        let full_house_subhand = SubHand {
+                            rank: Rank::FullHouse,
+                            cards: full_house_cards,
+                        };
+
+                        subhands_per_rank
+                            .entry(Rank::FullHouse)
+                            .or_default()
+                            .insert(full_house_subhand);
+                    }
                 }
             }
 
@@ -266,42 +266,36 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
 
                 // Check if a pair also occurs, then the three of a kind
                 // and the pair make a full house.
-                let one_pairs = subhands_per_rank.get(&Rank::OnePair);
-                if one_pairs.is_some_and(|s| !s.is_empty()) {
-                    let mut full_house_cards = vec![*value; 3];
-                    full_house_cards
-                        .extend(one_pairs.unwrap().iter().next_back().unwrap().cards.clone());
-                    let full_house_subhand = SubHand {
-                        rank: Rank::FullHouse,
-                        cards: full_house_cards,
-                    };
-                    subhands_per_rank
-                        .entry(Rank::FullHouse)
-                        .or_default()
-                        .insert(full_house_subhand);
+                if let Some(one_pairs) = subhands_per_rank.get(&Rank::OnePair) {
+                    if let Some(best_one_pair) = one_pairs.iter().next_back() {
+                        let mut full_house_cards = vec![*value; 3];
+                        full_house_cards.extend(best_one_pair.cards.clone());
+                        let full_house_subhand = SubHand {
+                            rank: Rank::FullHouse,
+                            cards: full_house_cards,
+                        };
+                        subhands_per_rank
+                            .entry(Rank::FullHouse)
+                            .or_default()
+                            .insert(full_house_subhand);
+                    }
                 }
 
                 // Check if another three of a kind occurs, then both three
                 // of a kinds make a full house.
-                let three_of_a_kinds = subhands_per_rank.get(&Rank::ThreeOfAKind);
-                if three_of_a_kinds.is_some_and(|s| s.len() == 2) {
-                    let other_three_of_a_kind_cards = three_of_a_kinds
-                        .unwrap()
-                        .iter()
-                        .nth_back(1)
-                        .unwrap()
-                        .cards
-                        .clone();
-                    let mut full_house_cards = vec![*value; 3];
-                    full_house_cards.extend(vec![other_three_of_a_kind_cards[0]; 2]);
-                    let full_house_subhand = SubHand {
-                        rank: Rank::FullHouse,
-                        cards: full_house_cards,
-                    };
-                    subhands_per_rank
-                        .entry(Rank::FullHouse)
-                        .or_default()
-                        .insert(full_house_subhand);
+                if let Some(three_of_a_kinds) = subhands_per_rank.get(&Rank::ThreeOfAKind) {
+                    if let Some(next_best_three_of_a_kind) = three_of_a_kinds.iter().nth_back(1) {
+                        let mut full_house_cards = vec![*value; 3];
+                        full_house_cards.extend(vec![next_best_three_of_a_kind.cards[0]; 2]);
+                        let full_house_subhand = SubHand {
+                            rank: Rank::FullHouse,
+                            cards: full_house_cards,
+                        };
+                        subhands_per_rank
+                            .entry(Rank::FullHouse)
+                            .or_default()
+                            .insert(full_house_subhand);
+                    }
                 }
             }
 
@@ -335,11 +329,13 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
     // Move subhands according to rank to the temporary hands heap.
     // Can only keep the best subhand for each except for high cards.
     // There can be up to 5 high cards in the final hand.
-    while hands.is_empty()
-        || (hands.peek().unwrap().rank < Rank::Straight && !subhands_per_rank.is_empty())
-    {
-        let (rank, subhands) = &mut subhands_per_rank.pop_last().unwrap();
-        if *rank == Rank::HighCard {
+    while let Some((rank, mut subhands)) = subhands_per_rank.pop_last() {
+        if let Some(best_subhand) = hands.peek() {
+            if best_subhand.rank >= Rank::Straight {
+                break;
+            }
+        }
+        if rank == Rank::HighCard {
             while let Some(best_subhand) = subhands.pop_last() {
                 hands.push(best_subhand);
             }
@@ -354,19 +350,18 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
     let mut cards_in_hand: HashSet<u8> = HashSet::with_capacity(5);
     let mut num_cards: usize = 0;
     let mut hand: Vec<SubHand> = Vec::with_capacity(5);
-
-    // Manually do the first iteration to fill the hand with the
-    // best subhand first.
-    let subhand = hands.pop().unwrap();
-    num_cards += subhand.cards.len();
-    cards_in_hand.extend(subhand.cards.clone());
-    hand.push(subhand);
-    while !hands.is_empty() && hand[0].rank < Rank::Straight && num_cards < 5 {
-        let subhand = hands.pop().unwrap();
-        if subhand.rank == Rank::HighCard && !cards_in_hand.contains(&subhand.cards[0]) {
-            cards_in_hand.insert(subhand.cards[0]);
-            num_cards += 1;
+    while let Some(subhand) = hands.pop() {
+        if hand.is_empty()
+            || (subhand.rank == Rank::HighCard && !cards_in_hand.contains(&subhand.cards[0]))
+        {
+            num_cards += subhand.cards.len();
+            cards_in_hand.extend(subhand.cards.clone());
             hand.push(subhand);
+        }
+        if let Some(best_subhand) = hand.first() {
+            if best_subhand.rank >= Rank::Straight || num_cards >= 5 {
+                break;
+            }
         }
     }
     hand
