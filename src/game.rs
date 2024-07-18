@@ -24,7 +24,6 @@ enum GameError {
     // possible for a player to place an invalid bet.
     InvalidBet,
     NotEnoughPlayers,
-    StateTransition,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -314,10 +313,9 @@ impl Game {
 
 /// Methods for managing players.
 impl Game {
-    fn boot_players(&mut self) -> Result<GameState, GameError> {
-        if self.next_state != GameState::BootPlayers {
-            return Err(GameError::StateTransition);
-        }
+    fn boot_players(&mut self) -> GameState {
+        assert!(self.next_state == GameState::BootPlayers);
+
         for seat in self.table.iter_mut() {
             if seat.is_some() {
                 let player = seat.as_mut().unwrap();
@@ -334,25 +332,23 @@ impl Game {
             self.spectate_user(&username).ok();
         }
         self.next_state = GameState::SeatPlayers;
-        Ok(self.next_state)
+        self.next_state
     }
 
-    fn remove_players(&mut self) -> Result<GameState, GameError> {
-        if self.next_state != GameState::RemovePlayers {
-            return Err(GameError::StateTransition);
-        }
+    fn remove_players(&mut self) -> GameState {
+        assert!(self.next_state == GameState::RemovePlayers);
+
         while !self.players_to_remove.is_empty() {
             let username = self.players_to_remove.pop_first().unwrap();
             self.remove_user(&username).ok();
         }
         self.next_state = GameState::DivideDonations;
-        Ok(self.next_state)
+        self.next_state
     }
 
-    fn seat_players(&mut self) -> Result<GameState, GameError> {
-        if self.next_state != GameState::SeatPlayers {
-            return Err(GameError::StateTransition);
-        }
+    fn seat_players(&mut self) -> GameState {
+        assert!(self.next_state == GameState::SeatPlayers);
+
         let mut i: usize = 0;
         while self.num_players < MAX_PLAYERS && !self.waitlist.is_empty() {
             if self.table[i].is_none() {
@@ -369,7 +365,7 @@ impl Game {
             i += 1;
         }
         self.next_state = GameState::MoveButton;
-        Ok(self.next_state)
+        self.next_state
     }
 }
 
@@ -537,9 +533,8 @@ impl Game {
     /// This method can only be called immediately after `move_button`
     /// and immediately before `deal`.
     fn collect_blinds(&mut self) -> Result<GameState, GameError> {
-        if self.next_state != GameState::CollectBlinds {
-            return Err(GameError::StateTransition);
-        }
+        assert!(self.next_state == GameState::CollectBlinds);
+
         self.pots.clear();
         self.pots.push(Pot::new());
         let pot = &mut self.pots[0];
@@ -566,10 +561,9 @@ impl Game {
     ///
     /// This method can only be called immediately after `collect_blinds`
     /// and immediately before `act`.
-    fn deal(&mut self) -> Result<ActionData, GameError> {
-        if self.next_state != GameState::Deal {
-            return Err(GameError::StateTransition);
-        }
+    fn deal(&mut self) -> ActionData {
+        assert!(self.next_state == GameState::Deal);
+
         self.deck.shuffle(&mut thread_rng());
         self.deck_idx = 0;
 
@@ -583,12 +577,12 @@ impl Game {
             self.deck_idx += 1;
         }
         self.next_state = GameState::TakeAction;
-        Ok(ActionData {
+        ActionData {
             next_state: self.next_state,
             next_action_idx: self.next_action_idx,
             board: self.board.clone(),
             options: HashSet::from_iter([Action::AllIn, Action::Call, Action::Fold, Action::Raise]),
-        })
+        }
     }
 
     /// Empty the community donations pot and split it equally amongst
@@ -602,10 +596,9 @@ impl Game {
     ///
     /// This method can only be called immediately after `remove_players`
     /// and immediately before `update_blinds`.
-    fn divide_donations(&mut self) -> Result<GameState, GameError> {
-        if self.next_state != GameState::DivideDonations {
-            return Err(GameError::StateTransition);
-        }
+    fn divide_donations(&mut self) -> GameState {
+        assert!(self.next_state == GameState::DivideDonations);
+
         let num_users = self.users.len();
         if num_users > 0 {
             let donation_per_user = self.donations / num_users as u16;
@@ -615,7 +608,7 @@ impl Game {
             self.donations = 0;
         }
         self.next_state = GameState::UpdateBlinds;
-        Ok(self.next_state)
+        self.next_state
     }
 
     /// Put the first 3 cards on the board. This method could set the game state
@@ -628,10 +621,9 @@ impl Game {
     ///
     /// This method can only be called if `act` sets the game state to the
     /// appropriate value.
-    fn flop(&mut self) -> Result<ActionData, GameError> {
-        if self.next_state != GameState::Flop {
-            return Err(GameError::StateTransition);
-        }
+    fn flop(&mut self) -> ActionData {
+        assert!(self.next_state == GameState::Flop);
+
         for _ in 0..3 {
             self.board.push(self.deck[self.deck_idx]);
             self.deck_idx += 1;
@@ -643,12 +635,12 @@ impl Game {
             self.next_state = GameState::TakeAction;
             options.extend([Action::AllIn, Action::Check, Action::Fold, Action::Raise])
         }
-        Ok(ActionData {
+        ActionData {
             next_state: self.next_state,
             next_action_idx: self.next_action_idx,
             board: self.board.clone(),
             options,
-        })
+        }
     }
 
     /// Move the blind and next action indices, preparing the next game
@@ -658,9 +650,8 @@ impl Game {
     /// This method can only be called after `seat_players` and before
     /// `collect_blinds`.
     fn move_button(&mut self) -> Result<GameState, GameError> {
-        if self.next_state != GameState::MoveButton {
-            return Err(GameError::StateTransition);
-        }
+        assert!(self.next_state == GameState::MoveButton);
+
         if self.num_players <= 1 {
             return Err(GameError::NotEnoughPlayers);
         }
@@ -691,10 +682,9 @@ impl Game {
     ///
     /// This method can only be called if `act` sets the game state to the
     /// appropriate value.
-    fn river(&mut self) -> Result<ActionData, GameError> {
-        if self.next_state != GameState::River {
-            return Err(GameError::StateTransition);
-        }
+    fn river(&mut self) -> ActionData {
+        assert!(self.next_state == GameState::River);
+
         self.board.push(self.deck[self.deck_idx]);
         self.deck_idx += 1;
         let mut options = HashSet::new();
@@ -704,12 +694,12 @@ impl Game {
             self.next_state = GameState::TakeAction;
             options.extend([Action::AllIn, Action::Check, Action::Fold, Action::Raise])
         }
-        Ok(ActionData {
+        ActionData {
             next_state: self.next_state,
             next_action_idx: self.next_action_idx,
             board: self.board.clone(),
             options,
-        })
+        }
     }
 
     /// Get all players in the pot that haven't folded and compare their
@@ -723,10 +713,9 @@ impl Game {
     ///
     /// This method can only be called if `act` sets the game state to the
     /// appropriate value.
-    fn showdown(&mut self) -> Result<ShowdownData, GameError> {
-        if self.next_state != GameState::Showdown {
-            return Err(GameError::StateTransition);
-        }
+    fn showdown(&mut self) -> ShowdownData {
+        assert!(self.next_state == GameState::Showdown);
+
         let mut pot = self.pots.pop().unwrap();
         let mut seats_in_pot = Vec::with_capacity(MAX_PLAYERS);
         let mut hands_in_pot = Vec::with_capacity(MAX_PLAYERS);
@@ -800,10 +789,10 @@ impl Game {
         } else {
             self.next_state = GameState::RemovePlayers;
         }
-        Ok(ShowdownData {
+        ShowdownData {
             next_state: self.next_state,
             money_per_player,
-        })
+        }
     }
 
     /// Put another card on the board. This method could set the game state
@@ -816,10 +805,9 @@ impl Game {
     ///
     /// This method can only be called if `act` sets the game state to the
     /// appropriate value.
-    fn turn(&mut self) -> Result<ActionData, GameError> {
-        if self.next_state != GameState::Turn {
-            return Err(GameError::StateTransition);
-        }
+    fn turn(&mut self) -> ActionData {
+        assert!(self.next_state == GameState::Turn);
+
         self.board.push(self.deck[self.deck_idx]);
         self.deck_idx += 1;
         let mut options = HashSet::new();
@@ -829,12 +817,12 @@ impl Game {
             self.next_state = GameState::TakeAction;
             options.extend([Action::AllIn, Action::Check, Action::Fold, Action::Raise])
         }
-        Ok(ActionData {
+        ActionData {
             next_state: self.next_state,
             next_action_idx: self.next_action_idx,
             board: self.board.clone(),
             options,
-        })
+        }
     }
 
     /// Update the blinds, checking if the minimum stack size for all users
@@ -850,10 +838,9 @@ impl Game {
     /// a chance that a player that doesn't have enough for the big blind
     /// will still qualify if they get enough from donations. If they don't,
     /// they'll be removed when `remove_players` is called.
-    fn update_blinds(&mut self) -> Result<GameState, GameError> {
-        if self.next_state != GameState::UpdateBlinds {
-            return Err(GameError::StateTransition);
-        }
+    fn update_blinds(&mut self) -> GameState {
+        assert!(self.next_state == GameState::UpdateBlinds);
+
         let mut min_money = u16::MAX;
         for (_, user) in self.users.iter() {
             if user.money < min_money {
@@ -865,7 +852,7 @@ impl Game {
             self.big_blind *= 2;
         }
         self.next_state = GameState::BootPlayers;
-        Ok(self.next_state)
+        self.next_state
     }
 }
 
