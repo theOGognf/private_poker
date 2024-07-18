@@ -340,12 +340,10 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
     {
         let (rank, subhands) = &mut subhands_per_rank.pop_last().unwrap();
         if *rank == Rank::HighCard {
-            while !subhands.is_empty() {
-                let best_subhand = subhands.pop_last().unwrap();
+            while let Some(best_subhand) = subhands.pop_last() {
                 hands.push(best_subhand);
             }
-        } else if !subhands.is_empty() {
-            let best_subhand = subhands.pop_last().unwrap();
+        } else if let Some(best_subhand) = subhands.pop_last() {
             hands.push(best_subhand);
         }
     }

@@ -329,8 +329,7 @@ impl Game {
                 }
             }
         }
-        while !self.players_to_spectate.is_empty() {
-            let username = self.players_to_spectate.pop_first().unwrap();
+        while let Some(username) = self.players_to_spectate.pop_first() {
             self.spectate_user(&username).ok();
         }
         self.next_state = GameState::SeatPlayers;
@@ -341,8 +340,7 @@ impl Game {
         if self.next_state != GameState::RemovePlayers {
             return Err(GameError::StateTransition);
         }
-        while !self.players_to_remove.is_empty() {
-            let username = self.players_to_remove.pop_first().unwrap();
+        while let Some(username) = self.players_to_remove.pop_first() {
             self.remove_user(&username).ok();
         }
         self.next_state = GameState::DivideDonations;
