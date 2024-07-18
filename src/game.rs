@@ -313,7 +313,7 @@ impl Game {
 
 /// Methods for managing players.
 impl Game {
-    fn boot_players(&mut self) -> GameState {
+    fn boot_players(&mut self) -> Result<GameState, UserError> {
         assert!(self.next_state == GameState::BootPlayers);
 
         for seat in self.table.iter_mut() {
@@ -329,24 +329,24 @@ impl Game {
         }
         while !self.players_to_spectate.is_empty() {
             let username = self.players_to_spectate.pop_first().unwrap();
-            self.spectate_user(&username).ok();
+            self.spectate_user(&username)?;
         }
         self.next_state = GameState::SeatPlayers;
-        self.next_state
+        Ok(self.next_state)
     }
 
-    fn remove_players(&mut self) -> GameState {
+    fn remove_players(&mut self) -> Result<GameState, UserError> {
         assert!(self.next_state == GameState::RemovePlayers);
 
         while !self.players_to_remove.is_empty() {
             let username = self.players_to_remove.pop_first().unwrap();
-            self.remove_user(&username).ok();
+            self.remove_user(&username)?;
         }
         self.next_state = GameState::DivideDonations;
-        self.next_state
+        Ok(self.next_state)
     }
 
-    fn seat_players(&mut self) -> GameState {
+    fn seat_players(&mut self) -> Result<GameState, UserError> {
         assert!(self.next_state == GameState::SeatPlayers);
 
         let mut i: usize = 0;
@@ -355,7 +355,7 @@ impl Game {
                 let username = self.waitlist.pop_front().unwrap();
                 let user = self.users.get_mut(&username).unwrap();
                 if user.money < self.big_blind {
-                    self.spectate_user(&username).ok();
+                    self.spectate_user(&username)?;
                 } else {
                     self.table[i] = Some(Player::new(&username));
                     user.state = UserState::Playing;
@@ -365,7 +365,7 @@ impl Game {
             i += 1;
         }
         self.next_state = GameState::MoveButton;
-        self.next_state
+        Ok(self.next_state)
     }
 }
 
@@ -416,7 +416,7 @@ impl Game {
                 if self.next_state == GameState::SeatPlayers
                     || self.next_state >= GameState::RemovePlayers
                 {
-                    self.spectate_user(username).ok();
+                    self.spectate_user(username)?;
                     self.spectators.remove(username);
                 } else {
                     // The player is still at the table while the game is ongoing.
@@ -868,7 +868,7 @@ mod tests {
         let username = "ognf";
 
         // Add new user, make sure they exist and are spectating.
-        game.new_user(&username).ok();
+        game.new_user(&username).unwrap();
         assert!(game.users.contains_key(username));
         assert!(game.spectators.contains(username));
         assert_eq!(
@@ -877,19 +877,16 @@ mod tests {
         );
 
         // Make sure we can't add another user of the same name.
-        assert_eq!(
-            game.new_user(&username).err(),
-            Some(UserError::AlreadyExists)
-        );
+        assert_eq!(game.new_user(&username), Err(UserError::AlreadyExists));
 
         // Try some user state transitions.
         // Waitlisting.
-        game.waitlist_user(username).ok();
+        game.waitlist_user(username).unwrap();
         assert!(game.waitlist.contains(&username.to_string()));
         assert_eq!(game.users.get(username).unwrap().state, UserState::Waiting);
 
         // Back to spectating.
-        game.spectate_user(username).ok();
+        game.spectate_user(username).unwrap();
         assert!(game.spectators.contains(username));
         assert_eq!(
             game.users.get(username).unwrap().state,
@@ -897,47 +894,35 @@ mod tests {
         );
 
         // Remove them.
-        game.remove_user(username).ok();
+        game.remove_user(username).unwrap();
         assert!(!game.users.contains_key(username));
         assert!(!game.spectators.contains(username));
 
         // Try to do stuff when they don't exist.
-        assert_eq!(
-            game.remove_user(username).err(),
-            Some(UserError::DoesNotExist)
-        );
-        assert_eq!(
-            game.waitlist_user(username).err(),
-            Some(UserError::DoesNotExist)
-        );
-        assert_eq!(
-            game.spectate_user(username).err(),
-            Some(UserError::DoesNotExist)
-        );
+        assert_eq!(game.remove_user(username), Err(UserError::DoesNotExist));
+        assert_eq!(game.waitlist_user(username), Err(UserError::DoesNotExist));
+        assert_eq!(game.spectate_user(username), Err(UserError::DoesNotExist));
 
         // Add them again.
-        game.new_user(&username).ok();
+        game.new_user(&username).unwrap();
         assert!(game.users.contains_key(username));
         assert!(game.spectators.contains(username));
 
         // Waitlist them again.
-        game.waitlist_user(username).ok();
+        game.waitlist_user(username).unwrap();
         assert!(game.waitlist.contains(&username.to_string()));
         assert_eq!(game.users.get(username).unwrap().state, UserState::Waiting);
 
         // Remove them again.
-        game.remove_user(username).ok();
+        game.remove_user(username).unwrap();
         assert!(!game.users.contains_key(username));
         assert!(!game.waitlist.contains(&username.to_string()));
 
         // Finally, add a bunch of users until capacity is reached.
         for i in 0..MAX_USERS {
-            game.new_user(&i.to_string()).ok();
+            game.new_user(&i.to_string()).unwrap();
         }
         // The game should now be full.
-        assert_eq!(
-            game.new_user(&username).err(),
-            Some(UserError::CapacityReached)
-        );
+        assert_eq!(game.new_user(&username), Err(UserError::CapacityReached));
     }
 }
