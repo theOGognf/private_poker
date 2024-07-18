@@ -3,6 +3,8 @@ use crate::poker;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::error::Error;
+use std::fmt::Display;
 
 // Don't want too many people waiting to play the game.
 const MAX_PLAYERS: usize = 12;
@@ -27,6 +29,18 @@ enum GameError {
     StateTransition,
 }
 
+impl Display for GameError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Self::InvalidBet => write!(f, "invalid bet"),
+            Self::NotEnoughPlayers => write!(f, "not enough players"),
+            Self::StateTransition => write!(f, "state transition"),
+        }
+    }
+}
+
+impl Error for GameError {}
+
 #[derive(Debug, Eq, PartialEq)]
 enum UserError {
     AlreadyExists,
@@ -35,6 +49,20 @@ enum UserError {
     DoesNotExist,
     InsufficientFunds,
 }
+
+impl Display for UserError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Self::AlreadyExists => write!(f, "user already exists"),
+            Self::AlreadyPlaying => write!(f, "user is already playing"),
+            Self::CapacityReached => write!(f, "capacity of users has been reached"),
+            Self::DoesNotExist => write!(f, "user does not exist"),
+            Self::InsufficientFunds => write!(f, "user has insufficient funds"),
+        }
+    }
+}
+
+impl Error for UserError {}
 
 #[derive(Debug, Eq, PartialEq)]
 enum UserState {
