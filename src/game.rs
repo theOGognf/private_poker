@@ -73,13 +73,9 @@ enum UserError {
     #[error("User {username} does not have the funds to satisfy the ${big_blind} big blind.")]
     InsufficientFunds { username: String, big_blind: u16 },
     #[error(
-        "Seat {seat_idx} tried to {action} but their ${amount} bet didn't satisfy that action."
+        "Seat {seat_idx} tried to {} but their ${} bet didn't satisfy that action.", .bet.action, .bet.amount
     )]
-    InvalidBet {
-        seat_idx: usize,
-        action: Action,
-        amount: u16,
-    },
+    InvalidBet { seat_idx: usize, bet: Bet },
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -121,6 +117,7 @@ impl Player {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Bet {
     action: Action,
     amount: u16,
@@ -154,8 +151,7 @@ impl Pot {
                 if new_investment != self.call {
                     return Err(UserError::InvalidBet {
                         seat_idx,
-                        action: bet.action,
-                        amount: bet.amount,
+                        bet: *bet,
                     });
                 }
             }
@@ -163,8 +159,7 @@ impl Pot {
                 if new_investment < (2 * self.call) {
                     return Err(UserError::InvalidBet {
                         seat_idx,
-                        action: bet.action,
-                        amount: bet.amount,
+                        bet: *bet,
                     });
                 }
                 new_call = new_investment;
@@ -178,8 +173,7 @@ impl Pot {
             _ => {
                 return Err(UserError::InvalidBet {
                     seat_idx,
-                    action: bet.action,
-                    amount: bet.amount,
+                    bet: *bet,
                 })
             }
         }
