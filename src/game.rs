@@ -62,6 +62,12 @@ impl fmt::Display for Action {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Bet {
+    action: Action,
+    amount: u16,
+}
+
 #[derive(Debug, Eq, Error, PartialEq)]
 enum UserError {
     #[error("User {username} already exists.")]
@@ -115,12 +121,6 @@ impl Player {
         self.state = PlayerState::Wait;
         self.cards.clear();
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Bet {
-    action: Action,
-    amount: u16,
 }
 
 struct Pot {
