@@ -1,4 +1,4 @@
-use crate::poker;
+use crate::poker::functional;
 
 use rand::seq::SliceRandom;
 use rand::thread_rng;
@@ -105,7 +105,7 @@ enum PlayerState {
 struct Player {
     name: String,
     state: PlayerState,
-    cards: Vec<poker::Card>,
+    cards: Vec<functional::Card>,
 }
 
 impl Player {
@@ -253,21 +253,8 @@ enum GameState {
     BootPlayers,
 }
 
-struct ActionData {
-    next_state: GameState,
-    next_action_idx: Option<usize>,
-    board: Vec<poker::Card>,
-    options: HashSet<Action>,
-}
-
-struct ShowdownData {
-    next_state: GameState,
-    // Map seat indices to winnings.
-    money_per_player: HashMap<usize, u16>,
-}
-
 struct GameData {
-    deck: [poker::Card; 52],
+    deck: [functional::Card; 52],
     donations: u16,
     small_blind: u16,
     big_blind: u16,
@@ -275,7 +262,7 @@ struct GameData {
     spectators: HashSet<String>,
     waitlist: VecDeque<String>,
     seats: [Option<Player>; MAX_PLAYERS],
-    board: Vec<poker::Card>,
+    board: Vec<functional::Card>,
     num_players: usize,
     pots: Vec<Pot>,
     players_to_spectate: BTreeSet<String>,
@@ -290,7 +277,7 @@ struct GameData {
 impl GameData {
     fn new() -> Self {
         Self {
-            deck: poker::new_deck(),
+            deck: functional::new_deck(),
             donations: 0,
             small_blind: MIN_SMALL_BLIND,
             big_blind: MIN_BIG_BLIND,
@@ -643,18 +630,20 @@ impl From<Game<CollectBlinds>> for Game<Deal> {
             (value.data.small_blind_idx, value.data.small_blind),
             (value.data.big_blind_idx, value.data.big_blind),
         ] {
-            let player = value.data.seats[seat_idx].as_ref().unwrap();
+            let player = value.data.seats[seat_idx].as_mut().unwrap();
             let user = value.data.users.get_mut(&player.name).unwrap();
-            let action: Action;
+            let action;
             if user.money > blind {
+                player.state = PlayerState::Wait;
                 action = Action::Raise;
             } else {
+                player.state = PlayerState::AllIn;
                 action = Action::AllIn;
             }
             pot.bet(
                 seat_idx,
                 &Bet {
-                    action: action,
+                    action,
                     amount: blind,
                 },
             )
@@ -694,6 +683,42 @@ impl From<Game<Deal>> for Game<TakeAction> {
                     Action::Raise,
                 ])),
             },
+        }
+    }
+}
+
+impl From<Game<TakeAction>> for Game<Flop> {
+    fn from(value: Game<TakeAction>) -> Self {
+        Self {
+            data: value.data,
+            state: Flop {},
+        }
+    }
+}
+
+impl From<Game<TakeAction>> for Game<Turn> {
+    fn from(value: Game<TakeAction>) -> Self {
+        Self {
+            data: value.data,
+            state: Turn {},
+        }
+    }
+}
+
+impl From<Game<TakeAction>> for Game<River> {
+    fn from(value: Game<TakeAction>) -> Self {
+        Self {
+            data: value.data,
+            state: River {},
+        }
+    }
+}
+
+impl From<Game<TakeAction>> for Game<Showdown> {
+    fn from(value: Game<TakeAction>) -> Self {
+        Self {
+            data: value.data,
+            state: Showdown {},
         }
     }
 }
@@ -820,13 +845,13 @@ impl Game<Showdown> {
                 if player.state != PlayerState::Fold {
                     seats_in_pot.push(*seat_idx);
                     player.cards.sort_unstable();
-                    hands_in_pot.push(poker::eval(&player.cards));
+                    hands_in_pot.push(functional::eval(&player.cards));
                 }
             }
 
             // Only up to 4 players can split the pot (only four suits per card value).
             let mut distributions_per_player: HashMap<usize, u16> = HashMap::with_capacity(4);
-            let mut winner_indices = poker::argmax(&hands_in_pot);
+            let mut winner_indices = functional::argmax(&hands_in_pot);
             let num_winners = winner_indices.len();
             match num_winners {
                 0 => unreachable!("There is always at least one player in the pot."),
