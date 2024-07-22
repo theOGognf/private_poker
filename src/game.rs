@@ -316,7 +316,9 @@ struct SeatPlayers {}
 struct MoveButton {}
 struct CollectBlinds {}
 struct Deal {}
-struct TakeAction {/*action_options: Option<HashSet<Action>>*/}
+struct TakeAction {
+    action_options: Option<HashSet<Action>>,
+}
 struct Flop {}
 struct Turn {}
 struct River {}
@@ -643,10 +645,16 @@ impl From<Game<CollectBlinds>> for Game<Deal> {
         ] {
             let player = value.data.seats[seat_idx].as_ref().unwrap();
             let user = value.data.users.get_mut(&player.name).unwrap();
+            let action: Action;
+            if user.money > blind {
+                action = Action::Raise;
+            } else {
+                action = Action::AllIn;
+            }
             pot.bet(
                 seat_idx,
                 &Bet {
-                    action: Action::Raise,
+                    action: action,
                     amount: blind,
                 },
             )
@@ -675,9 +683,17 @@ impl From<Game<Deal>> for Game<TakeAction> {
             player.cards.push(value.data.deck[value.data.deck_idx]);
             value.data.deck_idx += 1;
         }
+        // The only option unavailable after dealing is checking.
         Self {
             data: value.data,
-            state: TakeAction {},
+            state: TakeAction {
+                action_options: Some(HashSet::from([
+                    Action::AllIn,
+                    Action::Call,
+                    Action::Fold,
+                    Action::Raise,
+                ])),
+            },
         }
     }
 }
@@ -695,9 +711,13 @@ impl Game<Flop> {
 impl From<Game<Flop>> for Game<TakeAction> {
     fn from(mut value: Game<Flop>) -> Self {
         value.step();
+        // Assumes the next player has already been determined and they haven't
+        // gone all-in or folded yet.
         Self {
             data: value.data,
-            state: TakeAction {},
+            state: TakeAction {
+                action_options: Some(HashSet::from([Action::Check, Action::Fold, Action::Raise])),
+            },
         }
     }
 }
@@ -725,9 +745,13 @@ impl Game<Turn> {
 impl From<Game<Turn>> for Game<TakeAction> {
     fn from(mut value: Game<Turn>) -> Self {
         value.step();
+        // Assumes the next player has already been determined and they haven't
+        // gone all-in or folded yet.
         Self {
             data: value.data,
-            state: TakeAction {},
+            state: TakeAction {
+                action_options: Some(HashSet::from([Action::Check, Action::Fold, Action::Raise])),
+            },
         }
     }
 }
@@ -755,9 +779,13 @@ impl Game<River> {
 impl From<Game<River>> for Game<TakeAction> {
     fn from(mut value: Game<River>) -> Self {
         value.step();
+        // Assumes the next player has already been determined and they haven't
+        // gone all-in or folded yet.
         Self {
             data: value.data,
-            state: TakeAction {},
+            state: TakeAction {
+                action_options: Some(HashSet::from([Action::Check, Action::Fold, Action::Raise])),
+            },
         }
     }
 }
