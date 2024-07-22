@@ -72,7 +72,9 @@ enum UserError {
     DoesNotExist { username: String },
     #[error("User {username} does not have the funds to satisfy the ${big_blind} big blind.")]
     InsufficientFunds { username: String, big_blind: u16 },
-    #[error("Seat {seat_idx} tried to {action} but their ${amount} bet didn't satisfy that action.")]
+    #[error(
+        "Seat {seat_idx} tried to {action} but their ${amount} bet didn't satisfy that action."
+    )]
     InvalidBet {
         seat_idx: usize,
         action: Action,
@@ -151,7 +153,7 @@ impl Pot {
             Action::Call => {
                 if new_investment != self.call {
                     return Err(UserError::InvalidBet {
-                        seat_idx: seat_idx,
+                        seat_idx,
                         action: bet.action,
                         amount: bet.amount,
                     });
@@ -160,7 +162,7 @@ impl Pot {
             Action::Raise => {
                 if new_investment < (2 * self.call) {
                     return Err(UserError::InvalidBet {
-                        seat_idx: seat_idx,
+                        seat_idx,
                         action: bet.action,
                         amount: bet.amount,
                     });
@@ -175,7 +177,7 @@ impl Pot {
             // A bet must call, raise, or all-in.
             _ => {
                 return Err(UserError::InvalidBet {
-                    seat_idx: seat_idx,
+                    seat_idx,
                     action: bet.action,
                     amount: bet.amount,
                 })
@@ -966,7 +968,7 @@ mod tests {
         let username = "ognf";
 
         // Add new user, make sure they exist and are spectating.
-        game.new_user(&username).ok();
+        game.new_user(username).unwrap();
         assert!(game.data.users.contains_key(username));
         assert!(game.data.spectators.contains(username));
         assert_eq!(
@@ -976,7 +978,7 @@ mod tests {
 
         // Make sure we can't add another user of the same name.
         assert_eq!(
-            game.new_user(&username),
+            game.new_user(username),
             Err(UserError::AlreadyExists {
                 username: username.to_string()
             })
@@ -984,7 +986,7 @@ mod tests {
 
         // Try some user state transitions.
         // Waitlisting.
-        game.waitlist_user(username).ok();
+        game.waitlist_user(username).unwrap();
         assert!(game.data.waitlist.contains(&username.to_string()));
         assert_eq!(
             game.data.users.get(username).unwrap().state,
@@ -992,7 +994,7 @@ mod tests {
         );
 
         // Back to spectating.
-        game.spectate_user(username).ok();
+        game.spectate_user(username).unwrap();
         assert!(game.data.spectators.contains(username));
         assert_eq!(
             game.data.users.get(username).unwrap().state,
@@ -1000,7 +1002,7 @@ mod tests {
         );
 
         // Remove them.
-        game.remove_user(username).ok();
+        game.remove_user(username).unwrap();
         assert!(!game.data.users.contains_key(username));
         assert!(!game.data.spectators.contains(username));
 
@@ -1025,12 +1027,12 @@ mod tests {
         );
 
         // Add them again.
-        game.new_user(&username).ok();
+        game.new_user(username).unwrap();
         assert!(game.data.users.contains_key(username));
         assert!(game.data.spectators.contains(username));
 
         // Waitlist them again.
-        game.waitlist_user(username).ok();
+        game.waitlist_user(username).unwrap();
         assert!(game.data.waitlist.contains(&username.to_string()));
         assert_eq!(
             game.data.users.get(username).unwrap().state,
@@ -1038,15 +1040,15 @@ mod tests {
         );
 
         // Remove them again.
-        game.remove_user(username).ok();
+        game.remove_user(username).unwrap();
         assert!(!game.data.users.contains_key(username));
         assert!(!game.data.waitlist.contains(&username.to_string()));
 
         // Finally, add a bunch of users until capacity is reached.
         for i in 0..MAX_USERS {
-            game.new_user(&i.to_string()).ok();
+            game.new_user(&i.to_string()).unwrap();
         }
         // The game should now be full.
-        assert_eq!(game.new_user(&username), Err(UserError::CapacityReached));
+        assert_eq!(game.new_user(username), Err(UserError::CapacityReached));
     }
 }
