@@ -450,6 +450,11 @@ macro_rules! impl_user_managers {
 
             fn spectate_user(&mut self, username: &str) -> Result<bool, UserError> {
                 if let Some(user) = self.data.users.get_mut(username) {
+                    // The player has already been queued for spectate. Just wait for
+                    // the next spectate phase.
+                    if self.data.players_to_spectate.contains(username) {
+                        return Ok(false);
+                    }
                     match user.state {
                         UserState::Playing => {
                             // Need to remove the player from other queues just in
@@ -557,7 +562,6 @@ macro_rules! impl_user_managers_with_queue {
 
 impl_user_managers!(
     Game<SeatPlayers>,
-    Game<RemovePlayers>,
     Game<DivideDonations>,
     Game<UpdateBlinds>,
     Game<BootPlayers>
@@ -571,7 +575,11 @@ impl_user_managers_with_queue!(
     Game<Flop>,
     Game<Turn>,
     Game<River>,
-    Game<Showdown>
+    Game<Showdown>,
+    // There's an edge case where a player can queue for removal
+    // when the game is in the `RemovePlayers` state, but before
+    // the transition to the `DivideDonations` state.
+    Game<RemovePlayers>
 );
 
 impl From<Game<SeatPlayers>> for Game<MoveButton> {
