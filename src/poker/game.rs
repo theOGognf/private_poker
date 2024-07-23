@@ -2,8 +2,11 @@ use crate::poker::functional;
 
 use rand::seq::SliceRandom;
 use rand::thread_rng;
+use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt;
+use std::hash::{Hash, Hasher};
+use std::mem::discriminant;
 use thiserror::Error;
 
 // Don't want too many people waiting to play the game.
@@ -41,31 +44,63 @@ impl User {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Debug)]
 enum Action {
     AllIn,
-    Call,
+    Call(u16),
     Check,
     Fold,
-    Raise,
+    Raise(u16),
 }
 
 impl fmt::Display for Action {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Action::AllIn => write!(f, "all-in"),
-            Action::Call => write!(f, "call"),
+            Action::Call(_) => write!(f, "call"),
             Action::Check => write!(f, "check"),
             Action::Fold => write!(f, "fold"),
-            Action::Raise => write!(f, "raise"),
+            Action::Raise(_) => write!(f, "raise"),
         }
     }
 }
 
+impl Eq for Action {}
+
+impl Hash for Action {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        discriminant(self).hash(state);
+    }
+}
+
+impl PartialEq for Action {
+    fn eq(&self, other: &Self) -> bool {
+        discriminant(self) == discriminant(other)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BetAction {
+    AllIn,
+    Call,
+    Raise,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Bet {
-    action: Action,
+    action: BetAction,
     amount: u16,
+}
+
+impl fmt::Display for Bet {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let amount = self.amount;
+        match self.action {
+            BetAction::AllIn => write!(f, "all-in with ${amount}"),
+            BetAction::Call => write!(f, "call with ${amount}"),
+            BetAction::Raise => write!(f, "raise with ${amount}"),
+        }
+    }
 }
 
 #[derive(Debug, Eq, Error, PartialEq)]
@@ -78,9 +113,9 @@ enum UserError {
     DoesNotExist { username: String },
     #[error("User {username} does not have the funds to satisfy the ${big_blind} big blind.")]
     InsufficientFunds { username: String, big_blind: u16 },
-    #[error(
-        "Seat {seat_idx} tried to {} but their ${} bet didn't satisfy that action.", .bet.action, .bet.amount
-    )]
+    #[error("Seat {seat_idx} tried an illegal {action}.")]
+    InvalidAction { seat_idx: usize, action: Action },
+    #[error("Seat {seat_idx} tried to {bet}, but their bet didn't qualify.")]
     InvalidBet { seat_idx: usize, bet: Bet },
 }
 
@@ -136,45 +171,20 @@ struct Pot {
 }
 
 impl Pot {
-    fn bet(&mut self, seat_idx: usize, bet: &Bet) -> Result<Option<Pot>, UserError> {
+    fn bet(&mut self, seat_idx: usize, bet: &Bet) -> Option<Pot> {
         let investment = self.investments.entry(seat_idx).or_default();
         let mut new_call = self.call;
         let mut new_investment = *investment + bet.amount;
         let mut pot_increase = bet.amount;
-        // A call must match the call amount. A raise must match the min raise
-        // amount. There's an exception for all-ins; an all-in is treated as
-        // a call without affecting the call if the all-in is less than the
-        // previous call. An all-in is treated as a raise if the all-in is
-        // greater than the call.
         match bet.action {
-            Action::Call => {
-                if new_investment != self.call {
-                    return Err(UserError::InvalidBet {
-                        seat_idx,
-                        bet: *bet,
-                    });
-                }
-            }
-            Action::Raise => {
-                if new_investment < (2 * self.call) {
-                    return Err(UserError::InvalidBet {
-                        seat_idx,
-                        bet: *bet,
-                    });
-                }
+            BetAction::Call => {}
+            BetAction::Raise => {
                 new_call = new_investment;
             }
-            Action::AllIn => {
+            BetAction::AllIn => {
                 if new_investment > self.call {
                     new_call = new_investment;
                 }
-            }
-            // A bet must call, raise, or all-in.
-            _ => {
-                return Err(UserError::InvalidBet {
-                    seat_idx,
-                    bet: *bet,
-                })
             }
         }
         // Need to check whether a side pot is created. A side pot is created
@@ -185,22 +195,19 @@ impl Pot {
         // is used to start a new pot.
         let mut side_pot = None;
         match (bet.action, self.side_pot_state) {
-            (Action::AllIn, None) => self.side_pot_state = Some(SidePotState::AllIn),
-            (Action::AllIn, Some(SidePotState::AllIn))
-            | (Action::Raise, Some(SidePotState::AllIn)) => {
+            (BetAction::AllIn, None) => self.side_pot_state = Some(SidePotState::AllIn),
+            (BetAction::AllIn, Some(SidePotState::AllIn))
+            | (BetAction::Raise, Some(SidePotState::AllIn)) => {
                 if new_investment > self.call {
                     self.side_pot_state = Some(SidePotState::Raise);
                     side_pot = Some(Pot::new());
                     side_pot.as_mut().unwrap().bet(
                         seat_idx,
-                        // The original bet for the new pot is always considered
-                        // a raise.
                         &Bet {
-                            action: Action::Raise,
-                            // The call excess starts the call for the new pot.
+                            action: bet.action,
                             amount: new_investment - self.call,
                         },
-                    )?;
+                    );
                     // The call for the pot hasn't change.
                     new_call = self.call;
                     // The pot increase is just the pot's call remaining for the player.
@@ -209,21 +216,30 @@ impl Pot {
                     new_investment = self.call;
                 }
             }
-            _ => (),
+            _ => {}
         }
         // Finally, update the call, the pot, and the player's investment
         // in the current pot.
         self.call = new_call;
         self.size += pot_increase;
         *investment = new_investment;
-        Ok(side_pot)
+        side_pot
     }
 
     /// Return the amount the player must bet to remain in the hand, and
     /// the minimum the player must raise by for it to be considered
     /// a valid raise.
-    fn get_next_call(&mut self, seat_idx: usize) -> u16 {
-        self.call - *self.investments.entry(seat_idx).or_default()
+    fn get_call_by_seat(&self, seat_idx: usize) -> u16 {
+        self.call - self.get_investment_by_seat(seat_idx)
+    }
+
+    /// Return the amount the player has invested in the pot.
+    fn get_investment_by_seat(&self, seat_idx: usize) -> u16 {
+        if let Some(investment) = self.investments.get(&seat_idx) {
+            *investment
+        } else {
+            0
+        }
     }
 
     fn new() -> Pot {
@@ -234,23 +250,6 @@ impl Pot {
             side_pot_state: None,
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd)]
-enum GameState {
-    SeatPlayers,
-    MoveButton,
-    CollectBlinds,
-    Deal,
-    TakeAction,
-    Flop,
-    Turn,
-    River,
-    Showdown,
-    RemovePlayers,
-    DivideDonations,
-    UpdateBlinds,
-    BootPlayers,
 }
 
 struct GameData {
@@ -270,8 +269,9 @@ struct GameData {
     deck_idx: usize,
     small_blind_idx: usize,
     big_blind_idx: usize,
-    next_action_idx: Option<usize>,
     prev_raise_idx: usize,
+    starting_action_idx: usize,
+    next_action_idx: Option<usize>,
 }
 
 impl GameData {
@@ -293,8 +293,9 @@ impl GameData {
             deck_idx: 0,
             small_blind_idx: 0,
             big_blind_idx: 1,
-            next_action_idx: Some(2),
             prev_raise_idx: 1,
+            starting_action_idx: 2,
+            next_action_idx: Some(2),
         }
     }
 }
@@ -323,6 +324,65 @@ struct Game<T> {
 
 /// General game methods.
 impl<T> Game<T> {
+    fn find_next_action_idx(&mut self) -> Option<usize> {
+        let mut seats = self.data.seats.iter().cycle();
+        seats.nth(self.data.next_action_idx.unwrap());
+        seats.position(|s| s.as_ref().is_some_and(|p| p.state == PlayerState::Wait))
+    }
+
+    /// Return the set of possible actions the next player can
+    /// make.
+    fn get_next_possible_actions(&self) -> Option<HashSet<Action>> {
+        if let Some(next_action_idx) = self.data.next_action_idx {
+            let mut action_options = HashSet::from([Action::AllIn, Action::Fold]);
+            let call = self.get_total_call_by_seat(next_action_idx);
+            if call > 0 {
+                action_options.insert(Action::Call(call));
+            } else {
+                action_options.insert(Action::Check);
+            }
+            let player = self.data.seats[next_action_idx].as_ref().unwrap();
+            let user = self.data.users.get(&player.name).unwrap();
+            let raise = self.get_total_min_raise_by_seat(next_action_idx);
+            if user.money > raise {
+                action_options.insert(Action::Raise(raise));
+            }
+            Some(action_options)
+        } else {
+            None
+        }
+    }
+
+    /// Return the sum of all calls for all pots.
+    fn get_total_call(&self) -> u16 {
+        self.data.pots.iter().map(|p| p.call).sum()
+    }
+
+    /// Return the remaining amount a player has to bet in order to stay
+    /// in the pot(s).
+    fn get_total_call_by_seat(&self, seat_idx: usize) -> u16 {
+        self.data
+            .pots
+            .iter()
+            .map(|p| p.get_call_by_seat(seat_idx))
+            .sum()
+    }
+
+    /// Return the total amount a player has invested in the pot(s).
+    fn get_total_investment_by_seat(&self, seat_idx: usize) -> u16 {
+        self.data
+            .pots
+            .iter()
+            .map(|p| p.get_investment_by_seat(seat_idx))
+            .sum()
+    }
+
+    /// Return the minimum amount a player has to bet in order for their
+    /// raise to be considered a valid raise.
+    fn get_total_min_raise_by_seat(&self, seat_idx: usize) -> u16 {
+        2 * self.get_total_call() - self.get_total_investment_by_seat(seat_idx)
+    }
+
     fn is_ready_for_showdown(&self) -> bool {
         let mut num_players_remaining: usize = 0;
         let mut num_all_in: usize = 0;
@@ -335,7 +395,7 @@ impl<T> Game<T> {
                         num_all_in += 1;
                     }
                     PlayerState::Wait => num_players_remaining += 1,
-                    _ => (),
+                    _ => {}
                 }
             }
         }
@@ -601,18 +661,19 @@ impl From<Game<SeatPlayers>> for Game<MoveButton> {
 impl From<Game<MoveButton>> for Game<CollectBlinds> {
     fn from(mut value: Game<MoveButton>) -> Self {
         // Search for the big blind and starting positions.
-        let mut table = value.data.seats.iter().cycle();
-        table.nth(value.data.big_blind_idx + 1);
-        value.data.big_blind_idx = table.position(|p| p.is_some()).unwrap();
+        let mut seats = value.data.seats.iter().cycle();
+        seats.nth(value.data.big_blind_idx);
+        value.data.big_blind_idx = seats.position(|s| s.is_some()).unwrap();
         value.data.prev_raise_idx = value.data.big_blind_idx;
-        value.data.next_action_idx = Some(table.position(|p| p.is_some()).unwrap());
+        value.data.starting_action_idx = seats.position(|s| s.is_some()).unwrap();
+        value.data.next_action_idx = Some(value.data.starting_action_idx);
         // Reverse the table search to find the small blind position relative
         // to the big blind position since the small blind must always trail the big
         // blind.
-        let mut table = value.data.seats.iter();
-        table.nth(value.data.big_blind_idx);
-        let mut reverse_table = table.rev().cycle();
-        value.data.small_blind_idx = reverse_table.position(|p| p.is_some()).unwrap();
+        let mut seats = value.data.seats.iter();
+        seats.nth(value.data.big_blind_idx);
+        let mut reverse_table = seats.rev().cycle();
+        value.data.small_blind_idx = reverse_table.position(|s| s.is_some()).unwrap();
         Self {
             data: value.data,
             state: CollectBlinds {},
@@ -632,22 +693,27 @@ impl From<Game<CollectBlinds>> for Game<Deal> {
         ] {
             let player = value.data.seats[seat_idx].as_mut().unwrap();
             let user = value.data.users.get_mut(&player.name).unwrap();
-            let action;
-            if user.money > blind {
-                player.state = PlayerState::Wait;
-                action = Action::Raise;
-            } else {
-                player.state = PlayerState::AllIn;
-                action = Action::AllIn;
+            let bet;
+            match user.money.cmp(&blind) {
+                Ordering::Equal => {
+                    player.state = PlayerState::AllIn;
+                    bet = Bet {
+                        action: BetAction::AllIn,
+                        amount: user.money,
+                    };
+                }
+                Ordering::Greater => {
+                    player.state = PlayerState::Wait;
+                    bet = Bet {
+                        action: BetAction::Raise,
+                        amount: blind,
+                    };
+                }
+                _ => unreachable!(
+                    "A player can't be in a game if they don't have enough for the big blind."
+                ),
             }
-            pot.bet(
-                seat_idx,
-                &Bet {
-                    action,
-                    amount: blind,
-                },
-            )
-            .unwrap();
+            pot.bet(seat_idx, &bet).unwrap();
             user.money -= blind;
         }
         Self {
@@ -672,18 +738,120 @@ impl From<Game<Deal>> for Game<TakeAction> {
             player.cards.push(value.data.deck[value.data.deck_idx]);
             value.data.deck_idx += 1;
         }
-        // The only option unavailable after dealing is checking.
+        let action_options = value.get_next_possible_actions();
         Self {
             data: value.data,
             state: TakeAction {
-                action_options: Some(HashSet::from([
-                    Action::AllIn,
-                    Action::Call,
-                    Action::Fold,
-                    Action::Raise,
-                ])),
+                action_options: action_options,
             },
         }
+    }
+}
+
+impl Game<TakeAction> {
+    fn act(&mut self, action: Action) -> Result<(), UserError> {
+        let seat_idx = self.data.next_action_idx.unwrap();
+        if !self
+            .state
+            .action_options
+            .as_ref()
+            .unwrap()
+            .contains(&action)
+        {
+            return Err(UserError::InvalidAction { seat_idx, action });
+        }
+        let player = self.data.seats[seat_idx].as_mut().unwrap();
+        let user = self.data.users.get(&player.name).unwrap();
+        // Convert the action to a valid bet. Sanitize the bet amount according
+        // to the player's intended action.
+        let mut bet: Bet;
+        match action {
+            Action::AllIn => {
+                bet = Bet {
+                    action: BetAction::AllIn,
+                    amount: user.money,
+                };
+            }
+            Action::Call(amount) => {
+                bet = Bet {
+                    action: BetAction::Call,
+                    amount,
+                };
+            }
+            Action::Check => {
+                return Ok(());
+            }
+            Action::Fold => {
+                player.state = PlayerState::Fold;
+                return Ok(());
+            }
+            Action::Raise(amount) => {
+                bet = Bet {
+                    action: BetAction::Raise,
+                    amount,
+                };
+            }
+        }
+        if bet.amount >= user.money {
+            bet.action = BetAction::AllIn;
+            bet.amount = user.money;
+            player.state = PlayerState::AllIn;
+        }
+        // Do some additional bet validation based on the bet's amount.
+        let total_call = self.get_total_call();
+        let total_investment = self.get_total_investment_by_seat(seat_idx);
+        let new_total_investment = total_investment + bet.amount;
+        match bet.action {
+            BetAction::AllIn => {}
+            BetAction::Call => {
+                if new_total_investment != total_call {
+                    return Err(UserError::InvalidBet { seat_idx, bet });
+                }
+            }
+            BetAction::Raise => {
+                if new_total_investment < (2 * total_call) {
+                    return Err(UserError::InvalidBet { seat_idx, bet });
+                }
+            }
+        }
+        // Move the raise index if the player effectively raised.
+        if new_total_investment > total_call {
+            self.data.prev_raise_idx = seat_idx;
+        }
+        // The player's bet is OK. Remove the bet amount from the player's
+        // stack and start distributing it appropriately amongst all the pots.
+        let player = self.data.seats[seat_idx].as_ref().unwrap();
+        let user = self.data.users.get_mut(&player.name).unwrap();
+        user.money -= bet.amount;
+        // Place bets for all pots except for the last. If the player's bet
+        // is too small, it's considered an all-in.
+        let num_pots = self.data.pots.len();
+        for pot in self.data.pots.iter_mut().take(num_pots - 1) {
+            let call = pot.get_call_by_seat(seat_idx);
+            let pot_bet = if bet.amount <= call {
+                Bet {
+                    action: BetAction::AllIn,
+                    amount: bet.amount,
+                }
+            } else {
+                Bet {
+                    action: BetAction::Call,
+                    amount: call,
+                }
+            };
+            pot.bet(seat_idx, &pot_bet);
+            bet.amount -= pot_bet.amount;
+        }
+        // Can only continue betting for the final pot if the player
+        // still has money to bet with.
+        if bet.amount > 0 {
+            let pot = self.data.pots.iter_mut().last().unwrap();
+            // Make sure we catch the side pot if one was created.
+            if let Some(side_pot) = pot.bet(seat_idx, &bet) {
+                self.data.pots.push(side_pot);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -738,10 +906,11 @@ impl From<Game<Flop>> for Game<TakeAction> {
         value.step();
         // Assumes the next player has already been determined and they haven't
         // gone all-in or folded yet.
+        let action_options = value.get_next_possible_actions();
         Self {
             data: value.data,
             state: TakeAction {
-                action_options: Some(HashSet::from([Action::Check, Action::Fold, Action::Raise])),
+                action_options: action_options,
             },
         }
     }
@@ -772,10 +941,11 @@ impl From<Game<Turn>> for Game<TakeAction> {
         value.step();
         // Assumes the next player has already been determined and they haven't
         // gone all-in or folded yet.
+        let action_options = value.get_next_possible_actions();
         Self {
             data: value.data,
             state: TakeAction {
-                action_options: Some(HashSet::from([Action::Check, Action::Fold, Action::Raise])),
+                action_options: action_options,
             },
         }
     }
@@ -806,10 +976,11 @@ impl From<Game<River>> for Game<TakeAction> {
         value.step();
         // Assumes the next player has already been determined and they haven't
         // gone all-in or folded yet.
+        let action_options = value.get_next_possible_actions();
         Self {
             data: value.data,
             state: TakeAction {
-                action_options: Some(HashSet::from([Action::Check, Action::Fold, Action::Raise])),
+                action_options: action_options,
             },
         }
     }
@@ -1011,6 +1182,23 @@ impl From<Game<BootPlayers>> for Game<SeatPlayers> {
             state: SeatPlayers {},
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd)]
+enum PokerState {
+    SeatPlayers,
+    MoveButton,
+    CollectBlinds,
+    Deal,
+    TakeAction,
+    Flop,
+    Turn,
+    River,
+    Showdown,
+    RemovePlayers,
+    DivideDonations,
+    UpdateBlinds,
+    BootPlayers,
 }
 
 #[cfg(test)]
