@@ -741,9 +741,7 @@ impl From<Game<Deal>> for Game<TakeAction> {
         let action_options = value.get_next_possible_actions();
         Self {
             data: value.data,
-            state: TakeAction {
-                action_options: action_options,
-            },
+            state: TakeAction { action_options },
         }
     }
 }
@@ -909,9 +907,7 @@ impl From<Game<Flop>> for Game<TakeAction> {
         let action_options = value.get_next_possible_actions();
         Self {
             data: value.data,
-            state: TakeAction {
-                action_options: action_options,
-            },
+            state: TakeAction { action_options },
         }
     }
 }
@@ -944,9 +940,7 @@ impl From<Game<Turn>> for Game<TakeAction> {
         let action_options = value.get_next_possible_actions();
         Self {
             data: value.data,
-            state: TakeAction {
-                action_options: action_options,
-            },
+            state: TakeAction { action_options },
         }
     }
 }
@@ -979,9 +973,7 @@ impl From<Game<River>> for Game<TakeAction> {
         let action_options = value.get_next_possible_actions();
         Self {
             data: value.data,
-            state: TakeAction {
-                action_options: action_options,
-            },
+            state: TakeAction { action_options },
         }
     }
 }
