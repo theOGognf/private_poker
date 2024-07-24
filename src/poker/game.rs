@@ -235,11 +235,7 @@ impl Pot {
 
     /// Return the amount the player has invested in the pot.
     fn get_investment_by_seat(&self, seat_idx: usize) -> u16 {
-        if let Some(investment) = self.investments.get(&seat_idx) {
-            *investment
-        } else {
-            0
-        }
+        self.investments.get(&seat_idx).copied().unwrap_or_default()
     }
 
     fn new() -> Pot {
