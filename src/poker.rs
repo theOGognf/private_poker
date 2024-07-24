@@ -16,10 +16,10 @@ use game::{
 /// let mut poker = PokerState::new();
 ///
 /// // Create some users and waitlist them for play.
-/// poker = new_user(poker, "foo");
-/// poker = new_user(poker, "bar");
-/// poker = waitlist_user(poker, "foo");
-/// poker = waitlist_user(poker, "bar");
+/// poker = new_user(poker, "foo").unwrap();
+/// poker = new_user(poker, "bar").unwrap();
+/// poker = waitlist_user(poker, "foo").unwrap();
+/// poker = waitlist_user(poker, "bar").unwrap();
 ///
 /// // Seat the players, move the button, collect blinds, and deal.
 /// poker = seat_players(poker);
@@ -36,8 +36,8 @@ use game::{
 ///
 /// // Here's the flop. Both players go all-in (unhinged).
 /// poker = flop(poker);
-/// (poker, _) = take_action(poker, Action::AllIn);
-/// (poker, _) = take_action(poker, Action::AllIn);
+/// (poker, _) = take_action(poker, Action::AllIn).unwrap();
+/// (poker, _) = take_action(poker, Action::AllIn).unwrap();
 ///
 /// // Continue to the showdown.
 /// poker = turn(poker);
