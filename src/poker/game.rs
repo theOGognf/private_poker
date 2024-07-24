@@ -2,7 +2,7 @@ use crate::poker::functional;
 
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use std::cmp::Ordering;
+use std::cmp::{max, Ordering};
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -30,6 +30,7 @@ enum UserState {
     Waiting,
 }
 
+#[derive(Debug)]
 struct User {
     money: u16,
     state: UserState,
@@ -45,7 +46,7 @@ impl User {
 }
 
 #[derive(Debug)]
-enum Action {
+pub enum Action {
     AllIn,
     Call(u16),
     Check,
@@ -65,6 +66,11 @@ impl fmt::Display for Action {
     }
 }
 
+// We don't care about the values within `Action::Call` and
+// `Action::Raise`. We just perform checks against the enum
+// variant to verify a user is choosing an action that's available
+// within their presented action options. Actual bet validation
+// is done during the `TakeAction` game state.
 impl Eq for Action {}
 
 impl Hash for Action {
@@ -87,7 +93,7 @@ enum BetAction {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Bet {
+pub struct Bet {
     action: BetAction,
     amount: u16,
 }
@@ -104,7 +110,7 @@ impl fmt::Display for Bet {
 }
 
 #[derive(Debug, Eq, Error, PartialEq)]
-enum UserError {
+pub enum UserError {
     #[error("User {username} already exists.")]
     AlreadyExists { username: String },
     #[error("Game is full.")]
@@ -115,11 +121,11 @@ enum UserError {
     InsufficientFunds { username: String, big_blind: u16 },
     #[error("Seat {seat_idx} tried an illegal {action}.")]
     InvalidAction { seat_idx: usize, action: Action },
-    #[error("Seat {seat_idx} tried to {bet}, but their bet didn't qualify.")]
+    #[error("Seat {seat_idx} tried an illegal {bet}.")]
     InvalidBet { seat_idx: usize, bet: Bet },
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum SidePotState {
     AllIn,
     Raise,
@@ -127,7 +133,7 @@ enum SidePotState {
 }
 
 /// For users that're in a pot.
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 enum PlayerState {
     // Player is in the pot but is waiting for their move.
     Wait,
@@ -137,6 +143,7 @@ enum PlayerState {
     Fold,
 }
 
+#[derive(Debug)]
 struct Player {
     name: String,
     state: PlayerState,
@@ -158,6 +165,7 @@ impl Player {
     }
 }
 
+#[derive(Debug)]
 struct Pot {
     // The total investment for each player to remain in the hand.
     call: u16,
@@ -252,8 +260,15 @@ impl Pot {
     }
 }
 
+#[derive(Debug)]
 struct GameData {
+    /// Deck of cards. This is instantiated once and reshuffled
+    /// each deal.
     deck: [functional::Card; 52],
+    /// Money from users that've left the game. This money is
+    /// split equally amongst all users at a particular game state.
+    /// This helps keep the amount of money in the game constant,
+    /// encouraging additional gameplay.
     donations: u16,
     small_blind: u16,
     big_blind: u16,
@@ -261,12 +276,35 @@ struct GameData {
     spectators: HashSet<String>,
     waitlist: VecDeque<String>,
     seats: [Option<Player>; MAX_PLAYERS],
+    /// Community cards shared amongst all players.
     board: Vec<functional::Card>,
+    /// Count of the number of players seated within `seats`.
+    /// Helps refrain from overfilling the seats when players
+    /// are seated.
     num_players: usize,
+    /// Count of the number of players active in a hand.
+    /// All-in and folding are considered INACTIVE since they
+    /// have no more moves to make. Once `num_players_called`
+    /// is equal to this value, the round of betting is concluded.
     num_players_active: usize,
+    /// Count of the number of players that have matched the minimum
+    /// call. Coupled with `num_players_active`, this helps track
+    /// whether a round of betting has ended. This value is reset
+    /// at the beginning of each betting round and whenever a player
+    /// raises (since they've increased the minimum call).
     num_players_called: usize,
+    /// All pots used in the current hand. A side pot is created
+    /// and pushed to this vector anytime a player raises an all-in.
+    /// The call a player must make is the sum of all calls from all
+    /// pots within this vector.
     pots: Vec<Pot>,
+    /// Queue of users that're playing the game but have opted
+    /// to spectate. We can't safely remove them from the game mid gameplay,
+    /// so we instead queue them for removal.
     players_to_spectate: BTreeSet<String>,
+    /// Queue of users that're playing the game but have opted
+    /// to leave. We can't safely remove them from the game mid gameplay,
+    /// so we instead queue them for removal.
     players_to_remove: BTreeSet<String>,
     deck_idx: usize,
     small_blind_idx: usize,
@@ -302,26 +340,40 @@ impl GameData {
     }
 }
 
-struct SeatPlayers {}
-struct MoveButton {}
-struct CollectBlinds {}
-struct Deal {}
-struct TakeAction {
-    action_options: Option<HashSet<Action>>,
+#[derive(Debug)]
+pub struct SeatPlayers {}
+#[derive(Debug)]
+pub struct MoveButton {}
+#[derive(Debug)]
+pub struct CollectBlinds {}
+#[derive(Debug)]
+pub struct Deal {}
+#[derive(Debug)]
+pub struct TakeAction {
+    pub action_options: Option<HashSet<Action>>,
 }
-struct Flop {}
-struct Turn {}
-struct River {}
-struct Showdown {}
-struct RemovePlayers {}
-struct DivideDonations {}
-struct UpdateBlinds {}
-struct BootPlayers {}
+#[derive(Debug)]
+pub struct Flop {}
+#[derive(Debug)]
+pub struct Turn {}
+#[derive(Debug)]
+pub struct River {}
+#[derive(Debug)]
+pub struct Showdown {}
+#[derive(Debug)]
+pub struct RemovePlayers {}
+#[derive(Debug)]
+pub struct DivideDonations {}
+#[derive(Debug)]
+pub struct UpdateBlinds {}
+#[derive(Debug)]
+pub struct BootPlayers {}
 
 /// A poker game.
-struct Game<T> {
+#[derive(Debug)]
+pub struct Game<T> {
     data: GameData,
-    state: T,
+    pub state: T,
 }
 
 /// General game methods.
@@ -359,7 +411,13 @@ impl<T> Game<T> {
         }
     }
 
-    /// Return the sum of all calls for all pots.
+    /// Return the number of cards that've been dealt.
+    pub fn get_num_community_cards_dealt(&self) -> usize {
+        max(0, self.data.deck_idx - 2 * self.data.num_players)
+    }
+
+    /// Return the sum of all calls for all pots. A player's total investment
+    /// must match this amount in order to stay in the pot(s).
     fn get_total_call(&self) -> u16 {
         self.data.pots.iter().map(|p| p.call).sum()
     }
@@ -389,7 +447,7 @@ impl<T> Game<T> {
         2 * self.get_total_call() - self.get_total_investment_by_seat(seat_idx)
     }
 
-    fn is_ready_for_showdown(&self) -> bool {
+    pub fn is_ready_for_showdown(&self) -> bool {
         let mut num_players_remaining: usize = 0;
         let mut num_all_in: usize = 0;
         for seat in self.data.seats.iter() {
@@ -409,19 +467,19 @@ impl<T> Game<T> {
         num_players_remaining == 1 || num_all_in >= num_players_remaining - 1
     }
 
-    fn new() -> Game<SeatPlayers> {
+    pub fn new() -> Game<SeatPlayers> {
         Game {
             data: GameData::new(),
             state: SeatPlayers {},
         }
     }
 
-    fn new_user(&mut self, username: &str) -> Result<usize, UserError> {
+    pub fn new_user(&mut self, username: &str) -> Result<usize, UserError> {
         if self.data.users.len() == MAX_USERS {
             return Err(UserError::CapacityReached);
         } else if self.data.users.contains_key(username) {
             // Check if player already exists but is queued for removal.
-            // This probably means the user disconnected and are trying
+            // This probably means the user disconnected and is trying
             // to reconnect.
             if !self.data.players_to_remove.remove(username) {
                 return Err(UserError::AlreadyExists {
@@ -437,7 +495,8 @@ impl<T> Game<T> {
     }
 
     /// Reset the next action index and return the possible actions
-    /// for that player.
+    /// for that player. This should be called prior to each game phase
+    /// in preparation for a new round of betting.
     fn prepare_for_next_phase(&mut self) -> Option<HashSet<Action>> {
         self.data.num_players_called = 0;
         self.data.next_action_idx = Some(self.data.starting_action_idx);
@@ -445,7 +504,7 @@ impl<T> Game<T> {
         self.get_next_possible_actions()
     }
 
-    fn waitlist_user(&mut self, username: &str) -> Result<bool, UserError> {
+    pub fn waitlist_user(&mut self, username: &str) -> Result<bool, UserError> {
         if let Some(user) = self.data.users.get_mut(username) {
             // Need to remove the player from the removal and spectate sets just in
             // case they wanted to do one of those, but then changed their mind and
@@ -484,7 +543,7 @@ impl<T> Game<T> {
 macro_rules! impl_user_managers {
     ($($t:ty),+) => {
         $(impl $t {
-            fn remove_user(&mut self, username: &str) -> Result<bool, UserError> {
+            pub fn remove_user(&mut self, username: &str) -> Result<bool, UserError> {
                 if let Some(mut user) = self.data.users.remove(username) {
                     match user.state {
                         UserState::Playing => {
@@ -512,7 +571,7 @@ macro_rules! impl_user_managers {
                 }
             }
 
-            fn spectate_user(&mut self, username: &str) -> Result<bool, UserError> {
+            pub fn spectate_user(&mut self, username: &str) -> Result<bool, UserError> {
                 if let Some(user) = self.data.users.get_mut(username) {
                     // The player has already been queued for spectate. Just wait for
                     // the next spectate phase.
@@ -554,7 +613,7 @@ macro_rules! impl_user_managers {
 macro_rules! impl_user_managers_with_queue {
     ($($t:ty),+) => {
         $(impl $t {
-            fn remove_user(&mut self, username: &str) -> Result<bool, UserError> {
+            pub fn remove_user(&mut self, username: &str) -> Result<bool, UserError> {
                 if let Some(user) = self.data.users.get_mut(username) {
                     // The player has already been queued for removal. Just wait for
                     // the next removal phase.
@@ -590,7 +649,7 @@ macro_rules! impl_user_managers_with_queue {
                 }
             }
 
-            fn spectate_user(&mut self, username: &str) -> Result<bool, UserError> {
+            pub fn spectate_user(&mut self, username: &str) -> Result<bool, UserError> {
                 if let Some(user) = self.data.users.get_mut(username) {
                     // The player has already been queued for spectate. Just wait for
                     // the next spectate phase.
@@ -642,7 +701,9 @@ impl_user_managers_with_queue!(
     Game<Showdown>,
     // There's an edge case where a player can queue for removal
     // when the game is in the `RemovePlayers` state, but before
-    // the transition to the `DivideDonations` state.
+    // the transition to the `DivideDonations` state. That's why
+    // the `RemovePlayers` state manages users with the queue-driven
+    // methods.
     Game<RemovePlayers>
 );
 
@@ -765,14 +826,14 @@ impl From<Game<Deal>> for Game<TakeAction> {
 }
 
 impl Game<TakeAction> {
-    fn act(&mut self, action: Action) -> Result<(), UserError> {
-        self.react(action)?;
+    pub fn act(&mut self, action: Action) -> Result<(), UserError> {
+        self.affect(action)?;
         self.data.next_action_idx = self.get_next_action_idx();
         self.state.action_options = self.get_next_possible_actions();
         Ok(())
     }
 
-    fn react(&mut self, action: Action) -> Result<(), UserError> {
+    fn affect(&mut self, action: Action) -> Result<(), UserError> {
         let seat_idx = self.data.next_action_idx.unwrap();
         if !self
             .state
@@ -852,7 +913,8 @@ impl Game<TakeAction> {
         let user = self.data.users.get_mut(&player.name).unwrap();
         user.money -= bet.amount;
         // Place bets for all pots except for the last. If the player's bet
-        // is too small, it's considered an all-in.
+        // is too small, it's considered an all-in (though this really should've
+        // been caught earlier during bet sanitization).
         let num_pots = self.data.pots.len();
         for pot in self.data.pots.iter_mut().take(num_pots - 1) {
             let call = pot.get_call_by_seat(seat_idx);
@@ -1023,7 +1085,10 @@ impl Game<Showdown> {
     /// as a winner had invested, whichever is lower. This prevents folks
     /// that went all-in, but have much more money than the winner, from
     /// losing the extra money.
-    fn distribute(&mut self) -> bool {
+    ///
+    /// Returns a boolean indicating whether user money changed due to the
+    /// distribution of a pot.
+    pub fn distribute(&mut self) -> bool {
         if let Some(mut pot) = self.data.pots.pop() {
             let mut seats_in_pot = Vec::with_capacity(MAX_PLAYERS);
             let mut hands_in_pot = Vec::with_capacity(MAX_PLAYERS);
@@ -1177,6 +1242,9 @@ impl From<Game<UpdateBlinds>> for Game<BootPlayers> {
     }
 }
 
+/// Remove players from seats that don't have enough money to satisfy
+/// the big blind, and reset player states for players that do have
+/// enough money to play.
 impl From<Game<BootPlayers>> for Game<SeatPlayers> {
     fn from(mut value: Game<BootPlayers>) -> Self {
         for seat in value.data.seats.iter_mut() {
@@ -1198,23 +1266,6 @@ impl From<Game<BootPlayers>> for Game<SeatPlayers> {
             state: SeatPlayers {},
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd)]
-enum PokerState {
-    SeatPlayers,
-    MoveButton,
-    CollectBlinds,
-    Deal,
-    TakeAction,
-    Flop,
-    Turn,
-    River,
-    Showdown,
-    RemovePlayers,
-    DivideDonations,
-    UpdateBlinds,
-    BootPlayers,
 }
 
 #[cfg(test)]
