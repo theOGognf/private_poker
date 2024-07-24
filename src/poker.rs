@@ -132,8 +132,8 @@ impl PokerState {
 
 macro_rules! impl_user_managers {
     ($($name:ident),+) => {
-        $(pub fn $name(mut poker: PokerState, username: &str) -> Result<PokerState, UserError> {
-            match poker {
+        $(pub fn $name(mut state: PokerState, username: &str) -> Result<PokerState, UserError> {
+            match state {
                 PokerState::SeatPlayers(ref mut game) => {game.$name(username)?;},
                 PokerState::MoveButton(ref mut game)  => {game.$name(username)?;},
                 PokerState::CollectBlinds(ref mut game)  => {game.$name(username)?;},
@@ -148,7 +148,7 @@ macro_rules! impl_user_managers {
                 PokerState::UpdateBlinds(ref mut game)  => {game.$name(username)?;},
                 PokerState::BootPlayers(ref mut game) => {game.$name(username)?;},
             }
-            Ok(poker)
+            Ok(state)
         })*
     }
 }
@@ -184,14 +184,13 @@ pub fn deal(state: PokerState) -> PokerState {
 }
 
 pub fn take_action(mut state: PokerState, action: Action) -> Result<(PokerState, bool), UserError> {
-    let is_ready_for_next_phase: bool;
-    match state {
+    let is_ready_for_next_phase = match state {
         PokerState::TakeAction(ref mut game) => {
             game.act(action)?;
-            is_ready_for_next_phase = game.is_ready_for_next_phase();
+            game.is_ready_for_next_phase()
         }
         _ => panic!(),
-    }
+    };
     Ok((state, is_ready_for_next_phase))
 }
 
