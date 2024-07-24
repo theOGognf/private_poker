@@ -18,10 +18,23 @@ const MAX_POTS: usize = MAX_PLAYERS / 3;
 // Technically a hand can only consist of 7 cards, but we treat aces
 // as two separate cards (1u8 and 14u8).
 const MAX_CARDS: usize = 11;
-// A player will be cleaned if they fold 20 rounds with the big blind.
-const STARTING_STACK: u16 = 200;
-const MIN_BIG_BLIND: u16 = STARTING_STACK / 20;
-const MIN_SMALL_BLIND: u16 = MIN_BIG_BLIND / 2;
+
+/// Type alias for whole dollars. All bets and player stacks are represented
+/// as whole dollars (there's no point arguing over pennies).
+///
+/// If the total money in a game ever surpasses ~4.2 billion, then we may
+/// have a problem.
+type Usd = u32;
+/// Type alias for decimal dollars. Only used to represent the remainder of
+/// whole dollars in the cases where whole dollars can't be distributed evenly
+/// amongst users.
+type Usdf = f32;
+
+// By default, a player will be cleaned if they fold 20 rounds with the big
+// blind.
+const STARTING_STACK: Usd = 200;
+const MIN_BIG_BLIND: Usd = STARTING_STACK / 20;
+const MIN_SMALL_BLIND: Usd = MIN_BIG_BLIND / 2;
 
 #[derive(Debug, Eq, PartialEq)]
 enum UserState {
@@ -32,7 +45,7 @@ enum UserState {
 
 #[derive(Debug)]
 struct User {
-    money: u16,
+    money: Usd,
     state: UserState,
 }
 
@@ -48,10 +61,10 @@ impl User {
 #[derive(Debug)]
 pub enum Action {
     AllIn,
-    Call(u16),
+    Call(Usd),
     Check,
     Fold,
-    Raise(u16),
+    Raise(Usd),
 }
 
 impl fmt::Display for Action {
@@ -95,7 +108,7 @@ enum BetAction {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Bet {
     action: BetAction,
-    amount: u16,
+    amount: Usd,
 }
 
 impl fmt::Display for Bet {
@@ -118,7 +131,7 @@ pub enum UserError {
     #[error("User {username} does not exist.")]
     DoesNotExist { username: String },
     #[error("User {username} does not have the funds to satisfy the ${big_blind} big blind.")]
-    InsufficientFunds { username: String, big_blind: u16 },
+    InsufficientFunds { username: String, big_blind: Usd },
     #[error("Seat {seat_idx} tried an illegal {action}.")]
     InvalidAction { seat_idx: usize, action: Action },
     #[error("Seat {seat_idx} tried an illegal {bet}.")]
@@ -168,11 +181,11 @@ impl Player {
 #[derive(Debug)]
 struct Pot {
     // The total investment for each player to remain in the hand.
-    call: u16,
+    call: Usd,
     // Size is just the sum of all investments in the pot.
-    size: u16,
+    size: Usd,
     // Map seat indices (players) to their investment in the pot.
-    investments: HashMap<usize, u16>,
+    investments: HashMap<usize, Usd>,
     // Used to check whether to spawn a side pot from this pot.
     // Should be `None` if no side pot conditions are met.
     side_pot_state: Option<SidePotState>,
@@ -237,12 +250,12 @@ impl Pot {
     /// Return the amount the player must bet to remain in the hand, and
     /// the minimum the player must raise by for it to be considered
     /// a valid raise.
-    fn get_call_by_seat(&self, seat_idx: usize) -> u16 {
+    fn get_call_by_seat(&self, seat_idx: usize) -> Usd {
         self.call - self.get_investment_by_seat(seat_idx)
     }
 
     /// Return the amount the player has invested in the pot.
-    fn get_investment_by_seat(&self, seat_idx: usize) -> u16 {
+    fn get_investment_by_seat(&self, seat_idx: usize) -> Usd {
         self.investments.get(&seat_idx).copied().unwrap_or_default()
     }
 
@@ -265,9 +278,9 @@ struct GameData {
     /// split equally amongst all users at a particular game state.
     /// This helps keep the amount of money in the game constant,
     /// encouraging additional gameplay.
-    donations: u16,
-    small_blind: u16,
-    big_blind: u16,
+    donations: Usdf,
+    small_blind: Usd,
+    big_blind: Usd,
     users: HashMap<String, User>,
     spectators: HashSet<String>,
     waitlist: VecDeque<String>,
@@ -313,7 +326,7 @@ impl GameData {
     fn new() -> Self {
         Self {
             deck: functional::new_deck(),
-            donations: 0,
+            donations: 0.0,
             small_blind: MIN_SMALL_BLIND,
             big_blind: MIN_BIG_BLIND,
             users: HashMap::with_capacity(MAX_USERS),
@@ -414,13 +427,13 @@ impl<T> Game<T> {
 
     /// Return the sum of all calls for all pots. A player's total investment
     /// must match this amount in order to stay in the pot(s).
-    fn get_total_call(&self) -> u16 {
+    fn get_total_call(&self) -> Usd {
         self.data.pots.iter().map(|p| p.call).sum()
     }
 
     /// Return the remaining amount a player has to bet in order to stay
     /// in the pot(s).
-    fn get_total_call_by_seat(&self, seat_idx: usize) -> u16 {
+    fn get_total_call_by_seat(&self, seat_idx: usize) -> Usd {
         self.data
             .pots
             .iter()
@@ -429,7 +442,7 @@ impl<T> Game<T> {
     }
 
     /// Return the total amount a player has invested in the pot(s).
-    fn get_total_investment_by_seat(&self, seat_idx: usize) -> u16 {
+    fn get_total_investment_by_seat(&self, seat_idx: usize) -> Usd {
         self.data
             .pots
             .iter()
@@ -439,7 +452,7 @@ impl<T> Game<T> {
 
     /// Return the minimum amount a player has to bet in order for their
     /// raise to be considered a valid raise.
-    fn get_total_min_raise_by_seat(&self, seat_idx: usize) -> u16 {
+    fn get_total_min_raise_by_seat(&self, seat_idx: usize) -> Usd {
         2 * self.get_total_call() - self.get_total_investment_by_seat(seat_idx)
     }
 
@@ -555,7 +568,7 @@ macro_rules! impl_user_managers {
                             self.data.waitlist.remove(waitlist_idx);
                         }
                     }
-                    self.data.donations += user.money;
+                    self.data.donations += user.money as Usdf;
                     user.money = 0;
                     self.data.users.remove(username);
                     Ok(true)
@@ -633,7 +646,7 @@ macro_rules! impl_user_managers_with_queue {
                             self.data.waitlist.remove(waitlist_idx);
                         }
                     }
-                    self.data.donations += user.money;
+                    self.data.donations += user.money as Usdf;
                     user.money = 0;
                     self.data.users.remove(username);
                     Ok(true)
@@ -1087,7 +1100,7 @@ impl Game<Showdown> {
             }
 
             // Only up to 4 players can split the pot (only four suits per card value).
-            let mut distributions_per_player: HashMap<usize, u16> = HashMap::with_capacity(4);
+            let mut distributions_per_player: HashMap<usize, Usd> = HashMap::with_capacity(4);
             let mut winner_indices = functional::argmax(&hands_in_pot);
             let num_winners = winner_indices.len();
             match num_winners {
@@ -1113,8 +1126,8 @@ impl Game<Showdown> {
                     // to them so the pot can be split fairly. The max winner
                     // investment is tracked to handle the edge case of some
                     // whale going all-in with no one else to call them.
-                    let mut money_per_winner: HashMap<usize, u16> = HashMap::with_capacity(4);
-                    let mut max_winner_investment = u16::MIN;
+                    let mut money_per_winner: HashMap<usize, Usd> = HashMap::with_capacity(4);
+                    let mut max_winner_investment = Usd::MIN;
                     for winner_idx in winner_indices {
                         let winner_seat_idx = seats_in_pot[winner_idx];
                         let (_, winner_investment) =
@@ -1133,10 +1146,15 @@ impl Game<Showdown> {
                         }
                     }
                     // Finally, split the remaining pot amongst all the winners.
-                    let split = pot.size / num_winners as u16;
+                    // There's a possibility for the pot to not split perfectly
+                    // amongst all players.
+                    let pot_split = pot.size / num_winners as Usd;
+                    let mut pot_remainder = pot.size as Usdf;
                     for (winner_seat_idx, money) in money_per_winner {
-                        distributions_per_player.insert(winner_seat_idx, money + split);
+                        distributions_per_player.insert(winner_seat_idx, money + pot_split);
+                        pot_remainder -= pot_split as Usdf;
                     }
+                    self.data.donations += pot_remainder;
                 }
             }
 
@@ -1189,11 +1207,11 @@ impl From<Game<DivideDonations>> for Game<UpdateBlinds> {
     fn from(mut value: Game<DivideDonations>) -> Self {
         let num_users = value.data.users.len();
         if num_users > 0 {
-            let donation_per_user = value.data.donations / num_users as u16;
+            let donation_per_user = value.data.donations as Usd / num_users as Usd;
             for (_, user) in value.data.users.iter_mut() {
                 user.money += donation_per_user;
+                value.data.donations -= donation_per_user as Usdf;
             }
-            value.data.donations = 0;
         }
         Self {
             data: value.data,
@@ -1210,13 +1228,13 @@ impl From<Game<DivideDonations>> for Game<UpdateBlinds> {
 /// any action.
 impl From<Game<UpdateBlinds>> for Game<BootPlayers> {
     fn from(mut value: Game<UpdateBlinds>) -> Self {
-        let mut min_money = u16::MAX;
+        let mut min_money = Usd::MAX;
         for (_, user) in value.data.users.iter() {
             if user.money < min_money {
                 min_money = user.money;
             }
         }
-        if min_money < u16::MAX && min_money > (2 * value.data.big_blind) {
+        if min_money < Usd::MAX && min_money > (2 * value.data.big_blind) {
             value.data.small_blind *= 2;
             value.data.big_blind *= 2;
         }
