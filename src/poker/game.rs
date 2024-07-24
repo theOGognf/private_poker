@@ -263,13 +263,14 @@ struct GameData {
     seats: [Option<Player>; MAX_PLAYERS],
     board: Vec<functional::Card>,
     num_players: usize,
+    num_players_active: usize,
+    num_players_called: usize,
     pots: Vec<Pot>,
     players_to_spectate: BTreeSet<String>,
     players_to_remove: BTreeSet<String>,
     deck_idx: usize,
     small_blind_idx: usize,
     big_blind_idx: usize,
-    prev_raise_idx: usize,
     starting_action_idx: usize,
     next_action_idx: Option<usize>,
 }
@@ -287,13 +288,14 @@ impl GameData {
             seats: [const { None }; MAX_PLAYERS],
             board: Vec::with_capacity(5),
             num_players: 0,
+            num_players_active: 0,
+            num_players_called: 0,
             pots: Vec::with_capacity(MAX_POTS),
             players_to_remove: BTreeSet::new(),
             players_to_spectate: BTreeSet::new(),
             deck_idx: 0,
             small_blind_idx: 0,
             big_blind_idx: 1,
-            prev_raise_idx: 1,
             starting_action_idx: 2,
             next_action_idx: Some(2),
         }
@@ -324,7 +326,8 @@ struct Game<T> {
 
 /// General game methods.
 impl<T> Game<T> {
-    fn find_next_action_idx(&mut self) -> Option<usize> {
+    /// Return the index of the player who has the next action.
+    fn get_next_action_idx(&self) -> Option<usize> {
         let mut seats = self.data.seats.iter().cycle();
         seats.nth(self.data.next_action_idx.unwrap());
         seats.position(|s| s.as_ref().is_some_and(|p| p.state == PlayerState::Wait))
@@ -333,6 +336,9 @@ impl<T> Game<T> {
     /// Return the set of possible actions the next player can
     /// make.
     fn get_next_possible_actions(&self) -> Option<HashSet<Action>> {
+        if self.data.num_players_called == self.data.num_players_active {
+            return None;
+        }
         if let Some(next_action_idx) = self.data.next_action_idx {
             let mut action_options = HashSet::from([Action::AllIn, Action::Fold]);
             let call = self.get_total_call_by_seat(next_action_idx);
@@ -428,6 +434,15 @@ impl<T> Game<T> {
         self.data.users.insert(username.to_string(), User::new());
         self.data.spectators.insert(username.to_string());
         Ok(self.data.users.len())
+    }
+
+    /// Reset the next action index and return the possible actions
+    /// for that player.
+    fn prepare_for_next_phase(&mut self) -> Option<HashSet<Action>> {
+        self.data.num_players_called = 0;
+        self.data.next_action_idx = Some(self.data.starting_action_idx);
+        self.data.next_action_idx = self.get_next_action_idx();
+        self.get_next_possible_actions()
     }
 
     fn waitlist_user(&mut self, username: &str) -> Result<bool, UserError> {
@@ -646,8 +661,11 @@ impl From<Game<SeatPlayers>> for Game<MoveButton> {
                     value.data.num_players += 1;
                 }
             }
-            i += 1;
+            if value.data.seats[i].is_some() {
+                i += 1;
+            }
         }
+        value.data.num_players_active = value.data.num_players;
         Self {
             data: value.data,
             state: MoveButton {},
@@ -664,7 +682,6 @@ impl From<Game<MoveButton>> for Game<CollectBlinds> {
         let mut seats = value.data.seats.iter().cycle();
         seats.nth(value.data.big_blind_idx);
         value.data.big_blind_idx = seats.position(|s| s.is_some()).unwrap();
-        value.data.prev_raise_idx = value.data.big_blind_idx;
         value.data.starting_action_idx = seats.position(|s| s.is_some()).unwrap();
         value.data.next_action_idx = Some(value.data.starting_action_idx);
         // Reverse the table search to find the small blind position relative
@@ -672,8 +689,8 @@ impl From<Game<MoveButton>> for Game<CollectBlinds> {
         // blind.
         let mut seats = value.data.seats.iter();
         seats.nth(value.data.big_blind_idx);
-        let mut reverse_table = seats.rev().cycle();
-        value.data.small_blind_idx = reverse_table.position(|s| s.is_some()).unwrap();
+        let mut reverse_seats = seats.rev().cycle();
+        value.data.small_blind_idx = reverse_seats.position(|s| s.is_some()).unwrap();
         Self {
             data: value.data,
             state: CollectBlinds {},
@@ -716,6 +733,7 @@ impl From<Game<CollectBlinds>> for Game<Deal> {
             pot.bet(seat_idx, &bet).unwrap();
             user.money -= blind;
         }
+        value.data.num_players_called = 1;
         Self {
             data: value.data,
             state: Deal {},
@@ -729,16 +747,16 @@ impl From<Game<Deal>> for Game<TakeAction> {
         value.data.deck.shuffle(&mut thread_rng());
         value.data.deck_idx = 0;
 
-        let mut table = (0..MAX_PLAYERS).cycle().skip(value.data.small_blind_idx);
+        let mut seats = (0..MAX_PLAYERS).cycle().skip(value.data.small_blind_idx);
         // Deal 2 cards per player, looping over players and dealing them 1 card
         // at a time.
         while value.data.deck_idx < (2 * value.data.num_players) {
-            let deal_idx = table.find(|&idx| value.data.seats[idx].is_some()).unwrap();
+            let deal_idx = seats.find(|&idx| value.data.seats[idx].is_some()).unwrap();
             let player = value.data.seats[deal_idx].as_mut().unwrap();
             player.cards.push(value.data.deck[value.data.deck_idx]);
             value.data.deck_idx += 1;
         }
-        let action_options = value.get_next_possible_actions();
+        let action_options = value.prepare_for_next_phase();
         Self {
             data: value.data,
             state: TakeAction { action_options },
@@ -748,6 +766,13 @@ impl From<Game<Deal>> for Game<TakeAction> {
 
 impl Game<TakeAction> {
     fn act(&mut self, action: Action) -> Result<(), UserError> {
+        self.react(action)?;
+        self.data.next_action_idx = self.get_next_action_idx();
+        self.state.action_options = self.get_next_possible_actions();
+        Ok(())
+    }
+
+    fn react(&mut self, action: Action) -> Result<(), UserError> {
         let seat_idx = self.data.next_action_idx.unwrap();
         if !self
             .state
@@ -777,10 +802,12 @@ impl Game<TakeAction> {
                 };
             }
             Action::Check => {
+                self.data.num_players_called += 1;
                 return Ok(());
             }
             Action::Fold => {
                 player.state = PlayerState::Fold;
+                self.data.num_players_active -= 1;
                 return Ok(());
             }
             Action::Raise(amount) => {
@@ -800,21 +827,24 @@ impl Game<TakeAction> {
         let total_investment = self.get_total_investment_by_seat(seat_idx);
         let new_total_investment = total_investment + bet.amount;
         match bet.action {
-            BetAction::AllIn => {}
+            BetAction::AllIn => {
+                self.data.num_players_active -= 1;
+                if new_total_investment > total_call {
+                    self.data.num_players_called = 1;
+                }
+            }
             BetAction::Call => {
                 if new_total_investment != total_call {
                     return Err(UserError::InvalidBet { seat_idx, bet });
                 }
+                self.data.num_players_called += 1;
             }
             BetAction::Raise => {
                 if new_total_investment < (2 * total_call) {
                     return Err(UserError::InvalidBet { seat_idx, bet });
                 }
+                self.data.num_players_called = 1;
             }
-        }
-        // Move the raise index if the player effectively raised.
-        if new_total_investment > total_call {
-            self.data.prev_raise_idx = seat_idx;
         }
         // The player's bet is OK. Remove the bet amount from the player's
         // stack and start distributing it appropriately amongst all the pots.
@@ -902,9 +932,7 @@ impl Game<Flop> {
 impl From<Game<Flop>> for Game<TakeAction> {
     fn from(mut value: Game<Flop>) -> Self {
         value.step();
-        // Assumes the next player has already been determined and they haven't
-        // gone all-in or folded yet.
-        let action_options = value.get_next_possible_actions();
+        let action_options = value.prepare_for_next_phase();
         Self {
             data: value.data,
             state: TakeAction { action_options },
@@ -935,9 +963,7 @@ impl Game<Turn> {
 impl From<Game<Turn>> for Game<TakeAction> {
     fn from(mut value: Game<Turn>) -> Self {
         value.step();
-        // Assumes the next player has already been determined and they haven't
-        // gone all-in or folded yet.
-        let action_options = value.get_next_possible_actions();
+        let action_options = value.prepare_for_next_phase();
         Self {
             data: value.data,
             state: TakeAction { action_options },
@@ -968,9 +994,7 @@ impl Game<River> {
 impl From<Game<River>> for Game<TakeAction> {
     fn from(mut value: Game<River>) -> Self {
         value.step();
-        // Assumes the next player has already been determined and they haven't
-        // gone all-in or folded yet.
-        let action_options = value.get_next_possible_actions();
+        let action_options = value.prepare_for_next_phase();
         Self {
             data: value.data,
             state: TakeAction { action_options },
