@@ -9,7 +9,7 @@ use game::{
 /// The poker finite state machine. State transitions are defined in
 /// `PokerState::step`.
 #[derive(Debug)]
-enum PokerState {
+pub enum PokerState {
     SeatPlayers(Game<SeatPlayers>),
     MoveButton(Game<MoveButton>),
     CollectBlinds(Game<CollectBlinds>),
@@ -26,21 +26,26 @@ enum PokerState {
 }
 
 impl PokerState {
-    fn step(self) -> Self {
+    pub fn step(self) -> Self {
         match self {
             PokerState::SeatPlayers(game) => PokerState::MoveButton(game.into()),
             PokerState::MoveButton(game) => PokerState::CollectBlinds(game.into()),
             PokerState::CollectBlinds(game) => PokerState::Deal(game.into()),
             PokerState::Deal(game) => PokerState::TakeAction(game.into()),
-            PokerState::TakeAction(game) => match game.get_num_community_cards_dealt() {
-                0 => PokerState::Flop(game.into()),
-                3 => PokerState::Turn(game.into()),
-                4 => PokerState::River(game.into()),
-                5 => PokerState::Showdown(game.into()),
-                _ => unreachable!(
-                    "There can only be 0, 3, 4, or 5 community cards on the board at a time."
-                ),
-            },
+            PokerState::TakeAction(game) => {
+                if game.is_betting_round_over() {
+                    panic!("The betting round isn't over yet - at least one player has yet to have their turn.")
+                }
+                match game.get_num_community_cards() {
+                    0 => PokerState::Flop(game.into()),
+                    3 => PokerState::Turn(game.into()),
+                    4 => PokerState::River(game.into()),
+                    5 => PokerState::Showdown(game.into()),
+                    _ => unreachable!(
+                        "There can only be 0, 3, 4, or 5 community cards on the board at a time."
+                    ),
+                }
+            }
             PokerState::Flop(game) => {
                 if game.is_ready_for_showdown() {
                     PokerState::Turn(game.into())
@@ -62,7 +67,14 @@ impl PokerState {
                     PokerState::TakeAction(game.into())
                 }
             }
-            PokerState::Showdown(game) => PokerState::RemovePlayers(game.into()),
+            PokerState::Showdown(game) => {
+                if !game.is_pot_empty() {
+                    panic!(
+                        "The showdown isn't over yet - at least one pot has yet to be distributed."
+                    )
+                }
+                PokerState::RemovePlayers(game.into())
+            }
             PokerState::RemovePlayers(game) => PokerState::DivideDonations(game.into()),
             PokerState::DivideDonations(game) => PokerState::UpdateBlinds(game.into()),
             PokerState::UpdateBlinds(game) => PokerState::BootPlayers(game.into()),
@@ -72,7 +84,7 @@ impl PokerState {
 }
 
 pub struct Poker {
-    state: PokerState,
+    pub state: PokerState,
 }
 
 impl Poker {

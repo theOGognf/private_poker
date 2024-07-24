@@ -2,7 +2,7 @@ use crate::poker::functional;
 
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use std::cmp::{max, Ordering};
+use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -421,8 +421,8 @@ impl<T> Game<T> {
     }
 
     /// Return the number of cards that've been dealt.
-    pub fn get_num_community_cards_dealt(&self) -> usize {
-        max(0, self.data.deck_idx - 2 * self.data.num_players)
+    pub fn get_num_community_cards(&self) -> usize {
+        self.data.board.len()
     }
 
     /// Return the sum of all calls for all pots. A player's total investment
@@ -454,6 +454,10 @@ impl<T> Game<T> {
     /// raise to be considered a valid raise.
     fn get_total_min_raise_by_seat(&self, seat_idx: usize) -> Usd {
         2 * self.get_total_call() - self.get_total_investment_by_seat(seat_idx)
+    }
+
+    pub fn is_pot_empty(&self) -> bool {
+        self.data.pots.is_empty()
     }
 
     pub fn is_ready_for_showdown(&self) -> bool {
@@ -940,6 +944,10 @@ impl Game<TakeAction> {
             }
         }
         Ok(())
+    }
+
+    pub fn is_betting_round_over(&self) -> bool {
+        self.state.action_options.is_none()
     }
 }
 

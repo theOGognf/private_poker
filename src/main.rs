@@ -3,4 +3,7 @@
 
 mod poker;
 
-fn main() {}
+fn main() {
+    let mut game = poker::Poker::new();
+    game.state = game.state.step();
+}
