@@ -13,42 +13,42 @@ use game::{
 ///
 /// ```
 /// // Make a new poker game.
-/// let mut poker = PokerState::new();
+/// let mut state = PokerState::new();
 ///
 /// // Create some users and waitlist them for play.
-/// poker = new_user(poker, "foo").unwrap();
-/// poker = new_user(poker, "bar").unwrap();
-/// poker = waitlist_user(poker, "foo").unwrap();
-/// poker = waitlist_user(poker, "bar").unwrap();
+/// state = new_user(state, "foo").unwrap();
+/// state = new_user(state, "bar").unwrap();
+/// state = waitlist_user(state, "foo").unwrap();
+/// state = waitlist_user(state, "bar").unwrap();
 ///
 /// // Seat the players, move the button, collect blinds, and deal.
-/// poker = seat_players(poker);
-/// poker = move_button(poker);
-/// poker = collect_blinds(poker);
-/// poker = deal(poker);
+/// state = seat_players(state);
+/// state = move_button(state);
+/// state = collect_blinds(state);
+/// state = deal(state);
 ///
 /// // Players must take actions now. "foo" and "bar" both check.
 /// // When using the poker game under a server, you may want to
 /// // continue taking actions until the other returned value
 /// // indicates that the betting round is over.
-/// (poker, _) = take_action(poker, Action::Check);
-/// (poker, _) = take_action(poker, Action::Check);
+/// (state, _) = take_action(state, Action::Check);
+/// (state, _) = take_action(state, Action::Check);
 ///
 /// // Here's the flop. Both players go all-in (unhinged).
-/// poker = flop(poker);
-/// (poker, _) = take_action(poker, Action::AllIn).unwrap();
-/// (poker, _) = take_action(poker, Action::AllIn).unwrap();
+/// state = flop(state);
+/// (state, _) = take_action(state, Action::AllIn).unwrap();
+/// (state, _) = take_action(state, Action::AllIn).unwrap();
 ///
 /// // Continue to the showdown.
-/// poker = turn(poker);
-/// poker = river(poker);
-/// poker = showdown(poker);
+/// state = turn(state);
+/// state = river(state);
+/// state = showdown(state);
 ///
 /// // Perform post-game duties.
-/// poker = remove_players(poker);
-/// poker = divide_donations(poker);
-/// poker = update_blinds(poker);
-/// poker = boot_players(poker);
+/// state = remove_players(state);
+/// state = divide_donations(state);
+/// state = update_blinds(state);
+/// boot_players(state);
 /// ```
 #[derive(Debug)]
 pub enum PokerState {

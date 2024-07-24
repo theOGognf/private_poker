@@ -811,7 +811,7 @@ impl From<Game<CollectBlinds>> for Game<Deal> {
             pot.bet(seat_idx, &bet).unwrap();
             user.money -= blind;
         }
-        value.data.num_players_called = 1;
+        value.data.num_players_called = 0;
         Self {
             data: value.data,
             state: Deal {},
