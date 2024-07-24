@@ -447,13 +447,13 @@ impl<T> Game<T> {
         let mut num_players_remaining: usize = 0;
         let mut num_all_in: usize = 0;
         for player in self.data.seats.iter().flatten() {
-                match player.state {
-                    PlayerState::AllIn => {
-                        num_players_remaining += 1;
-                        num_all_in += 1;
-                    }
-                    PlayerState::Wait => num_players_remaining += 1,
-                    _ => {}
+            match player.state {
+                PlayerState::AllIn => {
+                    num_players_remaining += 1;
+                    num_all_in += 1;
+                }
+                PlayerState::Wait => num_players_remaining += 1,
+                _ => {}
             }
         }
         // If no one else is left to make a move, then proceed to the showdown.
@@ -1241,11 +1241,11 @@ impl From<Game<UpdateBlinds>> for Game<BootPlayers> {
 impl From<Game<BootPlayers>> for Game<SeatPlayers> {
     fn from(mut value: Game<BootPlayers>) -> Self {
         for player in value.data.seats.iter_mut().flatten() {
-                let user = value.data.users.get(&player.name).unwrap();
-                if user.money < value.data.big_blind {
-                    value.data.players_to_spectate.insert(player.name.clone());
-                } else {
-                    player.reset();
+            let user = value.data.users.get(&player.name).unwrap();
+            if user.money < value.data.big_blind {
+                value.data.players_to_spectate.insert(player.name.clone());
+            } else {
+                player.reset();
             }
         }
         while let Some(username) = value.data.players_to_spectate.pop_first() {
