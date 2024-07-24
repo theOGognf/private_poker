@@ -460,6 +460,8 @@ impl<T> Game<T> {
         self.data.pots.is_empty()
     }
 
+    /// Return whether the game is ready to evaluate all the hands
+    /// remaining in the pot. Used to help signal state transitions.
     pub fn is_ready_for_showdown(&self) -> bool {
         let mut num_players_remaining: usize = 0;
         let mut num_all_in: usize = 0;
@@ -946,7 +948,9 @@ impl Game<TakeAction> {
         Ok(())
     }
 
-    pub fn is_betting_round_over(&self) -> bool {
+    /// Return whether the betting round is over and the game can continue
+    /// to the next phase. Used to help signal state transitions.
+    pub fn is_ready_for_next_phase(&self) -> bool {
         self.state.action_options.is_none()
     }
 }

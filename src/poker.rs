@@ -33,7 +33,7 @@ impl PokerState {
             PokerState::CollectBlinds(game) => PokerState::Deal(game.into()),
             PokerState::Deal(game) => PokerState::TakeAction(game.into()),
             PokerState::TakeAction(game) => {
-                if game.is_betting_round_over() {
+                if !game.is_ready_for_next_phase() {
                     panic!("The betting round isn't over yet - at least one player has yet to have their turn.")
                 }
                 match game.get_num_community_cards() {
