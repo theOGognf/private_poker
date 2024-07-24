@@ -1147,7 +1147,11 @@ impl Game<Showdown> {
                     }
                     // Finally, split the remaining pot amongst all the winners.
                     // There's a possibility for the pot to not split perfectly
-                    // amongst all players.
+                    // amongst all players; in this case, the remainder is
+                    // put in the donations and will eventually be redistributed
+                    // amongst remaining users. This also encourages users to
+                    // stay in the game so they can be donated these breadcrumbs
+                    // and continue playing with them.
                     let pot_split = pot.size / num_winners as Usd;
                     let mut pot_remainder = pot.size as Usdf;
                     for (winner_seat_idx, money) in money_per_winner {
