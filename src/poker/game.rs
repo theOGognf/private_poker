@@ -710,26 +710,25 @@ impl From<Game<CollectBlinds>> for Game<Deal> {
         ] {
             let player = value.data.seats[seat_idx].as_mut().unwrap();
             let user = value.data.users.get_mut(&player.name).unwrap();
-            let bet;
-            match user.money.cmp(&blind) {
+            let bet = match user.money.cmp(&blind) {
                 Ordering::Equal => {
                     player.state = PlayerState::AllIn;
-                    bet = Bet {
+                    Bet {
                         action: BetAction::AllIn,
                         amount: user.money,
-                    };
+                    }
                 }
                 Ordering::Greater => {
                     player.state = PlayerState::Wait;
-                    bet = Bet {
+                    Bet {
                         action: BetAction::Raise,
                         amount: blind,
-                    };
+                    }
                 }
                 _ => unreachable!(
                     "A player can't be in a game if they don't have enough for the big blind."
                 ),
-            }
+            };
             pot.bet(seat_idx, &bet).unwrap();
             user.money -= blind;
         }
@@ -787,20 +786,15 @@ impl Game<TakeAction> {
         let user = self.data.users.get(&player.name).unwrap();
         // Convert the action to a valid bet. Sanitize the bet amount according
         // to the player's intended action.
-        let mut bet: Bet;
-        match action {
-            Action::AllIn => {
-                bet = Bet {
-                    action: BetAction::AllIn,
-                    amount: user.money,
-                };
-            }
-            Action::Call(amount) => {
-                bet = Bet {
-                    action: BetAction::Call,
-                    amount,
-                };
-            }
+        let mut bet = match action {
+            Action::AllIn => Bet {
+                action: BetAction::AllIn,
+                amount: user.money,
+            },
+            Action::Call(amount) => Bet {
+                action: BetAction::Call,
+                amount,
+            },
             Action::Check => {
                 self.data.num_players_called += 1;
                 return Ok(());
@@ -810,13 +804,11 @@ impl Game<TakeAction> {
                 self.data.num_players_active -= 1;
                 return Ok(());
             }
-            Action::Raise(amount) => {
-                bet = Bet {
-                    action: BetAction::Raise,
-                    amount,
-                };
-            }
-        }
+            Action::Raise(amount) => Bet {
+                action: BetAction::Raise,
+                amount,
+            },
+        };
         if bet.amount >= user.money {
             bet.action = BetAction::AllIn;
             bet.amount = user.money;
