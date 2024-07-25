@@ -72,21 +72,22 @@ pub enum PokerState {
 }
 
 /// Registered when a new poker state is instantiated. Provides helpful debug
-/// info if an invalid state transition is hit.
+/// info if an invalid state transition is made.
 fn poker_state_transition_panic_hook(info: &std::panic::PanicInfo) {
-    // Print the backtrace to help.
     let backtrace = backtrace::Backtrace::capture();
-    match backtrace.to_string().as_str() {
-        "disabled backtrace" => {
-            eprintln!("Backtrace is disabled. Set `RUST_BACKTRACE=1` to see the backtrace.");
-        }
-        msg => {
+    match backtrace.status() {
+        backtrace::BacktraceStatus::Captured => {
+            let msg = backtrace.to_string();
             eprintln!("{msg}");
         }
+        backtrace::BacktraceStatus::Disabled => {
+            eprintln!("Backtrace is disabled. Try setting `RUST_BACKTRACE=1` to see the backtrace.")
+        }
+        _ => eprintln!("Backtrase is not supported by this platform."),
     }
 
     let payload = info.payload();
-    let valid_state_transition = match payload.downcast_ref::<PokerState>() {
+    let state_verb = match payload.downcast_ref::<PokerState>() {
         Some(PokerState::SeatPlayers(_)) => "seat_players",
         Some(PokerState::MoveButton(_)) => "move_button",
         Some(PokerState::CollectBlinds(_)) => "collect_blinds",
@@ -100,20 +101,16 @@ fn poker_state_transition_panic_hook(info: &std::panic::PanicInfo) {
         Some(PokerState::DivideDonations(_)) => "divide_donations",
         Some(PokerState::UpdateBlinds(_)) => "update_blinds",
         Some(PokerState::BootPlayers(_)) => "boot_players",
-        None => "",
+        None => {
+            match payload.downcast_ref::<&str>() {
+                Some(s) => eprintln!("{s}"),
+                None => eprintln!("{payload:#?}"),
+            }
+            return;
+        }
     };
 
-    // Some nasty to make sure we don't accidentally replace a different panic
-    // with an empty message.
-    if valid_state_transition.is_empty() {
-        if let Some(s) = payload.downcast_ref::<&str>() {
-            eprintln!("{s}");
-        } else {
-            eprintln!("{payload:#?}");
-        }
-    } else {
-        eprintln!("You attempted an invalid state transition. You should've transitioned with `{valid_state_transition}`.");
-    }
+    eprintln!("You attempted an invalid state transition. You should've transitioned with `{state_verb}`.");
 }
 
 impl PokerState {
