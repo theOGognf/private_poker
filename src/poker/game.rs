@@ -1316,10 +1316,38 @@ impl From<Game<BootPlayers>> for Game<SeatPlayers> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Game, SeatPlayers, UserError, UserState, MAX_USERS};
+    use super::{CollectBlinds, Game, MoveButton, SeatPlayers, UserError, UserState, MAX_USERS};
+
+    fn init_game() -> Game<SeatPlayers> {
+        let mut game = Game::<SeatPlayers>::new();
+        let username1 = "mark";
+        let username2 = "matt";
+        let username3 = "max";
+
+        for username in [username1, username2, username3] {
+            game.new_user(username).unwrap();
+            game.waitlist_user(username).unwrap();
+        }
+        game
+    }
 
     #[test]
-    fn manipulate_user_in_lobby() {
+    fn move_button() {
+        let game = init_game();
+        let game = Game::<MoveButton>::from(game);
+        let game = Game::<CollectBlinds>::from(game);
+        println!("{game:#?}");
+        assert_eq!(game.data.small_blind_idx, 1);
+        assert_eq!(game.data.big_blind_idx, 2);
+        assert_eq!(game.data.starting_action_idx, 0);
+        assert_eq!(
+            game.data.next_action_idx,
+            Some(game.data.starting_action_idx)
+        );
+    }
+
+    #[test]
+    fn manipulating_user_in_lobby() {
         let mut game = Game::<SeatPlayers>::new();
         let username = "ognf";
 
@@ -1406,5 +1434,16 @@ mod tests {
         }
         // The game should now be full.
         assert_eq!(game.new_user(username), Err(UserError::CapacityReached));
+    }
+
+    #[test]
+    fn seat_players() {
+        let game = init_game();
+        let game = Game::<MoveButton>::from(game);
+        assert_eq!(game.data.num_players, game.data.users.len());
+        assert_eq!(game.data.num_players_active, game.data.users.len());
+        for (_, user) in game.data.users {
+            assert_eq!(user.state, UserState::Playing);
+        }
     }
 }
