@@ -833,10 +833,9 @@ impl From<Game<Deal>> for Game<TakeAction> {
             let deal_idx = seats.find(|&idx| value.data.seats[idx].is_some()).unwrap();
             let player = value.data.seats[deal_idx].as_mut().unwrap();
             let card = value.data.deck[value.data.deck_idx];
-            match card {
-                (1u8, suit) => player.cards.push((14u8, suit)),
-                _ => {}
-            }
+            if let (1u8, suit) = card {
+                value.data.board.push((14u8, suit))
+            };
             player.cards.push(card);
             value.data.deck_idx += 1;
         }
@@ -1007,10 +1006,9 @@ impl Game<Flop> {
     fn step(&mut self) {
         for _ in 0..3 {
             let card = self.data.deck[self.data.deck_idx];
-            match card {
-                (1u8, suit) => self.data.board.push((14u8, suit)),
-                _ => {}
-            }
+            if let (1u8, suit) = card {
+                self.data.board.push((14u8, suit))
+            };
             self.data.board.push(card);
             self.data.deck_idx += 1;
         }
@@ -1044,10 +1042,9 @@ impl From<Game<Flop>> for Game<Turn> {
 impl Game<Turn> {
     fn step(&mut self) {
         let card = self.data.deck[self.data.deck_idx];
-        match card {
-            (1u8, suit) => self.data.board.push((14u8, suit)),
-            _ => {}
-        }
+        if let (1u8, suit) = card {
+            self.data.board.push((14u8, suit))
+        };
         self.data.board.push(card);
         self.data.deck_idx += 1;
     }
@@ -1080,10 +1077,9 @@ impl From<Game<Turn>> for Game<River> {
 impl Game<River> {
     fn step(&mut self) {
         let card = self.data.deck[self.data.deck_idx];
-        match card {
-            (1u8, suit) => self.data.board.push((14u8, suit)),
-            _ => {}
-        }
+        if let (1u8, suit) = card {
+            self.data.board.push((14u8, suit))
+        };
         self.data.board.push(card);
         self.data.deck_idx += 1;
     }
