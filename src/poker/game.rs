@@ -2,7 +2,7 @@ use crate::poker::functional;
 
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use std::cmp::Ordering;
+use std::cmp::{max, Ordering};
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -423,7 +423,8 @@ impl<T> Game<T> {
 
     /// Return the number of cards that've been dealt.
     pub fn get_num_community_cards(&self) -> usize {
-        self.data.board.len()
+        // We can't use the board length because aces are counted twice.
+        max(0, self.data.deck_idx - 2 * self.data.num_players)
     }
 
     /// Return the sum of all calls for all pots. A player's total investment
@@ -831,7 +832,12 @@ impl From<Game<Deal>> for Game<TakeAction> {
         while value.data.deck_idx < (2 * value.data.num_players) {
             let deal_idx = seats.find(|&idx| value.data.seats[idx].is_some()).unwrap();
             let player = value.data.seats[deal_idx].as_mut().unwrap();
-            player.cards.push(value.data.deck[value.data.deck_idx]);
+            let card = value.data.deck[value.data.deck_idx];
+            match card {
+                (1u8, suit) => player.cards.push((14u8, suit)),
+                _ => {}
+            }
+            player.cards.push(card);
             value.data.deck_idx += 1;
         }
         let action_options = value.prepare_for_next_phase();
@@ -1000,7 +1006,12 @@ impl From<Game<TakeAction>> for Game<Showdown> {
 impl Game<Flop> {
     fn step(&mut self) {
         for _ in 0..3 {
-            self.data.board.push(self.data.deck[self.data.deck_idx]);
+            let card = self.data.deck[self.data.deck_idx];
+            match card {
+                (1u8, suit) => self.data.board.push((14u8, suit)),
+                _ => {}
+            }
+            self.data.board.push(card);
             self.data.deck_idx += 1;
         }
     }
@@ -1032,7 +1043,12 @@ impl From<Game<Flop>> for Game<Turn> {
 
 impl Game<Turn> {
     fn step(&mut self) {
-        self.data.board.push(self.data.deck[self.data.deck_idx]);
+        let card = self.data.deck[self.data.deck_idx];
+        match card {
+            (1u8, suit) => self.data.board.push((14u8, suit)),
+            _ => {}
+        }
+        self.data.board.push(card);
         self.data.deck_idx += 1;
     }
 }
@@ -1063,7 +1079,12 @@ impl From<Game<Turn>> for Game<River> {
 
 impl Game<River> {
     fn step(&mut self) {
-        self.data.board.push(self.data.deck[self.data.deck_idx]);
+        let card = self.data.deck[self.data.deck_idx];
+        match card {
+            (1u8, suit) => self.data.board.push((14u8, suit)),
+            _ => {}
+        }
+        self.data.board.push(card);
         self.data.deck_idx += 1;
     }
 }
@@ -1113,6 +1134,7 @@ impl Game<Showdown> {
                     let player = self.data.seats[*seat_idx].as_mut().unwrap();
                     if player.state != PlayerState::Fold {
                         seats_in_pot.push(*seat_idx);
+                        player.cards.extend(self.data.board.clone());
                         player.cards.sort_unstable();
                         hands_in_pot.push(functional::eval(&player.cards));
                     }
