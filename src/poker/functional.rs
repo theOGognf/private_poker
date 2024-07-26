@@ -42,7 +42,7 @@ enum Rank {
     StraightFlush,
 }
 
-#[derive(Clone, Ord, Eq, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct SubHand {
     rank: Rank,
     cards: Vec<u8>,

@@ -2,7 +2,7 @@ use crate::poker::functional;
 
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use std::cmp::{max, Ordering};
+use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -307,6 +307,9 @@ struct GameData {
     /// The call a player must make is the sum of all calls from all
     /// pots within this vector.
     pots: Vec<Pot>,
+    /// Temporarily maps player seats to poker hand evaluations so a player's
+    /// hand doesn't have to be evaluated multiple times per game.
+    hand_eval_cache: HashMap<usize, Vec<functional::SubHand>>,
     /// Queue of users that're playing the game but have opted
     /// to spectate. We can't safely remove them from the game mid gameplay,
     /// so we instead queue them for removal.
@@ -338,6 +341,7 @@ impl GameData {
             num_players_active: 0,
             num_players_called: 0,
             pots: Vec::with_capacity(MAX_POTS),
+            hand_eval_cache: HashMap::with_capacity(MAX_PLAYERS),
             players_to_remove: BTreeSet::new(),
             players_to_spectate: BTreeSet::new(),
             deck_idx: 0,
@@ -423,8 +427,7 @@ impl<T> Game<T> {
 
     /// Return the number of cards that've been dealt.
     pub fn get_num_community_cards(&self) -> usize {
-        // We can't use the board length because aces are counted twice.
-        max(0, self.data.deck_idx - 2 * self.data.num_players)
+        self.data.board.len()
     }
 
     /// Return the sum of all calls for all pots. A player's total investment
@@ -781,7 +784,6 @@ impl From<Game<MoveButton>> for Game<CollectBlinds> {
 /// Collect blinds, initializing the main pot.
 impl From<Game<CollectBlinds>> for Game<Deal> {
     fn from(mut value: Game<CollectBlinds>) -> Self {
-        value.data.pots.clear();
         value.data.pots.push(Pot::new());
         let pot = &mut value.data.pots[0];
         for (seat_idx, blind) in [
@@ -833,9 +835,6 @@ impl From<Game<Deal>> for Game<TakeAction> {
             let deal_idx = seats.find(|&idx| value.data.seats[idx].is_some()).unwrap();
             let player = value.data.seats[deal_idx].as_mut().unwrap();
             let card = value.data.deck[value.data.deck_idx];
-            if let (1u8, suit) = card {
-                value.data.board.push((14u8, suit))
-            };
             player.cards.push(card);
             value.data.deck_idx += 1;
         }
@@ -1006,9 +1005,6 @@ impl Game<Flop> {
     fn step(&mut self) {
         for _ in 0..3 {
             let card = self.data.deck[self.data.deck_idx];
-            if let (1u8, suit) = card {
-                self.data.board.push((14u8, suit))
-            };
             self.data.board.push(card);
             self.data.deck_idx += 1;
         }
@@ -1042,9 +1038,6 @@ impl From<Game<Flop>> for Game<Turn> {
 impl Game<Turn> {
     fn step(&mut self) {
         let card = self.data.deck[self.data.deck_idx];
-        if let (1u8, suit) = card {
-            self.data.board.push((14u8, suit))
-        };
         self.data.board.push(card);
         self.data.deck_idx += 1;
     }
@@ -1077,9 +1070,6 @@ impl From<Game<Turn>> for Game<River> {
 impl Game<River> {
     fn step(&mut self) {
         let card = self.data.deck[self.data.deck_idx];
-        if let (1u8, suit) = card {
-            self.data.board.push((14u8, suit))
-        };
         self.data.board.push(card);
         self.data.deck_idx += 1;
     }
@@ -1130,9 +1120,22 @@ impl Game<Showdown> {
                     let player = self.data.seats[*seat_idx].as_mut().unwrap();
                     if player.state != PlayerState::Fold {
                         seats_in_pot.push(*seat_idx);
-                        player.cards.extend(self.data.board.clone());
-                        player.cards.sort_unstable();
-                        hands_in_pot.push(functional::eval(&player.cards));
+                        let hand = match self.data.hand_eval_cache.get(seat_idx) {
+                            Some(hand) => hand,
+                            None => {
+                                let mut cards = player.cards.clone();
+                                cards.extend(self.data.board.clone());
+                                cards.sort_unstable();
+                                // Add ace highs to the hand for evaluation.
+                                for card_idx in 0..4 {
+                                    if let (1u8, suit) = cards[card_idx] {
+                                        cards.push((14u8, suit));
+                                    }
+                                }
+                                &functional::eval(&cards)
+                            }
+                        };
+                        hands_in_pot.push(hand.clone());
                     }
                 }
 
@@ -1291,6 +1294,8 @@ impl From<Game<UpdateBlinds>> for Game<BootPlayers> {
 /// enough money to play.
 impl From<Game<BootPlayers>> for Game<SeatPlayers> {
     fn from(mut value: Game<BootPlayers>) -> Self {
+        value.data.board.clear();
+        value.data.hand_eval_cache.clear();
         for player in value.data.seats.iter_mut().flatten() {
             let user = value.data.users.get(&player.name).unwrap();
             if user.money < value.data.big_blind {
