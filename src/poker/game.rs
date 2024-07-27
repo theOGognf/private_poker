@@ -1338,26 +1338,47 @@ mod tests {
 
     fn init_game() -> Game<SeatPlayers> {
         let mut game = Game::<SeatPlayers>::new();
-        let username1 = "0";
-        let username2 = "1";
-        let username3 = "2";
-        for username in [username1, username2, username3] {
-            game.new_user(username).unwrap();
-            game.waitlist_user(username).unwrap();
+        for i in 0..3 {
+            let username = i.to_string();
+            game.new_user(&username).unwrap();
+            game.waitlist_user(&username).unwrap();
         }
         game
     }
 
-    #[test]
-    fn collect_blinds() {
+    fn init_game_at_collect_blinds() -> Game<Deal> {
+        let game = init_game();
+        let game = Game::<MoveButton>::from(game);
+        let game = Game::<CollectBlinds>::from(game);
+        Game::<Deal>::from(game)
+    }
+
+    fn init_game_at_deal() -> Game<TakeAction> {
         let game = init_game();
         let game = Game::<MoveButton>::from(game);
         let game = Game::<CollectBlinds>::from(game);
         let game = Game::<Deal>::from(game);
+        Game::<TakeAction>::from(game)
+    }
+
+    fn init_game_at_move_button() -> Game<CollectBlinds> {
+        let game = init_game();
+        let game = Game::<MoveButton>::from(game);
+        Game::<CollectBlinds>::from(game)
+    }
+
+    fn init_game_at_seat_players() -> Game<MoveButton> {
+        let game = init_game();
+        Game::<MoveButton>::from(game)
+    }
+
+    #[test]
+    fn collect_blinds() {
+        let game = init_game_at_collect_blinds();
         for (i, blind) in zip((0..3).into_iter(), [0, MIN_SMALL_BLIND, MIN_BIG_BLIND]) {
             let username = i.to_string();
             assert_eq!(
-                game.data.users.get(username.as_str()).unwrap().money,
+                game.data.users.get(&username).unwrap().money,
                 STARTING_STACK - blind
             );
         }
@@ -1365,11 +1386,7 @@ mod tests {
 
     #[test]
     fn deal() {
-        let game = init_game();
-        let game = Game::<MoveButton>::from(game);
-        let game = Game::<CollectBlinds>::from(game);
-        let game = Game::<Deal>::from(game);
-        let game = Game::<TakeAction>::from(game);
+        let game = init_game_at_deal();
         assert_eq!(game.data.deck_idx, 2 * game.data.users.len());
         for player in game.data.seats.iter().flatten() {
             assert_eq!(player.cards.len(), 2);
@@ -1378,9 +1395,7 @@ mod tests {
 
     #[test]
     fn move_button() {
-        let game = init_game();
-        let game = Game::<MoveButton>::from(game);
-        let game = Game::<CollectBlinds>::from(game);
+        let game = init_game_at_move_button();
         assert_eq!(game.data.small_blind_idx, 1);
         assert_eq!(game.data.big_blind_idx, 2);
         assert_eq!(game.data.starting_action_idx, 0);
@@ -1482,8 +1497,7 @@ mod tests {
 
     #[test]
     fn seat_players() {
-        let game = init_game();
-        let game = Game::<MoveButton>::from(game);
+        let game = init_game_at_seat_players();
         assert_eq!(game.data.num_players, game.data.users.len());
         assert_eq!(game.data.num_players_active, game.data.users.len());
         for (_, user) in game.data.users {
