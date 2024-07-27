@@ -1394,18 +1394,6 @@ mod tests {
     }
 
     #[test]
-    fn move_button() {
-        let game = init_game_at_move_button();
-        assert_eq!(game.data.small_blind_idx, 1);
-        assert_eq!(game.data.big_blind_idx, 2);
-        assert_eq!(game.data.starting_action_idx, 0);
-        assert_eq!(
-            game.data.next_action_idx,
-            Some(game.data.starting_action_idx)
-        );
-    }
-
-    #[test]
     fn manipulating_user_in_lobby() {
         let mut game = Game::<SeatPlayers>::new();
         let username = "ognf";
@@ -1493,6 +1481,18 @@ mod tests {
         }
         // The game should now be full.
         assert_eq!(game.new_user(username), Err(UserError::CapacityReached));
+    }
+
+    #[test]
+    fn move_button() {
+        let game = init_game_at_move_button();
+        assert_eq!(game.data.small_blind_idx, 1);
+        assert_eq!(game.data.big_blind_idx, 2);
+        assert_eq!(game.data.starting_action_idx, 0);
+        assert_eq!(
+            game.data.next_action_idx,
+            Some(game.data.starting_action_idx)
+        );
     }
 
     #[test]
