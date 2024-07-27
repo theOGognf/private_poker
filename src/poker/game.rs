@@ -821,7 +821,9 @@ impl From<Game<CollectBlinds>> for Game<Deal> {
                     "A player can't be in a game if they don't have enough for the big blind."
                 ),
             };
-            pot.bet(seat_idx, &bet).unwrap();
+            // Impossible for a side pot to be created from the blinds, so
+            // we don't even need to check.
+            pot.bet(seat_idx, &bet);
             user.money -= blind;
         }
         value.data.num_players_called = 0;
@@ -1326,14 +1328,19 @@ impl From<Game<BootPlayers>> for Game<SeatPlayers> {
 
 #[cfg(test)]
 mod tests {
-    use super::{CollectBlinds, Game, MoveButton, SeatPlayers, UserError, UserState, MAX_USERS};
+    use std::iter::zip;
+
+    use crate::poker::game::{TakeAction, MIN_BIG_BLIND, MIN_SMALL_BLIND, STARTING_STACK};
+
+    use super::{
+        CollectBlinds, Deal, Game, MoveButton, SeatPlayers, UserError, UserState, MAX_USERS,
+    };
 
     fn init_game() -> Game<SeatPlayers> {
         let mut game = Game::<SeatPlayers>::new();
-        let username1 = "mark";
-        let username2 = "matt";
-        let username3 = "max";
-
+        let username1 = "0";
+        let username2 = "1";
+        let username3 = "2";
         for username in [username1, username2, username3] {
             game.new_user(username).unwrap();
             game.waitlist_user(username).unwrap();
@@ -1342,11 +1349,38 @@ mod tests {
     }
 
     #[test]
+    fn collect_blinds() {
+        let game = init_game();
+        let game = Game::<MoveButton>::from(game);
+        let game = Game::<CollectBlinds>::from(game);
+        let game = Game::<Deal>::from(game);
+        for (i, blind) in zip((0..3).into_iter(), [0, MIN_SMALL_BLIND, MIN_BIG_BLIND]) {
+            let username = i.to_string();
+            assert_eq!(
+                game.data.users.get(username.as_str()).unwrap().money,
+                STARTING_STACK - blind
+            );
+        }
+    }
+
+    #[test]
+    fn deal() {
+        let game = init_game();
+        let game = Game::<MoveButton>::from(game);
+        let game = Game::<CollectBlinds>::from(game);
+        let game = Game::<Deal>::from(game);
+        let game = Game::<TakeAction>::from(game);
+        assert_eq!(game.data.deck_idx, 2 * game.data.users.len());
+        for player in game.data.seats.iter().flatten() {
+            assert_eq!(player.cards.len(), 2);
+        }
+    }
+
+    #[test]
     fn move_button() {
         let game = init_game();
         let game = Game::<MoveButton>::from(game);
         let game = Game::<CollectBlinds>::from(game);
-        println!("{game:#?}");
         assert_eq!(game.data.small_blind_idx, 1);
         assert_eq!(game.data.big_blind_idx, 2);
         assert_eq!(game.data.starting_action_idx, 0);
