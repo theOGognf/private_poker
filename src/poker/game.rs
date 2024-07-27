@@ -762,18 +762,28 @@ impl From<Game<SeatPlayers>> for Game<MoveButton> {
 impl From<Game<MoveButton>> for Game<CollectBlinds> {
     fn from(mut value: Game<MoveButton>) -> Self {
         // Search for the big blind and starting positions.
-        let mut seats = value.data.seats.iter().cycle();
-        seats.nth(value.data.big_blind_idx);
-        value.data.big_blind_idx = seats.position(|s| s.is_some()).unwrap();
-        value.data.starting_action_idx = seats.position(|s| s.is_some()).unwrap();
+        let mut seats = value
+            .data
+            .seats
+            .iter()
+            .enumerate()
+            .cycle()
+            .skip(value.data.big_blind_idx + 1);
+        (value.data.big_blind_idx, _) = seats.find(|(_, s)| s.is_some()).unwrap();
+        (value.data.starting_action_idx, _) = seats.find(|(_, s)| s.is_some()).unwrap();
         value.data.next_action_idx = Some(value.data.starting_action_idx);
         // Reverse the table search to find the small blind position relative
         // to the big blind position since the small blind must always trail the big
         // blind.
-        let mut seats = value.data.seats.iter();
-        seats.nth(value.data.big_blind_idx);
-        let mut reverse_seats = seats.rev().cycle();
-        value.data.small_blind_idx = reverse_seats.position(|s| s.is_some()).unwrap();
+        let mut seats = value
+            .data
+            .seats
+            .iter()
+            .enumerate()
+            .rev()
+            .cycle()
+            .skip(MAX_PLAYERS - value.data.big_blind_idx);
+        (value.data.small_blind_idx, _) = seats.find(|(_, s)| s.is_some()).unwrap();
         Self {
             data: value.data,
             state: CollectBlinds {},
