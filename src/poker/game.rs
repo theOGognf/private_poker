@@ -1,126 +1,15 @@
+use crate::poker::constants::{MAX_PLAYERS, MAX_POTS, MAX_USERS};
+use crate::poker::entities::{
+    Action, Bet, BetAction, Card, Player, PlayerState, Pot, SubHand, Usd, Usdf, User, UserState,
+    MIN_BIG_BLIND, MIN_SMALL_BLIND,
+};
 use crate::poker::functional;
 
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
-use std::fmt;
-use std::hash::{Hash, Hasher};
-use std::mem::discriminant;
 use thiserror::Error;
-
-// Don't want too many people waiting to play the game.
-const MAX_PLAYERS: usize = 12;
-const MAX_USERS: usize = MAX_PLAYERS + 6;
-// In the wild case that players have monotonically increasing
-// stacks and they all go all-in.
-const MAX_POTS: usize = MAX_PLAYERS / 3;
-// Technically a hand can only consist of 7 cards, but we treat aces
-// as two separate cards (1u8 and 14u8).
-const MAX_CARDS: usize = 11;
-
-/// Type alias for whole dollars. All bets and player stacks are represented
-/// as whole dollars (there's no point arguing over pennies).
-///
-/// If the total money in a game ever surpasses ~4.2 billion, then we may
-/// have a problem.
-type Usd = u32;
-/// Type alias for decimal dollars. Only used to represent the remainder of
-/// whole dollars in the cases where whole dollars can't be distributed evenly
-/// amongst users.
-type Usdf = f32;
-
-// By default, a player will be cleaned if they fold 20 rounds with the big
-// blind.
-const STARTING_STACK: Usd = 200;
-const MIN_BIG_BLIND: Usd = STARTING_STACK / 20;
-const MIN_SMALL_BLIND: Usd = MIN_BIG_BLIND / 2;
-
-#[derive(Debug, Eq, PartialEq)]
-enum UserState {
-    Spectating,
-    Playing,
-    Waiting,
-}
-
-#[derive(Debug)]
-struct User {
-    money: Usd,
-    state: UserState,
-}
-
-impl User {
-    fn new() -> User {
-        User {
-            money: STARTING_STACK,
-            state: UserState::Spectating,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum Action {
-    AllIn,
-    Call(Usd),
-    Check,
-    Fold,
-    Raise(Usd),
-}
-
-impl fmt::Display for Action {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Action::AllIn => write!(f, "all-in"),
-            Action::Call(_) => write!(f, "call"),
-            Action::Check => write!(f, "check"),
-            Action::Fold => write!(f, "fold"),
-            Action::Raise(_) => write!(f, "raise"),
-        }
-    }
-}
-
-// We don't care about the values within `Action::Call` and
-// `Action::Raise`. We just perform checks against the enum
-// variant to verify a user is choosing an action that's available
-// within their presented action options. Actual bet validation
-// is done during the `TakeAction` game state.
-impl Eq for Action {}
-
-impl Hash for Action {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        discriminant(self).hash(state);
-    }
-}
-
-impl PartialEq for Action {
-    fn eq(&self, other: &Self) -> bool {
-        discriminant(self) == discriminant(other)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum BetAction {
-    AllIn,
-    Call,
-    Raise,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Bet {
-    action: BetAction,
-    amount: Usd,
-}
-
-impl fmt::Display for Bet {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let amount = self.amount;
-        match self.action {
-            BetAction::AllIn => write!(f, "all-in with ${amount}"),
-            BetAction::Call => write!(f, "call with ${amount}"),
-            BetAction::Raise => write!(f, "raise with ${amount}"),
-        }
-    }
-}
 
 #[derive(Debug, Eq, Error, PartialEq)]
 pub enum UserError {
@@ -138,142 +27,11 @@ pub enum UserError {
     InvalidBet { seat_idx: usize, bet: Bet },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum SidePotState {
-    AllIn,
-    Raise,
-    CallOrReraise,
-}
-
-/// For users that're in a pot.
-#[derive(Debug, PartialEq)]
-enum PlayerState {
-    // Player is in the pot but is waiting for their move.
-    Wait,
-    // Player put in their whole stack.
-    AllIn,
-    // Player forfeited their stack for the pot.
-    Fold,
-}
-
-#[derive(Debug)]
-struct Player {
-    name: String,
-    state: PlayerState,
-    cards: Vec<functional::Card>,
-}
-
-impl Player {
-    fn new(name: &str) -> Player {
-        Player {
-            name: name.to_string(),
-            state: PlayerState::Wait,
-            cards: Vec::with_capacity(MAX_CARDS),
-        }
-    }
-
-    fn reset(&mut self) {
-        self.state = PlayerState::Wait;
-        self.cards.clear();
-    }
-}
-
-#[derive(Debug)]
-struct Pot {
-    // The total investment for each player to remain in the hand.
-    call: Usd,
-    // Size is just the sum of all investments in the pot.
-    size: Usd,
-    // Map seat indices (players) to their investment in the pot.
-    investments: HashMap<usize, Usd>,
-    // Used to check whether to spawn a side pot from this pot.
-    // Should be `None` if no side pot conditions are met.
-    side_pot_state: Option<SidePotState>,
-}
-
-impl Pot {
-    fn bet(&mut self, seat_idx: usize, bet: &Bet) -> Option<Pot> {
-        let investment = self.investments.entry(seat_idx).or_default();
-        let mut new_call = self.call;
-        let mut new_investment = *investment + bet.amount;
-        let mut pot_increase = bet.amount;
-        match bet.action {
-            BetAction::Call => {}
-            BetAction::Raise => {
-                new_call = new_investment;
-            }
-            BetAction::AllIn => {
-                if new_investment > self.call {
-                    new_call = new_investment;
-                }
-            }
-        }
-        // Need to check whether a side pot is created. A side pot is created
-        // when a player all-ins and then a subsequent player raises (an all-in
-        // that is more than the previous all-in is considered a raise).
-        // In this case, the call for the current pot remains unchanged, and
-        // the pot is only increased by the original call. The excess
-        // is used to start a new pot.
-        let mut side_pot = None;
-        match (bet.action, self.side_pot_state) {
-            (BetAction::AllIn, None) => self.side_pot_state = Some(SidePotState::AllIn),
-            (BetAction::AllIn, Some(SidePotState::AllIn))
-            | (BetAction::Raise, Some(SidePotState::AllIn)) => {
-                if new_investment > self.call {
-                    self.side_pot_state = Some(SidePotState::Raise);
-                    side_pot = Some(Pot::new());
-                    side_pot.as_mut().unwrap().bet(
-                        seat_idx,
-                        &Bet {
-                            action: bet.action,
-                            amount: new_investment - self.call,
-                        },
-                    );
-                    // The call for the pot hasn't change.
-                    new_call = self.call;
-                    // The pot increase is just the pot's call remaining for the player.
-                    pot_increase = self.call - *investment;
-                    // The player has now matched the call for the pot.
-                    new_investment = self.call;
-                }
-            }
-            _ => {}
-        }
-        // Finally, update the call, the pot, and the player's investment
-        // in the current pot.
-        self.call = new_call;
-        self.size += pot_increase;
-        *investment = new_investment;
-        side_pot
-    }
-
-    /// Return the amount the player must bet to remain in the hand, and
-    /// the minimum the player must raise by for it to be considered
-    /// a valid raise.
-    fn get_call_by_seat(&self, seat_idx: usize) -> Usd {
-        self.call - self.get_investment_by_seat(seat_idx)
-    }
-
-    /// Return the amount the player has invested in the pot.
-    fn get_investment_by_seat(&self, seat_idx: usize) -> Usd {
-        self.investments.get(&seat_idx).copied().unwrap_or_default()
-    }
-
-    fn new() -> Pot {
-        Pot {
-            call: 0,
-            size: 0,
-            investments: HashMap::with_capacity(MAX_PLAYERS),
-            side_pot_state: None,
-        }
-    }
-}
-
 #[derive(Debug)]
 struct GameData {
     /// Deck of cards. This is instantiated once and reshuffled
     /// each deal.
-    deck: [functional::Card; 52],
+    deck: [Card; 52],
     /// Money from users that've left the game. This money is
     /// split equally amongst all users at a particular game state.
     /// This helps keep the amount of money in the game constant,
@@ -286,7 +44,7 @@ struct GameData {
     waitlist: VecDeque<String>,
     seats: [Option<Player>; MAX_PLAYERS],
     /// Community cards shared amongst all players.
-    board: Vec<functional::Card>,
+    board: Vec<Card>,
     /// Count of the number of players seated within `seats`.
     /// Helps refrain from overfilling the seats when players
     /// are seated.
@@ -309,7 +67,7 @@ struct GameData {
     pots: Vec<Pot>,
     /// Temporarily maps player seats to poker hand evaluations so a player's
     /// hand doesn't have to be evaluated multiple times per game.
-    hand_eval_cache: HashMap<usize, Vec<functional::SubHand>>,
+    hand_eval_cache: HashMap<usize, Vec<SubHand>>,
     /// Queue of users that're playing the game but have opted
     /// to spectate. We can't safely remove them from the game mid gameplay,
     /// so we instead queue them for removal.
@@ -392,30 +150,42 @@ pub struct Game<T> {
 /// General game methods.
 impl<T> Game<T> {
     /// Return the index of the player who has the next action.
-    fn get_next_action_idx(&self) -> Option<usize> {
-        let mut seats = self.data.seats.iter().cycle();
-        seats.nth(self.data.next_action_idx.unwrap());
-        seats.position(|s| s.as_ref().is_some_and(|p| p.state == PlayerState::Wait))
+    fn get_next_action_idx(&self, new_phase: bool) -> Option<usize> {
+        if self.data.num_players_called == self.data.num_players_active {
+            return None;
+        }
+        match self.data.next_action_idx {
+            Some(action_idx) => self
+                .data
+                .seats
+                .iter()
+                .enumerate()
+                .cycle()
+                .skip(action_idx + !new_phase as usize)
+                .find(|(_, s)| s.as_ref().is_some_and(|p| p.state == PlayerState::Wait))
+                .map(|(next_action_idx, _)| next_action_idx),
+            None => None,
+        }
     }
 
     /// Return the set of possible actions the next player can
     /// make.
-    fn get_next_possible_actions(&self) -> Option<HashSet<Action>> {
+    fn get_next_action_options(&self) -> Option<HashSet<Action>> {
         if self.data.num_players_called == self.data.num_players_active {
             return None;
         }
         match self.data.next_action_idx {
             Some(next_action_idx) => {
                 let mut action_options = HashSet::from([Action::AllIn, Action::Fold]);
-                let call = self.get_total_call_by_seat(next_action_idx);
-                if call > 0 {
-                    action_options.insert(Action::Call(call));
-                } else {
-                    action_options.insert(Action::Check);
-                }
                 let player = self.data.seats[next_action_idx].as_ref().unwrap();
                 let user = self.data.users.get(&player.name).unwrap();
                 let raise = self.get_total_min_raise_by_seat(next_action_idx);
+                let call = self.get_total_call_by_seat(next_action_idx);
+                if call > 0 && call < user.money {
+                    action_options.insert(Action::Call(call));
+                } else if call == 0 {
+                    action_options.insert(Action::Check);
+                }
                 if user.money > raise {
                     action_options.insert(Action::Raise(raise));
                 }
@@ -517,8 +287,8 @@ impl<T> Game<T> {
     fn prepare_for_next_phase(&mut self) -> Option<HashSet<Action>> {
         self.data.num_players_called = 0;
         self.data.next_action_idx = Some(self.data.starting_action_idx);
-        self.data.next_action_idx = self.get_next_action_idx();
-        self.get_next_possible_actions()
+        self.data.next_action_idx = self.get_next_action_idx(true);
+        self.get_next_action_options()
     }
 
     pub fn waitlist_user(&mut self, username: &str) -> Result<bool, UserError> {
@@ -861,8 +631,8 @@ impl From<Game<Deal>> for Game<TakeAction> {
 impl Game<TakeAction> {
     pub fn act(&mut self, action: Action) -> Result<(), UserError> {
         self.affect(action)?;
-        self.data.next_action_idx = self.get_next_action_idx();
-        self.state.action_options = self.get_next_possible_actions();
+        self.data.next_action_idx = self.get_next_action_idx(false);
+        self.state.action_options = self.get_next_action_options();
         Ok(())
     }
 
@@ -917,7 +687,7 @@ impl Game<TakeAction> {
             BetAction::AllIn => {
                 self.data.num_players_active -= 1;
                 if new_total_investment > total_call {
-                    self.data.num_players_called = 1;
+                    self.data.num_players_called = 0;
                 }
             }
             BetAction::Call => {
@@ -1328,12 +1098,14 @@ impl From<Game<BootPlayers>> for Game<SeatPlayers> {
 
 #[cfg(test)]
 mod tests {
-    use std::iter::zip;
+    use std::{collections::HashSet, iter::zip};
 
-    use crate::poker::game::{TakeAction, MIN_BIG_BLIND, MIN_SMALL_BLIND, STARTING_STACK};
+    use crate::poker::entities::{Action, STARTING_STACK};
+    use crate::poker::game::{TakeAction, MIN_BIG_BLIND, MIN_SMALL_BLIND};
 
     use super::{
-        CollectBlinds, Deal, Game, MoveButton, SeatPlayers, UserError, UserState, MAX_USERS,
+        CollectBlinds, Deal, Game, MoveButton, SeatPlayers, UserError, UserState, MAX_PLAYERS,
+        MAX_USERS,
     };
 
     fn init_game() -> Game<SeatPlayers> {
@@ -1387,6 +1159,7 @@ mod tests {
     #[test]
     fn deal() {
         let game = init_game_at_deal();
+        assert_eq!(game.get_num_community_cards(), 0);
         assert_eq!(game.data.deck_idx, 2 * game.data.users.len());
         for player in game.data.seats.iter().flatten() {
             assert_eq!(player.cards.len(), 2);
@@ -1398,7 +1171,6 @@ mod tests {
         let mut game = Game::<SeatPlayers>::new();
         let username = "ognf";
 
-        // Add new user, make sure they exist and are spectating.
         game.new_user(username).unwrap();
         assert!(game.data.users.contains_key(username));
         assert!(game.data.spectators.contains(username));
@@ -1407,7 +1179,6 @@ mod tests {
             UserState::Spectating
         );
 
-        // Make sure we can't add another user of the same name.
         assert_eq!(
             game.new_user(username),
             Err(UserError::AlreadyExists {
@@ -1415,8 +1186,6 @@ mod tests {
             })
         );
 
-        // Try some user state transitions.
-        // Waitlisting.
         game.waitlist_user(username).unwrap();
         assert!(game.data.waitlist.contains(&username.to_string()));
         assert_eq!(
@@ -1424,7 +1193,6 @@ mod tests {
             UserState::Waiting
         );
 
-        // Back to spectating.
         game.spectate_user(username).unwrap();
         assert!(game.data.spectators.contains(username));
         assert_eq!(
@@ -1432,12 +1200,10 @@ mod tests {
             UserState::Spectating
         );
 
-        // Remove them.
         game.remove_user(username).unwrap();
         assert!(!game.data.users.contains_key(username));
         assert!(!game.data.spectators.contains(username));
 
-        // Try to do stuff when they don't exist.
         assert_eq!(
             game.remove_user(username),
             Err(UserError::DoesNotExist {
@@ -1457,12 +1223,10 @@ mod tests {
             })
         );
 
-        // Add them again.
         game.new_user(username).unwrap();
         assert!(game.data.users.contains_key(username));
         assert!(game.data.spectators.contains(username));
 
-        // Waitlist them again.
         game.waitlist_user(username).unwrap();
         assert!(game.data.waitlist.contains(&username.to_string()));
         assert_eq!(
@@ -1470,16 +1234,13 @@ mod tests {
             UserState::Waiting
         );
 
-        // Remove them again.
         game.remove_user(username).unwrap();
         assert!(!game.data.users.contains_key(username));
         assert!(!game.data.waitlist.contains(&username.to_string()));
 
-        // Finally, add a bunch of users until capacity is reached.
         for i in 0..MAX_USERS {
             game.new_user(&i.to_string()).unwrap();
         }
-        // The game should now be full.
         assert_eq!(game.new_user(username), Err(UserError::CapacityReached));
     }
 
@@ -1495,6 +1256,27 @@ mod tests {
         );
     }
 
+    // Fill a game to capacity and then move the action index around.
+    // Every player should get their turn.
+    #[test]
+    fn move_next_action_idx() {
+        let mut game = Game::<SeatPlayers>::new();
+        for i in 0..MAX_USERS {
+            let username = i.to_string();
+            game.new_user(&username).unwrap();
+            game.waitlist_user(&username).unwrap();
+        }
+        let mut game = Game::<MoveButton>::from(game);
+        for i in 2..MAX_PLAYERS {
+            assert_eq!(game.data.next_action_idx, Some(i));
+            game.data.next_action_idx = game.get_next_action_idx(false);
+        }
+        for i in 0..2 {
+            assert_eq!(game.data.next_action_idx, Some(i));
+            game.data.next_action_idx = game.get_next_action_idx(false);
+        }
+    }
+
     #[test]
     fn seat_players() {
         let game = init_game_at_seat_players();
@@ -1503,5 +1285,67 @@ mod tests {
         for (_, user) in game.data.users {
             assert_eq!(user.state, UserState::Playing);
         }
+    }
+
+    #[test]
+    fn take_action_2_all_ins_1_fold() {
+        let mut game = init_game_at_deal();
+        assert_eq!(
+            game.get_next_action_options(),
+            Some(HashSet::from([
+                Action::AllIn,
+                Action::Call(10),
+                Action::Fold,
+                Action::Raise(20)
+            ]))
+        );
+        game.act(Action::AllIn).unwrap();
+        assert_eq!(
+            game.get_next_action_options(),
+            Some(HashSet::from([Action::AllIn, Action::Fold]))
+        );
+        game.act(Action::AllIn).unwrap();
+        assert_eq!(
+            game.get_next_action_options(),
+            Some(HashSet::from([Action::AllIn, Action::Fold]))
+        );
+        game.act(Action::Fold).unwrap();
+        assert_eq!(game.get_next_action_options(), None);
+    }
+
+    #[test]
+    fn take_action_2_calls_1_check() {
+        let mut game = init_game_at_deal();
+        assert_eq!(
+            game.get_next_action_options(),
+            Some(HashSet::from([
+                Action::AllIn,
+                Action::Call(10),
+                Action::Fold,
+                Action::Raise(20)
+            ]))
+        );
+        game.act(Action::Call(10)).unwrap();
+        assert_eq!(
+            game.get_next_action_options(),
+            Some(HashSet::from([
+                Action::AllIn,
+                Action::Call(5),
+                Action::Fold,
+                Action::Raise(15)
+            ]))
+        );
+        game.act(Action::Call(5)).unwrap();
+        assert_eq!(
+            game.get_next_action_options(),
+            Some(HashSet::from([
+                Action::AllIn,
+                Action::Check,
+                Action::Fold,
+                Action::Raise(20)
+            ]))
+        );
+        game.act(Action::Check).unwrap();
+        assert_eq!(game.get_next_action_options(), None);
     }
 }

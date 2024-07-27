@@ -1,52 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
-use std::fmt;
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Suit {
-    Club,
-    Spade,
-    Diamond,
-    Heart,
-    // Wild is used to initialize a deck of cards.
-    // Might be a good choice for a joker's suit.
-    Wild,
-}
-
-impl fmt::Display for Suit {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Suit::Club => write!(f, "♧"),
-            Suit::Spade => write!(f, "♤"),
-            Suit::Diamond => write!(f, "♦"),
-            Suit::Heart => write!(f, "♥"),
-            Suit::Wild => write!(f, "*"),
-        }
-    }
-}
-
-/// A card is a tuple of a uInt8 value (ace=1u8 ... ace=14u8)
-/// and a suit. A joker is depicted as 0u8.
-pub type Card = (u8, Suit);
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-enum Rank {
-    HighCard,
-    OnePair,
-    TwoPair,
-    ThreeOfAKind,
-    Straight,
-    Flush,
-    FullHouse,
-    FourOfAKind,
-    StraightFlush,
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct SubHand {
-    rank: Rank,
-    cards: Vec<u8>,
-}
+use crate::poker::entities::{Card, Rank, SubHand, Suit};
 
 /// Get the indices corresponding to the winning hands from an array
 /// of hands that were each created from `eval`.
@@ -136,7 +91,7 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
             let maybe_straight_flush_start_idx = values_in_suit.len() - 5;
             let maybe_straight_flush_cards = &values_in_suit[maybe_straight_flush_start_idx..];
             let mut is_straight_flush = true;
-            for flush_idx in 0..3 {
+            for flush_idx in 0..4 {
                 if (maybe_straight_flush_cards[flush_idx] + 1)
                     != maybe_straight_flush_cards[flush_idx + 1]
                 {
@@ -424,6 +379,7 @@ mod tests {
             (6u8, Suit::Heart),
             (7u8, Suit::Heart),
             (8u8, Suit::Heart),
+            (9u8, Suit::Heart),
             (14u8, Suit::Heart),
         ]}, TestHand{expected_rank: Rank::Flush, cards: vec![
             (2u8, Suit::Diamond),
@@ -445,6 +401,20 @@ mod tests {
             (6u8, Suit::Diamond),
             (7u8, Suit::Diamond),
         ]}, vec![1]),
+        straight_wins_to_high_card: (TestHand{expected_rank: Rank::Straight, cards: vec![
+            (4u8, Suit::Heart),
+            (5u8, Suit::Heart),
+            (6u8, Suit::Club),
+            (7u8, Suit::Heart),
+            (8u8, Suit::Heart),
+        ]}, TestHand{expected_rank: Rank::HighCard, cards: vec![
+            (1u8, Suit::Diamond),
+            (5u8, Suit::Heart),
+            (6u8, Suit::Heart),
+            (7u8, Suit::Heart),
+            (8u8, Suit::Heart),
+            (10u8, Suit::Diamond),
+        ]}, vec![0]),
         flush_loses_to_straight_flush: (TestHand{expected_rank: Rank::Flush, cards: vec![
             (4u8, Suit::Heart),
             (5u8, Suit::Heart),
