@@ -1100,7 +1100,7 @@ impl From<Game<BootPlayers>> for Game<SeatPlayers> {
 mod tests {
     use std::{collections::HashSet, iter::zip};
 
-    use crate::poker::entities::{Action, STARTING_STACK};
+    use crate::poker::entities::{Action, Usd, STARTING_STACK};
     use crate::poker::game::{TakeAction, MIN_BIG_BLIND, MIN_SMALL_BLIND};
 
     use super::{
@@ -1169,9 +1169,9 @@ mod tests {
     #[test]
     fn early_showdown() {
         let mut game = init_game_at_deal();
-        game.act(Action::AllIn).unwrap();
-        game.act(Action::AllIn).unwrap();
         game.act(Action::Fold).unwrap();
+        game.act(Action::AllIn).unwrap();
+        game.act(Action::AllIn).unwrap();
         let game: Game<Flop> = game.into();
         let game: Game<Turn> = game.into();
         assert_eq!(game.get_num_community_cards(), 3);
@@ -1180,6 +1180,15 @@ mod tests {
         let mut game: Game<Showdown> = game.into();
         assert_eq!(game.get_num_community_cards(), 5);
         assert!(game.distribute());
+        assert!(!game.distribute());
+        let stacks = game.data.users.values().map(|user| user.money);
+        let unique_stacks: HashSet<Usd> = HashSet::from_iter(stacks);
+        let total_money: Usd = unique_stacks.iter().sum();
+        assert_eq!(total_money, 3 * STARTING_STACK);
+        assert_eq!(
+            unique_stacks,
+            HashSet::from([0, STARTING_STACK, 2 * STARTING_STACK])
+        );
     }
 
     #[test]
