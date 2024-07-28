@@ -431,17 +431,17 @@ mod tests {
             (8u8, Suit::Diamond),
         ]}, vec![1]),
         flush_loses_to_flush: (TestHand{expected_rank: Rank::Flush, cards: vec![
-            (1u8, Suit::Diamond),
-            (4u8, Suit::Diamond),
-            (5u8, Suit::Diamond),
-            (6u8, Suit::Diamond),
-            (7u8, Suit::Diamond),
-        ]}, TestHand{expected_rank: Rank::Flush, cards: vec![
             (2u8, Suit::Diamond),
-            (4u8, Suit::Diamond),
             (5u8, Suit::Diamond),
             (6u8, Suit::Diamond),
             (7u8, Suit::Diamond),
+            (8u8, Suit::Diamond),
+        ]}, TestHand{expected_rank: Rank::Flush, cards: vec![
+            (3u8, Suit::Diamond),
+            (5u8, Suit::Diamond),
+            (6u8, Suit::Diamond),
+            (7u8, Suit::Diamond),
+            (8u8, Suit::Diamond),
         ]}, vec![1]),
         high_card_loses_to_high_card: (TestHand{expected_rank: Rank::HighCard, cards: vec![
             (3u8, Suit::Club),
