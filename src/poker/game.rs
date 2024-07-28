@@ -151,7 +151,7 @@ pub struct Game<T> {
 impl<T> Game<T> {
     /// Return the index of the player who has the next action.
     fn get_next_action_idx(&self, new_phase: bool) -> Option<usize> {
-        if self.data.num_players_called == self.data.num_players_active {
+        if self.is_end_of_round() {
             return None;
         }
         match self.data.next_action_idx {
@@ -171,16 +171,16 @@ impl<T> Game<T> {
     /// Return the set of possible actions the next player can
     /// make.
     fn get_next_action_options(&self) -> Option<HashSet<Action>> {
-        if self.data.num_players_called == self.data.num_players_active {
+        if self.is_ready_for_next_phase() {
             return None;
         }
         match self.data.next_action_idx {
-            Some(next_action_idx) => {
+            Some(action_idx) => {
                 let mut action_options = HashSet::from([Action::AllIn, Action::Fold]);
-                let player = self.data.seats[next_action_idx].as_ref().unwrap();
+                let player = self.data.seats[action_idx].as_ref().unwrap();
                 let user = self.data.users.get(&player.name).unwrap();
-                let raise = self.get_total_min_raise_by_seat(next_action_idx);
-                let call = self.get_total_call_by_seat(next_action_idx);
+                let raise = self.get_total_min_raise_by_seat(action_idx);
+                let call = self.get_total_call_by_seat(action_idx);
                 if call > 0 && call < user.money {
                     action_options.insert(Action::Call(call));
                 } else if call == 0 {
@@ -231,27 +231,31 @@ impl<T> Game<T> {
         2 * self.get_total_call() - self.get_total_investment_by_seat(seat_idx)
     }
 
+    /// Return whether the game is ready to move onto the next phase
+    /// now that the betting round is over.
+    pub fn is_end_of_round(&self) -> bool {
+        self.data.num_players_active == self.data.num_players_called
+    }
+
     pub fn is_pot_empty(&self) -> bool {
         self.data.pots.is_empty()
+    }
+
+    /// Return whether the betting round is over and the game can continue
+    /// to the next phase. Used to help signal state transitions.
+    pub fn is_ready_for_next_phase(&self) -> bool {
+        self.is_end_of_round() || self.is_ready_for_showdown()
     }
 
     /// Return whether the game is ready to evaluate all the hands
     /// remaining in the pot. Used to help signal state transitions.
     pub fn is_ready_for_showdown(&self) -> bool {
-        let mut num_players_remaining: usize = 0;
-        let mut num_all_in: usize = 0;
-        for player in self.data.seats.iter().flatten() {
-            match player.state {
-                PlayerState::AllIn => {
-                    num_players_remaining += 1;
-                    num_all_in += 1;
-                }
-                PlayerState::Wait => num_players_remaining += 1,
-                _ => {}
+        match self.data.next_action_idx {
+            Some(action_idx) => {
+                self.data.num_players_active <= 1 && self.get_total_call_by_seat(action_idx) == 0
             }
+            None => false,
         }
-        // If no one else is left to make a move, then proceed to the showdown.
-        num_players_remaining == 1 || num_all_in >= num_players_remaining - 1
     }
 
     pub fn new() -> Game<SeatPlayers> {
@@ -738,12 +742,6 @@ impl Game<TakeAction> {
             }
         }
         Ok(())
-    }
-
-    /// Return whether the betting round is over and the game can continue
-    /// to the next phase. Used to help signal state transitions.
-    pub fn is_ready_for_next_phase(&self) -> bool {
-        self.state.action_options.is_none()
     }
 }
 
@@ -1346,6 +1344,32 @@ mod tests {
             ]))
         );
         game.act(Action::Check).unwrap();
+        assert_eq!(game.get_next_action_options(), None);
+    }
+
+    #[test]
+    fn take_action_2_folds() {
+        let mut game = init_game_at_deal();
+        assert_eq!(
+            game.get_next_action_options(),
+            Some(HashSet::from([
+                Action::AllIn,
+                Action::Call(10),
+                Action::Fold,
+                Action::Raise(20)
+            ]))
+        );
+        game.act(Action::Fold).unwrap();
+        assert_eq!(
+            game.get_next_action_options(),
+            Some(HashSet::from([
+                Action::AllIn,
+                Action::Call(5),
+                Action::Fold,
+                Action::Raise(15)
+            ]))
+        );
+        game.act(Action::Fold).unwrap();
         assert_eq!(game.get_next_action_options(), None);
     }
 }
