@@ -1372,4 +1372,63 @@ mod tests {
         game.act(Action::Fold).unwrap();
         assert_eq!(game.get_next_action_options(), None);
     }
+
+    #[test]
+    fn take_action_2_reraises() {
+        let mut game = init_game_at_deal();
+        assert_eq!(
+            game.get_next_action_options(),
+            Some(HashSet::from([
+                Action::AllIn,
+                Action::Call(10),
+                Action::Fold,
+                Action::Raise(20)
+            ]))
+        );
+        game.act(Action::Fold).unwrap();
+        assert_eq!(
+            game.get_next_action_options(),
+            Some(HashSet::from([
+                Action::AllIn,
+                Action::Call(5),
+                Action::Fold,
+                Action::Raise(15)
+            ]))
+        );
+        // Total call is 20
+        game.act(Action::Raise(15)).unwrap();
+        assert_eq!(
+            game.get_next_action_options(),
+            Some(HashSet::from([
+                Action::AllIn,
+                Action::Call(10),
+                Action::Fold,
+                Action::Raise(30)
+            ]))
+        );
+        // Total call is 40
+        game.act(Action::Raise(30)).unwrap();
+        assert_eq!(
+            game.get_next_action_options(),
+            Some(HashSet::from([
+                Action::AllIn,
+                Action::Call(20),
+                Action::Fold,
+                Action::Raise(60)
+            ]))
+        );
+        // Total call is 80
+        game.act(Action::Raise(60)).unwrap();
+        assert_eq!(
+            game.get_next_action_options(),
+            Some(HashSet::from([
+                Action::AllIn,
+                Action::Call(40),
+                Action::Fold,
+                Action::Raise(120)
+            ]))
+        );
+        game.act(Action::Fold).unwrap();
+        assert_eq!(game.get_next_action_options(), None);
+    }
 }
