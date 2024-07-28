@@ -1052,12 +1052,14 @@ impl From<Game<DivideDonations>> for Game<UpdateBlinds> {
 /// any action.
 impl From<Game<UpdateBlinds>> for Game<BootPlayers> {
     fn from(mut value: Game<UpdateBlinds>) -> Self {
-        let mut min_money = Usd::MAX;
-        for (_, user) in value.data.users.iter() {
-            if user.money < min_money {
-                min_money = user.money;
-            }
-        }
+        let min_money = value
+            .data
+            .users
+            .values()
+            .map(|user| user.money)
+            .filter(|money| *money >= value.data.big_blind)
+            .min()
+            .unwrap_or(Usd::MAX);
         if min_money < Usd::MAX && min_money > (2 * value.data.big_blind) {
             value.data.small_blind *= 2;
             value.data.big_blind *= 2;
@@ -1102,8 +1104,8 @@ mod tests {
     use crate::poker::game::{TakeAction, MIN_BIG_BLIND, MIN_SMALL_BLIND};
 
     use super::{
-        CollectBlinds, Deal, Game, MoveButton, SeatPlayers, UserError, UserState, MAX_PLAYERS,
-        MAX_USERS,
+        CollectBlinds, Deal, Flop, Game, MoveButton, River, SeatPlayers, Showdown, Turn, UserError,
+        UserState, MAX_PLAYERS, MAX_USERS,
     };
 
     fn init_game() -> Game<SeatPlayers> {
@@ -1118,22 +1120,22 @@ mod tests {
 
     fn init_game_at_collect_blinds() -> Game<Deal> {
         let game = init_game();
-        let game = Game::<MoveButton>::from(game);
-        let game = Game::<CollectBlinds>::from(game);
+        let game: Game<MoveButton> = game.into();
+        let game: Game<CollectBlinds> = game.into();
         Game::<Deal>::from(game)
     }
 
     fn init_game_at_deal() -> Game<TakeAction> {
         let game = init_game();
-        let game = Game::<MoveButton>::from(game);
-        let game = Game::<CollectBlinds>::from(game);
-        let game = Game::<Deal>::from(game);
+        let game: Game<MoveButton> = game.into();
+        let game: Game<CollectBlinds> = game.into();
+        let game: Game<Deal> = game.into();
         Game::<TakeAction>::from(game)
     }
 
     fn init_game_at_move_button() -> Game<CollectBlinds> {
         let game = init_game();
-        let game = Game::<MoveButton>::from(game);
+        let game: Game<MoveButton> = game.into();
         Game::<CollectBlinds>::from(game)
     }
 
@@ -1162,6 +1164,22 @@ mod tests {
         for player in game.data.seats.iter().flatten() {
             assert_eq!(player.cards.len(), 2);
         }
+    }
+
+    #[test]
+    fn early_showdown() {
+        let mut game = init_game_at_deal();
+        game.act(Action::AllIn).unwrap();
+        game.act(Action::AllIn).unwrap();
+        game.act(Action::Fold).unwrap();
+        let game: Game<Flop> = game.into();
+        let game: Game<Turn> = game.into();
+        assert_eq!(game.get_num_community_cards(), 3);
+        let game: Game<River> = game.into();
+        assert_eq!(game.get_num_community_cards(), 4);
+        let mut game: Game<Showdown> = game.into();
+        assert_eq!(game.get_num_community_cards(), 5);
+        assert!(game.distribute());
     }
 
     #[test]
@@ -1264,7 +1282,7 @@ mod tests {
             game.new_user(&username).unwrap();
             game.waitlist_user(&username).unwrap();
         }
-        let mut game = Game::<MoveButton>::from(game);
+        let mut game: Game<MoveButton> = game.into();
         for i in 2..MAX_PLAYERS {
             assert_eq!(game.data.next_action_idx, Some(i));
             game.data.next_action_idx = game.get_next_action_idx(false);
@@ -1286,7 +1304,7 @@ mod tests {
     }
 
     #[test]
-    fn take_action_2_all_ins_1_fold() {
+    fn take_action_2_all_ins() {
         let mut game = init_game_at_deal();
         assert_eq!(
             game.get_next_action_options(),
