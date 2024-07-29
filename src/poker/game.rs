@@ -11,6 +11,8 @@ use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use thiserror::Error;
 
+use super::entities::STARTING_STACK;
+
 #[derive(Debug, Eq, Error, PartialEq)]
 pub enum UserError {
     #[error("User {username} already exists.")]
@@ -338,29 +340,33 @@ macro_rules! impl_user_managers {
             pub fn remove_user(&mut self, username: &str) -> Result<bool, UserError> {
                 match self.data.users.remove(username) {
                     Some(mut user) => {
-                    match user.state {
-                        UserState::Playing => {
-                            // Need to remove the player from other queues just in
-                            // case they changed their mind.
-                            self.data.players_to_spectate.remove(username);
-                            self.spectate_user(username).unwrap();
-                            self.data.spectators.remove(username);
+                        match user.state {
+                            UserState::Playing => {
+                                // Need to remove the player from other queues just in
+                                // case they changed their mind.
+                                self.data.players_to_spectate.remove(username);
+                                let seat_idx = self
+                                    .data.seats
+                                    .iter()
+                                    .position(|o| o.as_ref().is_some_and(|p| p.name == username))
+                                    .unwrap();
+                                self.data.seats[seat_idx] = None;
+                                self.data.num_players -= 1;
+                            }
+                            UserState::Spectating => {
+                                self.data.spectators.remove(username);
+                            }
+                            UserState::Waiting => {
+                                // We can remove the user from the waitlist anytime we want.
+                                let waitlist_idx = self.data.waitlist.iter().position(|u| u == username).unwrap();
+                                self.data.waitlist.remove(waitlist_idx);
+                            }
                         }
-                        UserState::Spectating => {
-                            self.data.spectators.remove(username);
-                        }
-                        UserState::Waiting => {
-                            // We can remove the user from the waitlist anytime we want.
-                            let waitlist_idx = self.data.waitlist.iter().position(|u| u == username).unwrap();
-                            self.data.waitlist.remove(waitlist_idx);
-                        }
-                    }
-                    self.data.donations += user.money as Usdf;
-                    user.money = 0;
-                    self.data.users.remove(username);
-                    Ok(true)
-                },
-                None => Err(UserError::DoesNotExist{username: username.to_string()}),
+                        self.data.donations += user.money as Usdf;
+                        user.money = 0;
+                        Ok(true)
+                    },
+                    None => Err(UserError::DoesNotExist{username: username.to_string()}),
                 }
             }
 
@@ -481,6 +487,12 @@ macro_rules! impl_user_managers_with_queue {
 
 impl_user_managers!(
     Game<SeatPlayers>,
+    // There's an edge case where a player can queue for removal
+    // when the game is in the `RemovePlayers` state, but before
+    // the transition to the `DivideDonations` state. That's why
+    // the `RemovePlayers` state manages users with the queue-driven
+    // methods.
+    Game<RemovePlayers>,
     Game<DivideDonations>,
     Game<UpdateBlinds>,
     Game<BootPlayers>
@@ -494,13 +506,7 @@ impl_user_managers_with_queue!(
     Game<Flop>,
     Game<Turn>,
     Game<River>,
-    Game<Showdown>,
-    // There's an edge case where a player can queue for removal
-    // when the game is in the `RemovePlayers` state, but before
-    // the transition to the `DivideDonations` state. That's why
-    // the `RemovePlayers` state manages users with the queue-driven
-    // methods.
-    Game<RemovePlayers>
+    Game<Showdown>
 );
 
 impl From<Game<SeatPlayers>> for Game<MoveButton> {
@@ -1060,9 +1066,12 @@ impl From<Game<UpdateBlinds>> for Game<BootPlayers> {
             .filter(|money| *money >= value.data.big_blind)
             .min()
             .unwrap_or(Usd::MAX);
-        if min_money < Usd::MAX && min_money > (2 * value.data.big_blind) {
-            value.data.small_blind *= 2;
-            value.data.big_blind *= 2;
+        if min_money < Usd::MAX {
+            let multiple = min_money / STARTING_STACK;
+            if multiple >= 1 {
+                value.data.small_blind = multiple * MIN_SMALL_BLIND;
+                value.data.big_blind = multiple * MIN_BIG_BLIND;
+            }
         }
         Self {
             data: value.data,
@@ -1101,7 +1110,9 @@ mod tests {
     use std::{collections::HashSet, iter::zip};
 
     use crate::poker::entities::{Action, Suit, STARTING_STACK};
-    use crate::poker::game::{TakeAction, MIN_BIG_BLIND, MIN_SMALL_BLIND};
+    use crate::poker::game::{
+        DivideDonations, RemovePlayers, TakeAction, UpdateBlinds, MIN_BIG_BLIND, MIN_SMALL_BLIND,
+    };
 
     use super::{
         CollectBlinds, Deal, Flop, Game, MoveButton, River, SeatPlayers, Showdown, Turn, UserError,
@@ -1234,12 +1245,12 @@ mod tests {
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
         assert!(game.distribute());
         assert!(!game.distribute());
-        for (i, money) in zip(
-            (0..3).into_iter(),
-            [STARTING_STACK, STARTING_STACK, STARTING_STACK],
-        ) {
+        for i in (0..3).into_iter() {
             let username = i.to_string();
-            assert_eq!(game.data.users.get(&username).unwrap().money, money);
+            assert_eq!(
+                game.data.users.get(&username).unwrap().money,
+                STARTING_STACK
+            );
         }
     }
 
@@ -1351,6 +1362,35 @@ mod tests {
         for i in 0..2 {
             assert_eq!(game.data.next_action_idx, Some(i));
             game.data.next_action_idx = game.get_next_action_idx(false);
+        }
+    }
+
+    #[test]
+    fn remove_player_with_queue() {
+        let mut game = init_game_at_showdown_with_2_all_ins();
+        game.data.board = vec![
+            (2u8, Suit::Diamond),
+            (4u8, Suit::Diamond),
+            (5u8, Suit::Diamond),
+            (6u8, Suit::Diamond),
+            (7u8, Suit::Diamond),
+        ];
+        game.data.seats[1].as_mut().unwrap().cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
+        game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
+        game.remove_user("0").unwrap();
+        game.distribute();
+        let game: Game<RemovePlayers> = game.into();
+        let game: Game<DivideDonations> = game.into();
+        assert!(!game.data.users.contains_key("0"));
+        assert!(game.data.users.contains_key("1"));
+        assert!(game.data.users.contains_key("2"));
+        let game: Game<UpdateBlinds> = game.into();
+        for i in (1..3).into_iter() {
+            let username = i.to_string();
+            assert_eq!(
+                game.data.users.get(&username).unwrap().money,
+                STARTING_STACK + STARTING_STACK / 2
+            );
         }
     }
 
