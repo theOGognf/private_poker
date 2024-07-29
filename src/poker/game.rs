@@ -1068,6 +1068,7 @@ impl From<Game<UpdateBlinds>> for Game<BootPlayers> {
             .unwrap_or(Usd::MAX);
         if min_money < Usd::MAX {
             let multiple = min_money / STARTING_STACK;
+            println!("{multiple}");
             if multiple >= 1 {
                 value.data.small_blind = multiple * MIN_SMALL_BLIND;
                 value.data.big_blind = multiple * MIN_BIG_BLIND;
@@ -1115,8 +1116,8 @@ mod tests {
     };
 
     use super::{
-        CollectBlinds, Deal, Flop, Game, MoveButton, River, SeatPlayers, Showdown, Turn, UserError,
-        UserState, MAX_PLAYERS, MAX_USERS,
+        BootPlayers, CollectBlinds, Deal, Flop, Game, MoveButton, River, SeatPlayers, Showdown,
+        Turn, UserError, UserState, MAX_PLAYERS, MAX_USERS,
     };
 
     fn init_game() -> Game<SeatPlayers> {
@@ -1162,6 +1163,18 @@ mod tests {
     fn init_game_at_showdown_with_2_all_ins() -> Game<Showdown> {
         let mut game = init_game_at_deal();
         game.act(Action::Fold).unwrap();
+        game.act(Action::AllIn).unwrap();
+        game.act(Action::AllIn).unwrap();
+        let game: Game<Flop> = game.into();
+        let game: Game<Turn> = game.into();
+        let game: Game<River> = game.into();
+        let game: Game<Showdown> = game.into();
+        game
+    }
+
+    fn init_game_at_showdown_with_3_all_ins() -> Game<Showdown> {
+        let mut game = init_game_at_deal();
+        game.act(Action::AllIn).unwrap();
         game.act(Action::AllIn).unwrap();
         game.act(Action::AllIn).unwrap();
         let game: Game<Flop> = game.into();
@@ -1362,6 +1375,58 @@ mod tests {
         for i in 0..2 {
             assert_eq!(game.data.next_action_idx, Some(i));
             game.data.next_action_idx = game.get_next_action_idx(false);
+        }
+    }
+
+    #[test]
+    fn prepare_for_next_game() {
+        let mut game = init_game_at_showdown_with_3_all_ins();
+        game.data.board = vec![
+            (1u8, Suit::Spade),
+            (4u8, Suit::Diamond),
+            (5u8, Suit::Diamond),
+            (6u8, Suit::Diamond),
+            (7u8, Suit::Diamond),
+        ];
+        game.data.seats[0].as_mut().unwrap().cards = vec![(3u8, Suit::Heart), (8u8, Suit::Diamond)];
+        game.data.seats[1].as_mut().unwrap().cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
+        game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
+        game.distribute();
+        let game: Game<RemovePlayers> = game.into();
+        let game: Game<DivideDonations> = game.into();
+        let game: Game<UpdateBlinds> = game.into();
+        let game: Game<BootPlayers> = game.into();
+        assert_eq!(game.data.big_blind, 3 * MIN_BIG_BLIND);
+        let game: Game<SeatPlayers> = game.into();
+        assert_eq!(game.data.num_players, 1);
+    }
+
+    #[test]
+    fn remove_player() {
+        let mut game = init_game_at_showdown_with_2_all_ins();
+        game.data.board = vec![
+            (2u8, Suit::Diamond),
+            (4u8, Suit::Diamond),
+            (5u8, Suit::Diamond),
+            (6u8, Suit::Diamond),
+            (7u8, Suit::Diamond),
+        ];
+        game.data.seats[1].as_mut().unwrap().cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
+        game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
+        game.distribute();
+        let game: Game<RemovePlayers> = game.into();
+        let mut game: Game<DivideDonations> = game.into();
+        game.remove_user("0").unwrap();
+        assert!(!game.data.users.contains_key("0"));
+        assert!(game.data.users.contains_key("1"));
+        assert!(game.data.users.contains_key("2"));
+        let game: Game<UpdateBlinds> = game.into();
+        for i in (1..3).into_iter() {
+            let username = i.to_string();
+            assert_eq!(
+                game.data.users.get(&username).unwrap().money,
+                STARTING_STACK + STARTING_STACK / 2
+            );
         }
     }
 
