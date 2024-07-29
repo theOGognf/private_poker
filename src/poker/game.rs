@@ -1,15 +1,15 @@
+use rand::seq::SliceRandom;
+use rand::thread_rng;
+use std::cmp::Ordering;
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use thiserror::Error;
+
 use super::constants::{MAX_PLAYERS, MAX_POTS, MAX_USERS};
 use super::entities::{
     Action, Bet, BetAction, Card, Player, PlayerState, Pot, SubHand, Usd, Usdf, User, UserState,
     MIN_BIG_BLIND, MIN_SMALL_BLIND, STARTING_STACK,
 };
 use super::functional;
-
-use rand::seq::SliceRandom;
-use rand::thread_rng;
-use std::cmp::Ordering;
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
-use thiserror::Error;
 
 #[derive(Debug, Eq, Error, PartialEq)]
 pub enum UserError {
