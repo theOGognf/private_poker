@@ -1,9 +1,9 @@
-use crate::poker::constants;
-
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::mem::discriminant;
+
+use super::constants;
 
 // By default, a player will be cleaned if they fold 20 rounds with the big
 // blind.
