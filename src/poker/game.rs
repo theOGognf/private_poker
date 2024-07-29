@@ -67,9 +67,6 @@ struct GameData {
     /// The call a player must make is the sum of all calls from all
     /// pots within this vector.
     pots: Vec<Pot>,
-    /// Temporarily maps player seats to poker hand evaluations so a player's
-    /// hand doesn't have to be evaluated multiple times per game.
-    hand_eval_cache: HashMap<usize, Vec<SubHand>>,
     /// Queue of users that're playing the game but have opted
     /// to spectate. We can't safely remove them from the game mid gameplay,
     /// so we instead queue them for removal.
@@ -101,7 +98,6 @@ impl GameData {
             num_players_active: 0,
             num_players_called: 0,
             pots: Vec::with_capacity(MAX_POTS),
-            hand_eval_cache: HashMap::with_capacity(MAX_PLAYERS),
             players_to_remove: BTreeSet::new(),
             players_to_spectate: BTreeSet::new(),
             deck_idx: 0,
@@ -115,30 +111,54 @@ impl GameData {
 
 #[derive(Debug)]
 pub struct SeatPlayers {}
+
 #[derive(Debug)]
 pub struct MoveButton {}
+
 #[derive(Debug)]
 pub struct CollectBlinds {}
+
 #[derive(Debug)]
 pub struct Deal {}
+
 #[derive(Debug)]
 pub struct TakeAction {
     pub action_options: Option<HashSet<Action>>,
 }
+
 #[derive(Debug)]
 pub struct Flop {}
+
 #[derive(Debug)]
 pub struct Turn {}
+
 #[derive(Debug)]
 pub struct River {}
+
 #[derive(Debug)]
-pub struct Showdown {}
+pub struct Showdown {
+    /// Temporarily maps player seats to poker hand evaluations so a player's
+    /// hand doesn't have to be evaluated multiple times per game.
+    hand_eval_cache: HashMap<usize, Vec<SubHand>>,
+}
+
+impl Showdown {
+    pub fn new() -> Self {
+        Showdown {
+            hand_eval_cache: HashMap::with_capacity(MAX_PLAYERS),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct RemovePlayers {}
+
 #[derive(Debug)]
 pub struct DivideDonations {}
+
 #[derive(Debug)]
 pub struct UpdateBlinds {}
+
 #[derive(Debug)]
 pub struct BootPlayers {}
 
@@ -782,7 +802,7 @@ impl From<Game<TakeAction>> for Game<Showdown> {
     fn from(value: Game<TakeAction>) -> Self {
         Self {
             data: value.data,
-            state: Showdown {},
+            state: Showdown::new(),
         }
     }
 }
@@ -880,7 +900,7 @@ impl From<Game<River>> for Game<Showdown> {
         value.step();
         Self {
             data: value.data,
-            state: Showdown {},
+            state: Showdown::new(),
         }
     }
 }
@@ -906,25 +926,26 @@ impl Game<Showdown> {
                     let player = self.data.seats[*seat_idx].as_mut().unwrap();
                     if player.state != PlayerState::Fold {
                         seats_in_pot.push(*seat_idx);
-                        let hand = match self.data.hand_eval_cache.get(seat_idx) {
-                            Some(hand) => hand,
-                            None => {
-                                let mut cards = player.cards.clone();
-                                cards.extend(self.data.board.clone());
-                                cards.sort_unstable();
-                                // Add ace highs to the hand for evaluation.
-                                for card_idx in 0..4 {
-                                    if let (1u8, suit) = cards[card_idx] {
-                                        cards.push((14u8, suit));
-                                    }
+                        let hand_eval = || {
+                            let mut cards = player.cards.clone();
+                            cards.extend(self.data.board.clone());
+                            cards.sort_unstable();
+                            // Add ace highs to the hand for evaluation.
+                            for card_idx in 0..4 {
+                                if let (1u8, suit) = cards[card_idx] {
+                                    cards.push((14u8, suit));
                                 }
-                                &functional::eval(&cards)
                             }
+                            functional::eval(&cards)
                         };
+                        let hand = self
+                            .state
+                            .hand_eval_cache
+                            .entry(*seat_idx)
+                            .or_insert_with(hand_eval);
                         hands_in_pot.push(hand.clone());
                     }
                 }
-
                 // Only up to 4 players can split the pot (only four suits per card value).
                 let mut distributions_per_player: HashMap<usize, Usd> = HashMap::with_capacity(4);
                 let mut winner_indices = functional::argmax(&hands_in_pot);
@@ -1087,7 +1108,6 @@ impl From<Game<UpdateBlinds>> for Game<BootPlayers> {
 impl From<Game<BootPlayers>> for Game<SeatPlayers> {
     fn from(mut value: Game<BootPlayers>) -> Self {
         value.data.board.clear();
-        value.data.hand_eval_cache.clear();
         for player in value.data.seats.iter_mut().flatten() {
             let user = value.data.users.get(&player.name).unwrap();
             if user.money < value.data.big_blind {

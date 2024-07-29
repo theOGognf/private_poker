@@ -137,7 +137,7 @@ pub enum BetAction {
     Raise,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Bet {
     pub action: BetAction,
     pub amount: Usd,
