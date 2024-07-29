@@ -1,7 +1,7 @@
+use super::entities::{Card, Rank, SubHand, Suit};
+
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
-
-use crate::poker::entities::{Card, Rank, SubHand, Suit};
 
 /// Get the indices corresponding to the winning hands from an array
 /// of hands that were each created from `eval`.

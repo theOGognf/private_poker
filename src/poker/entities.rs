@@ -1,4 +1,4 @@
-use crate::poker::constants;
+use super::constants;
 
 use std::collections::HashMap;
 use std::fmt;
