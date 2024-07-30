@@ -86,7 +86,7 @@ fn poker_state_transition_panic_hook(info: &std::panic::PanicInfo) {
         backtrace::BacktraceStatus::Disabled => {
             eprintln!("Backtrace is disabled. Try setting `RUST_BACKTRACE=1` to see the backtrace.")
         }
-        _ => eprintln!("Backtrase is not supported by this platform."),
+        _ => eprintln!("Backtrace is not supported by this platform."),
     }
 
     let payload = info.payload();
