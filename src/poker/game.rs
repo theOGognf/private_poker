@@ -1126,7 +1126,7 @@ impl From<Game<BootPlayers>> for Game<SeatPlayers> {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashSet, iter::zip};
+    use std::collections::HashSet;
 
     use crate::poker::entities::{Action, Suit, STARTING_STACK};
     use crate::poker::game::{
@@ -1205,7 +1205,7 @@ mod tests {
     #[test]
     fn collect_blinds() {
         let game = init_game_at_collect_blinds();
-        for (i, blind) in zip((0..3).into_iter(), [0, MIN_SMALL_BLIND, MIN_BIG_BLIND]) {
+        for (i, blind) in [0, MIN_SMALL_BLIND, MIN_BIG_BLIND].iter().enumerate() {
             let username = i.to_string();
             assert_eq!(
                 game.data.users.get(&username).unwrap().money,
@@ -1256,9 +1256,9 @@ mod tests {
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Diamond), (5u8, Suit::Heart)];
         assert!(game.distribute());
         assert!(!game.distribute());
-        for (i, money) in zip((0..3).into_iter(), [STARTING_STACK, 2 * STARTING_STACK, 0]) {
+        for (i, money) in [STARTING_STACK, 2 * STARTING_STACK, 0].iter().enumerate() {
             let username = i.to_string();
-            assert_eq!(game.data.users.get(&username).unwrap().money, money);
+            assert_eq!(game.data.users.get(&username).unwrap().money, *money);
         }
     }
 
@@ -1286,12 +1286,62 @@ mod tests {
     }
 
     #[test]
-    fn early_showdown_3_all_ins_with_side_pot() {
-        let mut game = init_game_at_deal();
-        for i in (1..3).into_iter() {
+    fn early_showdown_3_decreasing_all_ins() {
+        let game = init_game();
+        let mut game: Game<MoveButton> = game.into();
+        for i in (0..3).into_iter() {
+            let username = i.to_string();
+            game.data.users.get_mut(&username).unwrap().money = STARTING_STACK * (3 - i);
+        }
+        let game: Game<CollectBlinds> = game.into();
+        let game: Game<Deal> = game.into();
+        let mut game: Game<TakeAction> = game.into();
+        game.act(Action::AllIn).unwrap();
+        assert_eq!(
+            game.get_next_action_options(),
+            Some(HashSet::from([Action::AllIn, Action::Fold,]))
+        );
+        game.act(Action::AllIn).unwrap();
+        assert_eq!(
+            game.get_next_action_options(),
+            Some(HashSet::from([Action::AllIn, Action::Fold,]))
+        );
+        game.act(Action::AllIn).unwrap();
+        let game: Game<Flop> = game.into();
+        let game: Game<Turn> = game.into();
+        let game: Game<River> = game.into();
+        let mut game: Game<Showdown> = game.into();
+        game.data.board = vec![
+            (1u8, Suit::Spade),
+            (4u8, Suit::Diamond),
+            (5u8, Suit::Diamond),
+            (6u8, Suit::Diamond),
+            (7u8, Suit::Diamond),
+        ];
+        game.data.seats[0].as_mut().unwrap().cards =
+            vec![(3u8, Suit::Heart), (11u8, Suit::Diamond)];
+        game.data.seats[1].as_mut().unwrap().cards =
+            vec![(1u8, Suit::Heart), (10u8, Suit::Diamond)];
+        game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (9u8, Suit::Diamond)];
+        assert!(game.distribute());
+        assert!(!game.distribute());
+        for (i, money) in [6 * STARTING_STACK, 0, 0].iter().enumerate() {
+            let username = i.to_string();
+            assert_eq!(game.data.users.get(&username).unwrap().money, *money);
+        }
+    }
+
+    #[test]
+    fn early_showdown_3_increasing_all_ins() {
+        let game = init_game();
+        let mut game: Game<MoveButton> = game.into();
+        for i in (0..3).into_iter() {
             let username = i.to_string();
             game.data.users.get_mut(&username).unwrap().money = STARTING_STACK * (i + 1);
         }
+        let game: Game<CollectBlinds> = game.into();
+        let game: Game<Deal> = game.into();
+        let mut game: Game<TakeAction> = game.into();
         game.act(Action::AllIn).unwrap();
         assert_eq!(
             game.get_next_action_options(),
@@ -1299,7 +1349,6 @@ mod tests {
                 Action::AllIn,
                 Action::Call(195),
                 Action::Fold,
-                Action::Raise(395)
             ]))
         );
         game.act(Action::AllIn).unwrap();
@@ -1328,21 +1377,16 @@ mod tests {
         game.data.seats[1].as_mut().unwrap().cards =
             vec![(1u8, Suit::Heart), (10u8, Suit::Diamond)];
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (9u8, Suit::Diamond)];
-        println!("{game:#?}");
         assert!(game.distribute());
         assert!(game.distribute());
         assert!(game.distribute());
         assert!(!game.distribute());
-        for (i, money) in zip(
-            (0..3).into_iter(),
-            [
-                3 * STARTING_STACK,
-                2 * STARTING_STACK,
-                STARTING_STACK,
-            ],
-        ) {
+        for (i, money) in [3 * STARTING_STACK, 2 * STARTING_STACK, STARTING_STACK]
+            .iter()
+            .enumerate()
+        {
             let username = i.to_string();
-            assert_eq!(game.data.users.get(&username).unwrap().money, money);
+            assert_eq!(game.data.users.get(&username).unwrap().money, *money);
         }
     }
 
