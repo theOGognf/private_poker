@@ -1,6 +1,6 @@
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use std::cmp::Ordering;
+use std::cmp::{max, Ordering};
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use thiserror::Error;
 
@@ -1086,12 +1086,9 @@ impl From<Game<UpdateBlinds>> for Game<BootPlayers> {
             .min()
             .unwrap_or(Usd::MAX);
         if min_money < Usd::MAX {
-            let multiple = min_money / STARTING_STACK;
-            println!("{multiple}");
-            if multiple >= 1 {
-                value.data.small_blind = multiple * MIN_SMALL_BLIND;
-                value.data.big_blind = multiple * MIN_BIG_BLIND;
-            }
+            let multiple = max(1, min_money / STARTING_STACK);
+            value.data.small_blind = multiple * MIN_SMALL_BLIND;
+            value.data.big_blind = multiple * MIN_BIG_BLIND;
         }
         Self {
             data: value.data,
