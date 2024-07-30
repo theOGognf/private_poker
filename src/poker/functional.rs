@@ -35,9 +35,11 @@ pub fn argmax(hands: &[Vec<SubHand>]) -> Vec<usize> {
     argmaxes
 }
 
+/// Evaluate any number of cards, returning the best (up to) 5-card hand.
+///
 /// This function assumes the cards are already sorted in increasing order.
-/// Group cards into hand rankings and insort them into a heap.
-/// The max value in the heap is the best hand and is returned.
+/// Cards are grouped into hand rankings and insorted into a heap.
+/// The top subhands are created from the heap and compose a hand.
 /// Multiple hands can then be compared, and the winning hand(s)
 /// can be retrieved with the `argmax` function.
 ///
