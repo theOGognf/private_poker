@@ -70,14 +70,14 @@ pub const STARTING_STACK: Usd = 200;
 pub const MIN_BIG_BLIND: Usd = STARTING_STACK / 20;
 pub const MIN_SMALL_BLIND: Usd = MIN_BIG_BLIND / 2;
 
-#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum UserState {
     Spectating,
     Playing,
     Waiting,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct User {
     pub money: Usd,
     pub state: UserState,
@@ -164,7 +164,7 @@ enum SidePotState {
 }
 
 /// For users that're in a pot.
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum PlayerState {
     // Player is in the pot but is waiting for their move.
     Wait,
@@ -198,7 +198,7 @@ impl Player {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Pot {
     // The total investment for each player to remain in the hand.
     pub call: Usd,

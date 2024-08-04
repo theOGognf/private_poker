@@ -30,7 +30,7 @@ pub enum UserError {
 }
 
 #[derive(Debug)]
-struct GameData {
+pub struct GameData {
     /// Deck of cards. This is instantiated once and reshuffled
     /// each deal.
     deck: [Card; 52],
@@ -38,15 +38,15 @@ struct GameData {
     /// split equally amongst all users at a particular game state.
     /// This helps keep the amount of money in the game constant,
     /// encouraging additional gameplay.
-    donations: Usdf,
-    small_blind: Usd,
-    big_blind: Usd,
-    users: HashMap<String, User>,
-    spectators: HashSet<String>,
-    waitlist: VecDeque<String>,
-    seats: [Option<Player>; MAX_PLAYERS],
+    pub donations: Usdf,
+    pub small_blind: Usd,
+    pub big_blind: Usd,
+    pub users: HashMap<String, User>,
+    pub spectators: HashSet<String>,
+    pub waitlist: VecDeque<String>,
+    pub seats: [Option<Player>; MAX_PLAYERS],
     /// Community cards shared amongst all players.
-    board: Vec<Card>,
+    pub board: Vec<Card>,
     /// Count of the number of players seated within `seats`.
     /// Helps refrain from overfilling the seats when players
     /// are seated.
@@ -66,7 +66,7 @@ struct GameData {
     /// and pushed to this vector anytime a player raises an all-in.
     /// The call a player must make is the sum of all calls from all
     /// pots within this vector.
-    pots: Vec<Pot>,
+    pub pots: Vec<Pot>,
     /// Queue of users that're playing the game but have opted
     /// to spectate. We can't safely remove them from the game mid gameplay,
     /// so we instead queue them for removal.
@@ -76,10 +76,10 @@ struct GameData {
     /// so we instead queue them for removal.
     players_to_remove: BTreeSet<String>,
     deck_idx: usize,
-    small_blind_idx: usize,
-    big_blind_idx: usize,
+    pub small_blind_idx: usize,
+    pub big_blind_idx: usize,
     starting_action_idx: usize,
-    next_action_idx: Option<usize>,
+    pub next_action_idx: Option<usize>,
 }
 
 impl GameData {
@@ -165,7 +165,7 @@ pub struct BootPlayers {}
 /// A poker game.
 #[derive(Debug)]
 pub struct Game<T> {
-    data: GameData,
+    pub data: GameData,
     pub state: T,
 }
 
