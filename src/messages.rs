@@ -22,24 +22,29 @@ pub struct PotView {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct GameView {
-    donations: Usdf,
-    small_blind: Usd,
-    big_blind: Usd,
-    users: HashMap<String, UserView>,
-    spectators: HashSet<String>,
-    waitlist: VecDeque<String>,
-    seats: [Option<PlayerView>; MAX_PLAYERS],
-    pots: Vec<PotView>,
-    small_blind_idx: usize,
-    big_blind_idx: usize,
-    next_action_idx: Option<usize>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
 pub enum ClientMessage {
     Action(Action),
     Connect,
     Show,
     StateRequest(UserState),
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub enum ServerMessage {
+    ActionSignal {
+        action_options: HashSet<Action>,
+    },
+    GameView {
+        donations: Usdf,
+        small_blind: Usd,
+        big_blind: Usd,
+        users: HashMap<String, UserView>,
+        spectators: HashSet<String>,
+        waitlist: VecDeque<String>,
+        seats: Box<[Option<PlayerView>; MAX_PLAYERS]>,
+        pots: Vec<PotView>,
+        small_blind_idx: usize,
+        big_blind_idx: usize,
+        next_action_idx: Option<usize>,
+    },
 }
