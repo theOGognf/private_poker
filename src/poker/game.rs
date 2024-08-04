@@ -4,12 +4,14 @@ use std::cmp::{max, Ordering};
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use thiserror::Error;
 
-use super::constants::{MAX_PLAYERS, MAX_POTS, MAX_USERS};
-use super::entities::{
-    Action, Bet, BetAction, Card, Player, PlayerState, Pot, SubHand, Usd, Usdf, User, UserState,
-    MIN_BIG_BLIND, MIN_SMALL_BLIND, STARTING_STACK,
+use super::{
+    constants::{MAX_PLAYERS, MAX_POTS, MAX_USERS},
+    entities::{
+        Action, Bet, BetAction, Card, Player, PlayerState, Pot, SubHand, Usd, Usdf, User,
+        UserState, MIN_BIG_BLIND, MIN_SMALL_BLIND, STARTING_STACK,
+    },
+    functional,
 };
-use super::functional;
 
 #[derive(Debug, Eq, Error, PartialEq)]
 pub enum UserError {

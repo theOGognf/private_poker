@@ -3,15 +3,11 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::mem::discriminant;
 
+use serde::{Deserialize, Serialize};
+
 use super::constants;
 
-// By default, a player will be cleaned if they fold 20 rounds with the big
-// blind.
-pub const STARTING_STACK: Usd = 200;
-pub const MIN_BIG_BLIND: Usd = STARTING_STACK / 20;
-pub const MIN_SMALL_BLIND: Usd = MIN_BIG_BLIND / 2;
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum Suit {
     Club,
     Spade,
@@ -68,14 +64,20 @@ pub type Usd = u32;
 /// amongst users.
 pub type Usdf = f32;
 
-#[derive(Debug, Eq, PartialEq)]
+// By default, a player will be cleaned if they fold 20 rounds with the big
+// blind.
+pub const STARTING_STACK: Usd = 200;
+pub const MIN_BIG_BLIND: Usd = STARTING_STACK / 20;
+pub const MIN_SMALL_BLIND: Usd = MIN_BIG_BLIND / 2;
+
+#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum UserState {
     Spectating,
     Playing,
     Waiting,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct User {
     pub money: Usd,
     pub state: UserState,
@@ -90,7 +92,7 @@ impl User {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub enum Action {
     AllIn,
     Call(Usd),
@@ -162,7 +164,7 @@ enum SidePotState {
 }
 
 /// For users that're in a pot.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub enum PlayerState {
     // Player is in the pot but is waiting for their move.
     Wait,
@@ -170,6 +172,8 @@ pub enum PlayerState {
     AllIn,
     // Player forfeited their stack for the pot.
     Fold,
+    // Player shows their cards at the end of the game.
+    Show,
 }
 
 #[derive(Debug)]
