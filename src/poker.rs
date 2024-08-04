@@ -9,9 +9,6 @@ use game::{
     River, SeatPlayers, Showdown, TakeAction, Turn, UpdateBlinds, UserError,
 };
 
-use std::backtrace;
-use std::panic;
-
 /// A poker finite state machine. State transitions are defined in
 /// `PokerState::step`.
 ///
@@ -31,25 +28,32 @@ use std::panic;
 /// state = seat_players(state);
 /// state = move_button(state);
 /// state = collect_blinds(state);
-/// state = deal(state);
 ///
-/// // Players must take actions now. "foo" and "bar" both check.
-/// // When using the poker game under a server, you may want to
-/// // continue taking actions until the other returned values
-/// // indicate that the betting round is over or that the game is
-/// // ready for showdown.
-/// (state, _, _) = take_action(state, Action::Check);
-/// (state, _, _) = take_action(state, Action::Check);
+/// // Players must take actions now. "foo" calls and then "bar" checks.
+/// state = deal(state);
+/// state = take_action(state, Action::Call(5)).unwrap();
+/// state = take_action(state, Action::Check).unwrap();
 ///
 /// // Here's the flop. Both players go all-in (unhinged).
+/// // If you're using the poker state as part of the backend for a poker server,
+/// // you may want to use a pattern similar to this loop for requesting actions
+/// // from clients.
 /// state = flop(state);
-/// (state, _, _) = take_action(state, Action::AllIn).unwrap();
-/// (state, _, _) = take_action(state, Action::AllIn).unwrap();
+/// while !state.is_ready_for_next_phase() {
+///     state = take_action(state, Action::AllIn).unwrap();
+/// }
 ///
-/// // Continue to the showdown.
+/// // Continue to the showdown. We know we don't ened to check for the showdown
+/// // or next phase since players are hard-coded to go all-in.
 /// state = turn(state);
 /// state = river(state);
-/// state = showdown(state);
+///
+/// // `reveal` and `distribute` are separate to allow clients time to see
+/// // all the hands before money is distributed.
+/// while !state.is_pot_empty() {
+///     state = reveal_pot_hands(state);
+///     state = distribute_pot(state);
+/// }
 ///
 /// // Perform post-game duties.
 /// state = remove_players(state);
@@ -74,51 +78,8 @@ pub enum PokerState {
     BootPlayers(Game<BootPlayers>),
 }
 
-/// Registered when a new poker state is instantiated. Provides helpful debug
-/// info if an invalid state transition is made.
-fn poker_state_transition_panic_hook(info: &std::panic::PanicInfo) {
-    let backtrace = backtrace::Backtrace::capture();
-    match backtrace.status() {
-        backtrace::BacktraceStatus::Captured => {
-            let msg = backtrace.to_string();
-            eprintln!("{msg}");
-        }
-        backtrace::BacktraceStatus::Disabled => {
-            eprintln!("Backtrace is disabled. Try setting `RUST_BACKTRACE=1` to see the backtrace.")
-        }
-        _ => eprintln!("Backtrace is not supported by this platform."),
-    }
-
-    let payload = info.payload();
-    let state_verb = match payload.downcast_ref::<PokerState>() {
-        Some(PokerState::SeatPlayers(_)) => "seat_players",
-        Some(PokerState::MoveButton(_)) => "move_button",
-        Some(PokerState::CollectBlinds(_)) => "collect_blinds",
-        Some(PokerState::Deal(_)) => "deal",
-        Some(PokerState::TakeAction(_)) => "take_action",
-        Some(PokerState::Flop(_)) => "flop",
-        Some(PokerState::Turn(_)) => "turn",
-        Some(PokerState::River(_)) => "river",
-        Some(PokerState::Showdown(_)) => "showdown",
-        Some(PokerState::RemovePlayers(_)) => "remove_players",
-        Some(PokerState::DivideDonations(_)) => "divide_donations",
-        Some(PokerState::UpdateBlinds(_)) => "update_blinds",
-        Some(PokerState::BootPlayers(_)) => "boot_players",
-        None => {
-            match payload.downcast_ref::<&str>() {
-                Some(s) => eprintln!("{s}"),
-                None => eprintln!("{payload:#?}"),
-            }
-            return;
-        }
-    };
-
-    eprintln!("You attempted an invalid state transition. You should've transitioned with `{state_verb}`.");
-}
-
 impl PokerState {
     pub fn new() -> Self {
-        panic::set_hook(Box::new(poker_state_transition_panic_hook));
         let game = Game::<SeatPlayers>::new();
         PokerState::SeatPlayers(game)
     }
@@ -180,6 +141,30 @@ impl PokerState {
     }
 }
 
+macro_rules! impl_state_helpers {
+    ($($name:ident),+) => {
+        $(impl PokerState {
+            pub fn $name(&self) -> bool {
+                match self {
+                    PokerState::SeatPlayers(ref game) => game.$name(),
+                    PokerState::MoveButton(ref game)  => game.$name(),
+                    PokerState::CollectBlinds(ref game)  => game.$name(),
+                    PokerState::Deal(ref game)  => game.$name(),
+                    PokerState::TakeAction(ref game) => game.$name(),
+                    PokerState::Flop(ref game)  => game.$name(),
+                    PokerState::Turn(ref game)  => game.$name(),
+                    PokerState::River(ref game)  => game.$name(),
+                    PokerState::Showdown(ref game)  => game.$name(),
+                    PokerState::RemovePlayers(ref game)  => game.$name(),
+                    PokerState::DivideDonations(ref game)  =>game.$name(),
+                    PokerState::UpdateBlinds(ref game)  => game.$name(),
+                    PokerState::BootPlayers(ref game) => game.$name(),
+                }
+            }
+        })*
+    }
+}
+
 macro_rules! impl_user_managers {
     ($($name:ident),+) => {
         $(pub fn $name(mut state: PokerState, username: &str) -> Result<PokerState, UserError> {
@@ -202,6 +187,8 @@ macro_rules! impl_user_managers {
         })*
     }
 }
+
+impl_state_helpers!(is_pot_empty, is_ready_for_next_phase);
 
 impl_user_managers!(new_user, remove_user, spectate_user, waitlist_user);
 
@@ -246,102 +233,122 @@ impl_user_managers!(new_user, remove_user, spectate_user, waitlist_user);
 pub fn seat_players(state: PokerState) -> PokerState {
     match state {
         PokerState::SeatPlayers(_) => state.step(),
-        other => std::panic::panic_any(other),
+        other => panic!("{other:#?}"),
     }
 }
 
 pub fn move_button(state: PokerState) -> PokerState {
     match state {
         PokerState::MoveButton(_) => state.step(),
-        other => std::panic::panic_any(other),
+        other => panic!("{other:#?}"),
     }
 }
 
 pub fn collect_blinds(state: PokerState) -> PokerState {
     match state {
         PokerState::CollectBlinds(_) => state.step(),
-        other => std::panic::panic_any(other),
+        other => panic!("{other:#?}"),
     }
 }
 
 pub fn deal(state: PokerState) -> PokerState {
     match state {
         PokerState::Deal(_) => state.step(),
-        other => std::panic::panic_any(other),
+        other => panic!("{other:#?}"),
     }
 }
 
-pub fn take_action(
-    mut state: PokerState,
-    action: Action,
-) -> Result<(PokerState, bool, bool), UserError> {
-    let (is_ready_for_next_phase, is_ready_for_showdown) = match state {
+pub fn take_action(mut state: PokerState, action: Action) -> Result<PokerState, UserError> {
+    match state {
         PokerState::TakeAction(ref mut game) => {
             game.act(action)?;
-            (game.is_ready_for_next_phase(), game.is_ready_for_showdown())
         }
-        other => std::panic::panic_any(other),
+        other => panic!("{other:#?}"),
     };
-    Ok((state, is_ready_for_next_phase, is_ready_for_showdown))
+    Ok(state)
 }
 
-pub fn flop(state: PokerState) -> PokerState {
+pub fn flop(mut state: PokerState) -> PokerState {
     match state {
         PokerState::Flop(_) => state.step(),
-        other => std::panic::panic_any(other),
+        PokerState::TakeAction(_) => {
+            state = state.step();
+            state.step()
+        }
+        other => panic!("{other:#?}"),
     }
 }
 
-pub fn turn(state: PokerState) -> PokerState {
+pub fn turn(mut state: PokerState) -> PokerState {
     match state {
+        PokerState::TakeAction(_) => {
+            state = state.step();
+            state.step()
+        }
         PokerState::Turn(_) => state.step(),
-        other => std::panic::panic_any(other),
+        other => panic!("{other:#?}"),
     }
 }
 
-pub fn river(state: PokerState) -> PokerState {
+pub fn river(mut state: PokerState) -> PokerState {
     match state {
         PokerState::River(_) => state.step(),
-        other => std::panic::panic_any(other),
+        PokerState::TakeAction(_) => {
+            state = state.step();
+            state.step()
+        }
+        other => panic!("{other:#?}"),
     }
 }
 
-pub fn showdown(mut state: PokerState) -> PokerState {
+pub fn reveal_pot_hands(mut state: PokerState) -> PokerState {
     match state {
         PokerState::Showdown(ref mut game) => {
-            if !game.distribute() {
-                state = state.step();
-            }
+            game.reveal_pot_hands();
         }
-        other => std::panic::panic_any(other),
+        other => panic!("{other:#?}"),
     }
     state
 }
 
-pub fn remove_players(state: PokerState) -> PokerState {
+pub fn distribute_pot(mut state: PokerState) -> PokerState {
+    match state {
+        PokerState::Showdown(ref mut game) => {
+            game.distribute_pot();
+        }
+        other => panic!("{other:#?}"),
+    }
+    state
+}
+
+pub fn remove_players(mut state: PokerState) -> PokerState {
     match state {
         PokerState::RemovePlayers(_) => state.step(),
-        other => std::panic::panic_any(other),
+        PokerState::Showdown(_) => {
+            state = state.step();
+            state.step()
+        }
+        other => panic!("{other:#?}"),
     }
 }
 
 pub fn divide_donations(state: PokerState) -> PokerState {
     match state {
         PokerState::DivideDonations(_) => state.step(),
-        other => std::panic::panic_any(other),
+        other => panic!("{other:#?}"),
     }
 }
 
 pub fn update_blinds(state: PokerState) -> PokerState {
     match state {
         PokerState::UpdateBlinds(_) => state.step(),
-        other => std::panic::panic_any(other),
+        other => panic!("{other:#?}"),
     }
 }
 
 pub fn boot_players(state: PokerState) -> PokerState {
     match state {
         PokerState::BootPlayers(_) => state.step(),
-        other => std::panic::panic_any(other),
+        other => panic!("{other:#?}"),
     }
 }

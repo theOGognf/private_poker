@@ -255,7 +255,7 @@ impl<T> Game<T> {
 
     /// Return whether the game is ready to move onto the next phase
     /// now that the betting round is over.
-    pub fn is_end_of_round(&self) -> bool {
+    fn is_end_of_round(&self) -> bool {
         self.data.num_players_active == self.data.num_players_called
     }
 
@@ -276,7 +276,7 @@ impl<T> Game<T> {
             Some(action_idx) => {
                 self.data.num_players_active <= 1 && self.get_total_call_by_seat(action_idx) == 0
             }
-            None => false,
+            None => self.data.num_players_active <= 1,
         }
     }
 
@@ -917,7 +917,7 @@ impl Game<Showdown> {
     ///
     /// Returns a boolean indicating whether user money changed due to the
     /// distribution of a pot.
-    pub fn distribute(&mut self) -> bool {
+    pub fn distribute_pot(&mut self) -> bool {
         match self.data.pots.pop() {
             Some(mut pot) => {
                 let mut seats_in_pot = Vec::with_capacity(MAX_PLAYERS);
@@ -1022,6 +1022,20 @@ impl Game<Showdown> {
             }
             _ => false,
         }
+    }
+
+    pub fn reveal_pot_hands(&mut self) -> bool {
+        let mut new_reveals = false;
+        if let Some(pot) = self.data.pots.last() {
+            for (seat_idx, _) in pot.investments.iter() {
+                let player = self.data.seats[*seat_idx].as_mut().unwrap();
+                if player.state != PlayerState::Show {
+                    player.state = PlayerState::Show;
+                    new_reveals = true;
+                }
+            }
+        }
+        new_reveals
     }
 }
 
@@ -1253,8 +1267,8 @@ mod tests {
         ];
         game.data.seats[1].as_mut().unwrap().cards = vec![(1u8, Suit::Diamond), (7u8, Suit::Heart)];
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Diamond), (5u8, Suit::Heart)];
-        assert!(game.distribute());
-        assert!(!game.distribute());
+        assert!(game.distribute_pot());
+        assert!(!game.distribute_pot());
         for (i, money) in [STARTING_STACK, 2 * STARTING_STACK, 0].iter().enumerate() {
             let username = i.to_string();
             assert_eq!(game.data.users.get(&username).unwrap().money, *money);
@@ -1273,8 +1287,8 @@ mod tests {
         ];
         game.data.seats[1].as_mut().unwrap().cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
-        assert!(game.distribute());
-        assert!(!game.distribute());
+        assert!(game.distribute_pot());
+        assert!(!game.distribute_pot());
         for i in (0..3).into_iter() {
             let username = i.to_string();
             assert_eq!(
@@ -1322,8 +1336,8 @@ mod tests {
         game.data.seats[1].as_mut().unwrap().cards =
             vec![(1u8, Suit::Heart), (10u8, Suit::Diamond)];
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (9u8, Suit::Diamond)];
-        assert!(game.distribute());
-        assert!(!game.distribute());
+        assert!(game.distribute_pot());
+        assert!(!game.distribute_pot());
         for (i, money) in [6 * STARTING_STACK, 0, 0].iter().enumerate() {
             let username = i.to_string();
             assert_eq!(game.data.users.get(&username).unwrap().money, *money);
@@ -1376,10 +1390,10 @@ mod tests {
         game.data.seats[1].as_mut().unwrap().cards =
             vec![(1u8, Suit::Heart), (10u8, Suit::Diamond)];
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (9u8, Suit::Diamond)];
-        assert!(game.distribute());
-        assert!(game.distribute());
-        assert!(game.distribute());
-        assert!(!game.distribute());
+        assert!(game.distribute_pot());
+        assert!(game.distribute_pot());
+        assert!(game.distribute_pot());
+        assert!(!game.distribute_pot());
         for (i, money) in [3 * STARTING_STACK, 2 * STARTING_STACK, STARTING_STACK]
             .iter()
             .enumerate()
@@ -1513,7 +1527,7 @@ mod tests {
         game.data.seats[0].as_mut().unwrap().cards = vec![(3u8, Suit::Heart), (8u8, Suit::Diamond)];
         game.data.seats[1].as_mut().unwrap().cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
-        game.distribute();
+        game.distribute_pot();
         let game: Game<RemovePlayers> = game.into();
         let game: Game<DivideDonations> = game.into();
         let game: Game<UpdateBlinds> = game.into();
@@ -1535,7 +1549,7 @@ mod tests {
         ];
         game.data.seats[1].as_mut().unwrap().cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
-        game.distribute();
+        game.distribute_pot();
         let game: Game<RemovePlayers> = game.into();
         let mut game: Game<DivideDonations> = game.into();
         game.remove_user("0").unwrap();
@@ -1565,7 +1579,7 @@ mod tests {
         game.data.seats[1].as_mut().unwrap().cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
         game.remove_user("0").unwrap();
-        game.distribute();
+        game.distribute_pot();
         let game: Game<RemovePlayers> = game.into();
         let game: Game<DivideDonations> = game.into();
         assert!(!game.data.users.contains_key("0"));
