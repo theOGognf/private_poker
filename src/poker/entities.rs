@@ -1,9 +1,8 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::mem::discriminant;
-
-use serde::{Deserialize, Serialize};
 
 use super::constants;
 
@@ -132,14 +131,14 @@ impl PartialEq for Action {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum BetAction {
     AllIn,
     Call,
     Raise,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Bet {
     pub action: BetAction,
     pub amount: Usd,

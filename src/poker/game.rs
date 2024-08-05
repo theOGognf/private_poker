@@ -1,5 +1,6 @@
 use rand::seq::SliceRandom;
 use rand::thread_rng;
+use serde::{Deserialize, Serialize};
 use std::cmp::{max, Ordering};
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use thiserror::Error;
@@ -13,7 +14,7 @@ use super::{
     functional,
 };
 
-#[derive(Debug, Eq, Error, PartialEq)]
+#[derive(Debug, Deserialize, Eq, Error, PartialEq, Serialize)]
 pub enum UserError {
     #[error("User {username} already exists.")]
     AlreadyExists { username: String },

@@ -1,11 +1,10 @@
-use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet, VecDeque};
-
 use crate::poker::{
     constants::MAX_PLAYERS,
     entities::{Action, Card, PlayerState, Usd, Usdf, User, UserState},
-    game::Game,
+    game::{Game, UserError},
 };
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 type UserView = User;
 
@@ -90,13 +89,14 @@ impl<T> Game<T> {
 #[derive(Debug, Deserialize, Serialize)]
 pub enum ClientMessage {
     Action(Action),
-    Connect,
+    Connect(String),
+    ChangeState(UserState),
     Show,
-    StateRequest(UserState),
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum ServerMessage {
     ActionSignal(HashSet<Action>),
+    Error(UserError),
     GameView(GameView),
 }
