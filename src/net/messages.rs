@@ -92,6 +92,7 @@ pub enum ClientMessage {
     Connect(String),
     ChangeState(UserState),
     Show,
+    Start,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

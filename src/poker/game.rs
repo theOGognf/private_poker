@@ -16,18 +16,24 @@ use super::{
 
 #[derive(Debug, Deserialize, Eq, Error, PartialEq, Serialize)]
 pub enum UserError {
-    #[error("User {username} already exists.")]
-    AlreadyExists { username: String },
     #[error("Game is full.")]
     CapacityReached,
-    #[error("User {username} does not exist.")]
-    DoesNotExist { username: String },
-    #[error("User {username} does not have the funds to satisfy the ${big_blind} big blind.")]
-    InsufficientFunds { username: String, big_blind: Usd },
-    #[error("Seat {seat_idx} tried an illegal {action}.")]
-    InvalidAction { seat_idx: usize, action: Action },
-    #[error("Seat {seat_idx} tried an illegal {bet}.")]
-    InvalidBet { seat_idx: usize, bet: Bet },
+    #[error("Game already in progress.")]
+    GameAlreadyInProgress,
+    #[error("Insufficient funds to satisfy the ${big_blind} big blind.")]
+    InsufficientFunds { big_blind: Usd },
+    #[error("Tried an illegal {action}.")]
+    InvalidAction { action: Action },
+    #[error("Tried an illegal {bet}.")]
+    InvalidBet { bet: Bet },
+    #[error("Need at least 2 players to start the game.")]
+    NotEnoughPlayers,
+    #[error("Tried acting out of turn.")]
+    OutOfTurnAction,
+    #[error("Username already exists.")]
+    UserAlreadyExists,
+    #[error("Username does not exist.")]
+    UserDoesNotExist,
 }
 
 #[derive(Debug)]
@@ -105,7 +111,7 @@ impl GameData {
             small_blind_idx: 0,
             big_blind_idx: 1,
             starting_action_idx: 2,
-            next_action_idx: Some(2),
+            next_action_idx: None,
         }
     }
 }
@@ -137,18 +143,25 @@ pub struct Turn {}
 pub struct River {}
 
 #[derive(Debug)]
-pub struct Showdown {
+pub struct Reveal {
     /// Temporarily maps player seats to poker hand evaluations so a player's
     /// hand doesn't have to be evaluated multiple times per game.
     hand_eval_cache: HashMap<usize, Vec<SubHand>>,
 }
 
-impl Showdown {
+impl Reveal {
     pub fn new() -> Self {
-        Showdown {
+        Reveal {
             hand_eval_cache: HashMap::with_capacity(MAX_PLAYERS),
         }
     }
+}
+
+#[derive(Debug)]
+pub struct Distribute {
+    /// Temporarily maps player seats to poker hand evaluations so a player's
+    /// hand doesn't have to be evaluated multiple times per game.
+    hand_eval_cache: HashMap<usize, Vec<SubHand>>,
 }
 
 #[derive(Debug)]
@@ -218,9 +231,23 @@ impl<T> Game<T> {
         }
     }
 
+    pub fn get_next_action_username(&self) -> Option<String> {
+        match self.data.next_action_idx {
+            Some(action_idx) => self.data.seats[action_idx]
+                .as_ref()
+                .map(|player| player.name.clone()),
+            None => None,
+        }
+    }
+
     /// Return the number of cards that've been dealt.
     pub fn get_num_community_cards(&self) -> usize {
         self.data.board.len()
+    }
+
+    /// Return the number of players.
+    pub fn get_num_players(&self) -> usize {
+        self.data.num_players
     }
 
     /// Return the sum of all calls for all pots. A player's total investment
@@ -281,6 +308,13 @@ impl<T> Game<T> {
         }
     }
 
+    pub fn is_turn(&self, username: &str) -> bool {
+        match self.data.next_action_idx {
+            Some(action_idx) => self.data.seats[action_idx].as_ref().unwrap().name == username,
+            None => false,
+        }
+    }
+
     pub fn new() -> Game<SeatPlayers> {
         Game {
             data: GameData::new(),
@@ -296,9 +330,7 @@ impl<T> Game<T> {
             // This probably means the user disconnected and is trying
             // to reconnect.
             if !self.data.players_to_remove.remove(username) {
-                return Err(UserError::AlreadyExists {
-                    username: username.to_string(),
-                });
+                return Err(UserError::UserAlreadyExists);
             } else {
                 return Ok(false);
             }
@@ -334,7 +366,6 @@ impl<T> Game<T> {
                     UserState::Spectating => {
                         if user.money < self.data.big_blind {
                             return Err(UserError::InsufficientFunds {
-                                username: username.to_string(),
                                 big_blind: self.data.big_blind,
                             });
                         }
@@ -348,9 +379,7 @@ impl<T> Game<T> {
                     UserState::Waiting => Ok(true),
                 }
             }
-            None => Err(UserError::DoesNotExist {
-                username: username.to_string(),
-            }),
+            None => Err(UserError::UserDoesNotExist),
         }
     }
 }
@@ -387,7 +416,7 @@ macro_rules! impl_user_managers {
                         user.money = 0;
                         Ok(true)
                     },
-                    None => Err(UserError::DoesNotExist{username: username.to_string()}),
+                    None => Err(UserError::UserDoesNotExist),
                 }
             }
 
@@ -424,7 +453,7 @@ macro_rules! impl_user_managers {
                         user.state = UserState::Spectating;
                         Ok(true)
                     },
-                    None => Err(UserError::DoesNotExist{username: username.to_string()}),
+                    None => Err(UserError::UserDoesNotExist),
                 }
             }
         })*
@@ -467,7 +496,7 @@ macro_rules! impl_user_managers_with_queue {
                         self.data.users.remove(username);
                         Ok(true)
                     },
-                    None => Err(UserError::DoesNotExist{username: username.to_string()})
+                    None => Err(UserError::UserDoesNotExist)
                 }
             }
 
@@ -499,7 +528,7 @@ macro_rules! impl_user_managers_with_queue {
                         user.state = UserState::Spectating;
                         Ok(true)
                     },
-                    None => Err(UserError::DoesNotExist{username: username.to_string()})
+                    None => Err(UserError::UserDoesNotExist)
                 }
             }
         })*
@@ -527,7 +556,8 @@ impl_user_managers_with_queue!(
     Game<Flop>,
     Game<Turn>,
     Game<River>,
-    Game<Showdown>
+    Game<Reveal>,
+    Game<Distribute>
 );
 
 impl From<Game<SeatPlayers>> for Game<MoveButton> {
@@ -676,7 +706,7 @@ impl Game<TakeAction> {
             .unwrap()
             .contains(&action)
         {
-            return Err(UserError::InvalidAction { seat_idx, action });
+            return Err(UserError::InvalidAction { action });
         }
         let player = self.data.seats[seat_idx].as_mut().unwrap();
         let user = self.data.users.get(&player.name).unwrap();
@@ -723,13 +753,13 @@ impl Game<TakeAction> {
             }
             BetAction::Call => {
                 if new_total_investment != total_call {
-                    return Err(UserError::InvalidBet { seat_idx, bet });
+                    return Err(UserError::InvalidBet { bet });
                 }
                 self.data.num_players_called += 1;
             }
             BetAction::Raise => {
                 if new_total_investment < (2 * total_call) {
-                    return Err(UserError::InvalidBet { seat_idx, bet });
+                    return Err(UserError::InvalidBet { bet });
                 }
                 self.data.num_players_called = 1;
             }
@@ -799,11 +829,11 @@ impl From<Game<TakeAction>> for Game<River> {
     }
 }
 
-impl From<Game<TakeAction>> for Game<Showdown> {
+impl From<Game<TakeAction>> for Game<Reveal> {
     fn from(value: Game<TakeAction>) -> Self {
         Self {
             data: value.data,
-            state: Showdown::new(),
+            state: Reveal::new(),
         }
     }
 }
@@ -896,152 +926,153 @@ impl From<Game<River>> for Game<TakeAction> {
 
 /// Put the 5th card on the board assuming the game is ready for
 /// showdown.
-impl From<Game<River>> for Game<Showdown> {
+impl From<Game<River>> for Game<Reveal> {
     fn from(mut value: Game<River>) -> Self {
         value.step();
         Self {
             data: value.data,
-            state: Showdown::new(),
+            state: Reveal::new(),
         }
     }
 }
 
-impl Game<Showdown> {
-    /// Get all players in the pot that haven't folded and compare their
-    /// hands to one another. Get the winning indices and distribute
-    /// the pot accordingly. If there's a tie, winners are given their
-    /// original investments and then split the remainder. Everyone
-    /// can only lose as much as they had originally invested or as much
-    /// as a winner had invested, whichever is lower. This prevents folks
-    /// that went all-in, but have much more money than the winner, from
-    /// losing the extra money.
-    ///
-    /// Returns a boolean indicating whether user money changed due to the
-    /// distribution of a pot.
-    pub fn distribute_pot(&mut self) -> bool {
-        match self.data.pots.pop() {
-            Some(mut pot) => {
-                let mut seats_in_pot = Vec::with_capacity(MAX_PLAYERS);
-                let mut hands_in_pot = Vec::with_capacity(MAX_PLAYERS);
-                for (seat_idx, _) in pot.investments.iter() {
-                    let player = self.data.seats[*seat_idx].as_mut().unwrap();
-                    if player.state != PlayerState::Fold {
-                        seats_in_pot.push(*seat_idx);
-                        let hand_eval = || {
-                            let mut cards = player.cards.clone();
-                            cards.extend(self.data.board.clone());
-                            cards.sort_unstable();
-                            // Add ace highs to the hand for evaluation.
-                            for card_idx in 0..4 {
-                                if let (1u8, suit) = cards[card_idx] {
-                                    cards.push((14u8, suit));
-                                }
-                            }
-                            functional::eval(&cards)
-                        };
-                        let hand = self
-                            .state
-                            .hand_eval_cache
-                            .entry(*seat_idx)
-                            .or_insert_with(hand_eval);
-                        hands_in_pot.push(hand.clone());
-                    }
+impl From<Game<Reveal>> for Game<Distribute> {
+    fn from(mut value: Game<Reveal>) -> Self {
+        if let Some(pot) = value.data.pots.last() {
+            for (seat_idx, _) in pot.investments.iter() {
+                let player = value.data.seats[*seat_idx].as_mut().unwrap();
+                if player.state != PlayerState::Show {
+                    player.state = PlayerState::Show;
                 }
-                // Only up to 4 players can split the pot (only four suits per card value).
-                let mut distributions_per_player: HashMap<usize, Usd> = HashMap::with_capacity(4);
-                let mut winner_indices = functional::argmax(&hands_in_pot);
-                let num_winners = winner_indices.len();
-                match num_winners {
-                    0 => unreachable!("There is always at least one player in the pot."),
-                    // Give the whole pot to the winner.
-                    1 => {
-                        let winner_idx = winner_indices.pop().unwrap();
+            }
+        }
+        Self {
+            data: value.data,
+            state: Distribute {
+                hand_eval_cache: value.state.hand_eval_cache,
+            },
+        }
+    }
+}
+
+/// Get all players in the pot that haven't folded and compare their
+/// hands to one another. Get the winning indices and distribute
+/// the pot accordingly. If there's a tie, winners are given their
+/// original investments and then split the remainder. Everyone
+/// can only lose as much as they had originally invested or as much
+/// as a winner had invested, whichever is lower. This prevents folks
+/// that went all-in, but have much more money than the winner, from
+/// losing the extra money.
+impl From<Game<Distribute>> for Game<Reveal> {
+    fn from(mut value: Game<Distribute>) -> Self {
+        if let Some(mut pot) = value.data.pots.pop() {
+            let mut seats_in_pot = Vec::with_capacity(MAX_PLAYERS);
+            let mut hands_in_pot = Vec::with_capacity(MAX_PLAYERS);
+            for (seat_idx, _) in pot.investments.iter() {
+                let player = value.data.seats[*seat_idx].as_mut().unwrap();
+                if player.state != PlayerState::Fold {
+                    seats_in_pot.push(*seat_idx);
+                    let hand_eval = || {
+                        let mut cards = player.cards.clone();
+                        cards.extend(value.data.board.clone());
+                        cards.sort_unstable();
+                        // Add ace highs to the hand for evaluation.
+                        for card_idx in 0..4 {
+                            if let (1u8, suit) = cards[card_idx] {
+                                cards.push((14u8, suit));
+                            }
+                        }
+                        functional::eval(&cards)
+                    };
+                    let hand = value
+                        .state
+                        .hand_eval_cache
+                        .entry(*seat_idx)
+                        .or_insert_with(hand_eval);
+                    hands_in_pot.push(hand.clone());
+                }
+            }
+            // Only up to 4 players can split the pot (only four suits per card value).
+            let mut distributions_per_player: HashMap<usize, Usd> = HashMap::with_capacity(4);
+            let mut winner_indices = functional::argmax(&hands_in_pot);
+            let num_winners = winner_indices.len();
+            match num_winners {
+                0 => unreachable!("There is always at least one player in the pot."),
+                // Give the whole pot to the winner.
+                1 => {
+                    let winner_idx = winner_indices.pop().unwrap();
+                    let winner_seat_idx = seats_in_pot[winner_idx];
+                    let (_, winner_investment) =
+                        pot.investments.remove_entry(&winner_seat_idx).unwrap();
+                    for (seat_idx, investment) in pot.investments {
+                        if investment > winner_investment {
+                            let remainder = investment - winner_investment;
+                            distributions_per_player.insert(seat_idx, remainder);
+                            pot.size -= remainder;
+                        }
+                    }
+                    distributions_per_player.insert(winner_seat_idx, pot.size);
+                }
+                // Split pot amongst multiple winners.
+                _ => {
+                    // Need to first give each winner's original investment back
+                    // to them so the pot can be split fairly. The max winner
+                    // investment is tracked to handle the edge case of some
+                    // whale going all-in with no one else to call them.
+                    let mut money_per_winner: HashMap<usize, Usd> = HashMap::with_capacity(4);
+                    let mut max_winner_investment = Usd::MIN;
+                    for winner_idx in winner_indices {
                         let winner_seat_idx = seats_in_pot[winner_idx];
                         let (_, winner_investment) =
                             pot.investments.remove_entry(&winner_seat_idx).unwrap();
-                        for (seat_idx, investment) in pot.investments {
-                            if investment > winner_investment {
-                                let remainder = investment - winner_investment;
-                                distributions_per_player.insert(seat_idx, remainder);
-                                pot.size -= remainder;
-                            }
+                        if winner_investment > max_winner_investment {
+                            max_winner_investment = winner_investment;
                         }
-                        distributions_per_player.insert(winner_seat_idx, pot.size);
+                        money_per_winner.insert(winner_seat_idx, winner_investment);
+                        pot.size -= winner_investment;
                     }
-                    // Split pot amongst multiple winners.
-                    _ => {
-                        // Need to first give each winner's original investment back
-                        // to them so the pot can be split fairly. The max winner
-                        // investment is tracked to handle the edge case of some
-                        // whale going all-in with no one else to call them.
-                        let mut money_per_winner: HashMap<usize, Usd> = HashMap::with_capacity(4);
-                        let mut max_winner_investment = Usd::MIN;
-                        for winner_idx in winner_indices {
-                            let winner_seat_idx = seats_in_pot[winner_idx];
-                            let (_, winner_investment) =
-                                pot.investments.remove_entry(&winner_seat_idx).unwrap();
-                            if winner_investment > max_winner_investment {
-                                max_winner_investment = winner_investment;
-                            }
-                            money_per_winner.insert(winner_seat_idx, winner_investment);
-                            pot.size -= winner_investment;
+                    for (seat_idx, investment) in pot.investments {
+                        if investment > max_winner_investment {
+                            let remainder = investment - max_winner_investment;
+                            distributions_per_player.insert(seat_idx, remainder);
+                            pot.size -= remainder;
                         }
-                        for (seat_idx, investment) in pot.investments {
-                            if investment > max_winner_investment {
-                                let remainder = investment - max_winner_investment;
-                                distributions_per_player.insert(seat_idx, remainder);
-                                pot.size -= remainder;
-                            }
-                        }
-                        // Finally, split the remaining pot amongst all the winners.
-                        // There's a possibility for the pot to not split perfectly
-                        // amongst all players; in this case, the remainder is
-                        // put in the donations and will eventually be redistributed
-                        // amongst remaining users. This also encourages users to
-                        // stay in the game so they can be donated these breadcrumbs
-                        // and continue playing with them.
-                        let pot_split = pot.size / num_winners as Usd;
-                        let mut pot_remainder = pot.size as Usdf;
-                        for (winner_seat_idx, money) in money_per_winner {
-                            distributions_per_player.insert(winner_seat_idx, money + pot_split);
-                            pot_remainder -= pot_split as Usdf;
-                        }
-                        self.data.donations += pot_remainder;
                     }
-                }
-
-                // Give money back to players.
-                for (seat_idx, distribution) in distributions_per_player {
-                    let player = self.data.seats[seat_idx].as_ref().unwrap();
-                    let user = self.data.users.get_mut(&player.name).unwrap();
-                    user.money += distribution;
-                }
-
-                // We have no data to return, but we still want to signal that
-                // something did happen.
-                true
-            }
-            _ => false,
-        }
-    }
-
-    pub fn reveal_pot_hands(&mut self) -> bool {
-        let mut new_reveals = false;
-        if let Some(pot) = self.data.pots.last() {
-            for (seat_idx, _) in pot.investments.iter() {
-                let player = self.data.seats[*seat_idx].as_mut().unwrap();
-                if player.state != PlayerState::Show {
-                    player.state = PlayerState::Show;
-                    new_reveals = true;
+                    // Finally, split the remaining pot amongst all the winners.
+                    // There's a possibility for the pot to not split perfectly
+                    // amongst all players; in this case, the remainder is
+                    // put in the donations and will eventually be redistributed
+                    // amongst remaining users. This also encourages users to
+                    // stay in the game so they can be donated these breadcrumbs
+                    // and continue playing with them.
+                    let pot_split = pot.size / num_winners as Usd;
+                    let mut pot_remainder = pot.size as Usdf;
+                    for (winner_seat_idx, money) in money_per_winner {
+                        distributions_per_player.insert(winner_seat_idx, money + pot_split);
+                        pot_remainder -= pot_split as Usdf;
+                    }
+                    value.data.donations += pot_remainder;
                 }
             }
+
+            // Give money back to players.
+            for (seat_idx, distribution) in distributions_per_player {
+                let player = value.data.seats[seat_idx].as_ref().unwrap();
+                let user = value.data.users.get_mut(&player.name).unwrap();
+                user.money += distribution;
+            }
         }
-        new_reveals
+        Self {
+            data: value.data,
+            state: Reveal {
+                hand_eval_cache: value.state.hand_eval_cache,
+            },
+        }
     }
 }
 
-impl From<Game<Showdown>> for Game<RemovePlayers> {
-    fn from(value: Game<Showdown>) -> Self {
+impl From<Game<Reveal>> for Game<RemovePlayers> {
+    fn from(value: Game<Reveal>) -> Self {
         Self {
             data: value.data,
             state: RemovePlayers {},
@@ -1144,12 +1175,13 @@ mod tests {
 
     use crate::poker::entities::{Action, Suit, STARTING_STACK};
     use crate::poker::game::{
-        DivideDonations, RemovePlayers, TakeAction, UpdateBlinds, MIN_BIG_BLIND, MIN_SMALL_BLIND,
+        Distribute, DivideDonations, RemovePlayers, TakeAction, UpdateBlinds, MIN_BIG_BLIND,
+        MIN_SMALL_BLIND,
     };
 
     use super::{
-        BootPlayers, CollectBlinds, Deal, Flop, Game, MoveButton, River, SeatPlayers, Showdown,
-        Turn, UserError, UserState, MAX_PLAYERS, MAX_USERS,
+        BootPlayers, CollectBlinds, Deal, Flop, Game, MoveButton, Reveal, River, SeatPlayers, Turn,
+        UserError, UserState, MAX_PLAYERS, MAX_USERS,
     };
 
     fn init_game() -> Game<SeatPlayers> {
@@ -1192,7 +1224,7 @@ mod tests {
         game
     }
 
-    fn init_game_at_showdown_with_2_all_ins() -> Game<Showdown> {
+    fn init_game_at_showdown_with_2_all_ins() -> Game<Reveal> {
         let mut game = init_game_at_deal();
         game.act(Action::Fold).unwrap();
         game.act(Action::AllIn).unwrap();
@@ -1200,11 +1232,11 @@ mod tests {
         let game: Game<Flop> = game.into();
         let game: Game<Turn> = game.into();
         let game: Game<River> = game.into();
-        let game: Game<Showdown> = game.into();
+        let game: Game<Reveal> = game.into();
         game
     }
 
-    fn init_game_at_showdown_with_3_all_ins() -> Game<Showdown> {
+    fn init_game_at_showdown_with_3_all_ins() -> Game<Reveal> {
         let mut game = init_game_at_deal();
         game.act(Action::AllIn).unwrap();
         game.act(Action::AllIn).unwrap();
@@ -1212,7 +1244,7 @@ mod tests {
         let game: Game<Flop> = game.into();
         let game: Game<Turn> = game.into();
         let game: Game<River> = game.into();
-        let game: Game<Showdown> = game.into();
+        let game: Game<Reveal> = game.into();
         game
     }
 
@@ -1249,7 +1281,7 @@ mod tests {
         assert_eq!(game.get_num_community_cards(), 3);
         let game: Game<River> = game.into();
         assert_eq!(game.get_num_community_cards(), 4);
-        let game: Game<Showdown> = game.into();
+        let game: Game<Reveal> = game.into();
         assert_eq!(game.get_num_community_cards(), 5);
     }
 
@@ -1268,8 +1300,10 @@ mod tests {
         ];
         game.data.seats[1].as_mut().unwrap().cards = vec![(1u8, Suit::Diamond), (7u8, Suit::Heart)];
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Diamond), (5u8, Suit::Heart)];
-        assert!(game.distribute_pot());
-        assert!(!game.distribute_pot());
+        let game: Game<Reveal> = game.into();
+        let game: Game<Distribute> = game.into();
+        let game: Game<Reveal> = game.into();
+        assert!(game.is_pot_empty());
         for (i, money) in [STARTING_STACK, 2 * STARTING_STACK, 0].iter().enumerate() {
             let username = i.to_string();
             assert_eq!(game.data.users.get(&username).unwrap().money, *money);
@@ -1288,8 +1322,10 @@ mod tests {
         ];
         game.data.seats[1].as_mut().unwrap().cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
-        assert!(game.distribute_pot());
-        assert!(!game.distribute_pot());
+        let game: Game<Reveal> = game.into();
+        let game: Game<Distribute> = game.into();
+        let game: Game<Reveal> = game.into();
+        assert!(game.is_pot_empty());
         for i in (0..3).into_iter() {
             let username = i.to_string();
             assert_eq!(
@@ -1324,7 +1360,7 @@ mod tests {
         let game: Game<Flop> = game.into();
         let game: Game<Turn> = game.into();
         let game: Game<River> = game.into();
-        let mut game: Game<Showdown> = game.into();
+        let mut game: Game<Reveal> = game.into();
         game.data.board = vec![
             (1u8, Suit::Spade),
             (4u8, Suit::Diamond),
@@ -1337,8 +1373,12 @@ mod tests {
         game.data.seats[1].as_mut().unwrap().cards =
             vec![(1u8, Suit::Heart), (10u8, Suit::Diamond)];
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (9u8, Suit::Diamond)];
-        assert!(game.distribute_pot());
-        assert!(!game.distribute_pot());
+        let game: Game<Reveal> = game.into();
+        let game: Game<Distribute> = game.into();
+        let game: Game<Reveal> = game.into();
+        let game: Game<Distribute> = game.into();
+        let game: Game<Reveal> = game.into();
+        assert!(game.is_pot_empty());
         for (i, money) in [6 * STARTING_STACK, 0, 0].iter().enumerate() {
             let username = i.to_string();
             assert_eq!(game.data.users.get(&username).unwrap().money, *money);
@@ -1378,7 +1418,7 @@ mod tests {
         let game: Game<Flop> = game.into();
         let game: Game<Turn> = game.into();
         let game: Game<River> = game.into();
-        let mut game: Game<Showdown> = game.into();
+        let mut game: Game<Reveal> = game.into();
         game.data.board = vec![
             (1u8, Suit::Spade),
             (4u8, Suit::Diamond),
@@ -1391,10 +1431,14 @@ mod tests {
         game.data.seats[1].as_mut().unwrap().cards =
             vec![(1u8, Suit::Heart), (10u8, Suit::Diamond)];
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (9u8, Suit::Diamond)];
-        assert!(game.distribute_pot());
-        assert!(game.distribute_pot());
-        assert!(game.distribute_pot());
-        assert!(!game.distribute_pot());
+        let game: Game<Reveal> = game.into();
+        let game: Game<Distribute> = game.into();
+        let game: Game<Reveal> = game.into();
+        let game: Game<Distribute> = game.into();
+        let game: Game<Reveal> = game.into();
+        let game: Game<Distribute> = game.into();
+        let game: Game<Reveal> = game.into();
+        assert!(game.is_pot_empty());
         for (i, money) in [3 * STARTING_STACK, 2 * STARTING_STACK, STARTING_STACK]
             .iter()
             .enumerate()
@@ -1417,12 +1461,7 @@ mod tests {
             UserState::Spectating
         );
 
-        assert_eq!(
-            game.new_user(username),
-            Err(UserError::AlreadyExists {
-                username: username.to_string()
-            })
-        );
+        assert_eq!(game.new_user(username), Err(UserError::UserAlreadyExists));
 
         game.waitlist_user(username).unwrap();
         assert!(game.data.waitlist.contains(&username.to_string()));
@@ -1442,23 +1481,14 @@ mod tests {
         assert!(!game.data.users.contains_key(username));
         assert!(!game.data.spectators.contains(username));
 
-        assert_eq!(
-            game.remove_user(username),
-            Err(UserError::DoesNotExist {
-                username: username.to_string()
-            })
-        );
+        assert_eq!(game.remove_user(username), Err(UserError::UserDoesNotExist));
         assert_eq!(
             game.waitlist_user(username),
-            Err(UserError::DoesNotExist {
-                username: username.to_string()
-            })
+            Err(UserError::UserDoesNotExist)
         );
         assert_eq!(
             game.spectate_user(username),
-            Err(UserError::DoesNotExist {
-                username: username.to_string()
-            })
+            Err(UserError::UserDoesNotExist)
         );
 
         game.new_user(username).unwrap();
@@ -1504,12 +1534,13 @@ mod tests {
             game.new_user(&username).unwrap();
             game.waitlist_user(&username).unwrap();
         }
-        let mut game: Game<MoveButton> = game.into();
-        for i in 2..MAX_PLAYERS {
+        let game: Game<MoveButton> = game.into();
+        let mut game: Game<CollectBlinds> = game.into();
+        for i in 3..MAX_PLAYERS {
             assert_eq!(game.data.next_action_idx, Some(i));
             game.data.next_action_idx = game.get_next_action_idx(false);
         }
-        for i in 0..2 {
+        for i in 0..3 {
             assert_eq!(game.data.next_action_idx, Some(i));
             game.data.next_action_idx = game.get_next_action_idx(false);
         }
@@ -1528,7 +1559,9 @@ mod tests {
         game.data.seats[0].as_mut().unwrap().cards = vec![(3u8, Suit::Heart), (8u8, Suit::Diamond)];
         game.data.seats[1].as_mut().unwrap().cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
-        game.distribute_pot();
+        let game: Game<Reveal> = game.into();
+        let game: Game<Distribute> = game.into();
+        let game: Game<Reveal> = game.into();
         let game: Game<RemovePlayers> = game.into();
         let game: Game<DivideDonations> = game.into();
         let game: Game<UpdateBlinds> = game.into();
@@ -1550,7 +1583,9 @@ mod tests {
         ];
         game.data.seats[1].as_mut().unwrap().cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
-        game.distribute_pot();
+        let game: Game<Reveal> = game.into();
+        let game: Game<Distribute> = game.into();
+        let game: Game<Reveal> = game.into();
         let game: Game<RemovePlayers> = game.into();
         let mut game: Game<DivideDonations> = game.into();
         game.remove_user("0").unwrap();
@@ -1580,7 +1615,9 @@ mod tests {
         game.data.seats[1].as_mut().unwrap().cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
         game.remove_user("0").unwrap();
-        game.distribute_pot();
+        let game: Game<Reveal> = game.into();
+        let game: Game<Distribute> = game.into();
+        let game: Game<Reveal> = game.into();
         let game: Game<RemovePlayers> = game.into();
         let game: Game<DivideDonations> = game.into();
         assert!(!game.data.users.contains_key("0"));

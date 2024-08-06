@@ -72,4 +72,12 @@ impl Client {
         }
         self.recv_view()
     }
+
+    pub fn start(&mut self) -> Result<messages::GameView, Error> {
+        let request = messages::ClientMessage::Start;
+        if let Err(error) = utils::write_prefixed(&mut self.stream, &request) {
+            bail!(error)
+        }
+        self.recv_view()
+    }
 }
