@@ -10,7 +10,7 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn act(&mut self, action: Action) -> Result<messages::GameView, Error> {
+    pub fn take_action(&mut self, action: Action) -> Result<messages::GameView, Error> {
         let request = messages::ClientMessage::Action(action);
         if let Err(error) = utils::write_prefixed(&mut self.stream, &request) {
             bail!(error)
@@ -65,7 +65,7 @@ impl Client {
         }
     }
 
-    pub fn show(&mut self) -> Result<messages::GameView, Error> {
+    pub fn show_hand(&mut self) -> Result<messages::GameView, Error> {
         let request = messages::ClientMessage::Show;
         if let Err(error) = utils::write_prefixed(&mut self.stream, &request) {
             bail!(error)
@@ -73,7 +73,7 @@ impl Client {
         self.recv_view()
     }
 
-    pub fn start(&mut self) -> Result<messages::GameView, Error> {
+    pub fn start_game(&mut self) -> Result<messages::GameView, Error> {
         let request = messages::ClientMessage::Start;
         if let Err(error) = utils::write_prefixed(&mut self.stream, &request) {
             bail!(error)

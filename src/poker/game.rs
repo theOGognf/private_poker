@@ -16,6 +16,8 @@ use super::{
 
 #[derive(Debug, Deserialize, Eq, Error, PartialEq, Serialize)]
 pub enum UserError {
+    #[error("Cannot show hand now.")]
+    CannotShowHand,
     #[error("Game is full.")]
     CapacityReached,
     #[error("Game already in progress.")]
@@ -34,6 +36,10 @@ pub enum UserError {
     UserAlreadyExists,
     #[error("Username does not exist.")]
     UserDoesNotExist,
+    #[error("User is not playing.")]
+    UserNotPlaying,
+    #[error("User already showing hand.")]
+    UserAlreadyShowingHand,
 }
 
 #[derive(Debug)]
@@ -143,22 +149,22 @@ pub struct Turn {}
 pub struct River {}
 
 #[derive(Debug)]
-pub struct Reveal {
+pub struct ShowHands {
     /// Temporarily maps player seats to poker hand evaluations so a player's
     /// hand doesn't have to be evaluated multiple times per game.
     hand_eval_cache: HashMap<usize, Vec<SubHand>>,
 }
 
-impl Reveal {
+impl ShowHands {
     pub fn new() -> Self {
-        Reveal {
+        ShowHands {
             hand_eval_cache: HashMap::with_capacity(MAX_PLAYERS),
         }
     }
 }
 
 #[derive(Debug)]
-pub struct Distribute {
+pub struct DistributePot {
     /// Temporarily maps player seats to poker hand evaluations so a player's
     /// hand doesn't have to be evaluated multiple times per game.
     hand_eval_cache: HashMap<usize, Vec<SubHand>>,
@@ -556,8 +562,8 @@ impl_user_managers_with_queue!(
     Game<Flop>,
     Game<Turn>,
     Game<River>,
-    Game<Reveal>,
-    Game<Distribute>
+    Game<ShowHands>,
+    Game<DistributePot>
 );
 
 impl From<Game<SeatPlayers>> for Game<MoveButton> {
@@ -829,11 +835,11 @@ impl From<Game<TakeAction>> for Game<River> {
     }
 }
 
-impl From<Game<TakeAction>> for Game<Reveal> {
+impl From<Game<TakeAction>> for Game<ShowHands> {
     fn from(value: Game<TakeAction>) -> Self {
         Self {
             data: value.data,
-            state: Reveal::new(),
+            state: ShowHands::new(),
         }
     }
 }
@@ -926,18 +932,40 @@ impl From<Game<River>> for Game<TakeAction> {
 
 /// Put the 5th card on the board assuming the game is ready for
 /// showdown.
-impl From<Game<River>> for Game<Reveal> {
+impl From<Game<River>> for Game<ShowHands> {
     fn from(mut value: Game<River>) -> Self {
         value.step();
         Self {
             data: value.data,
-            state: Reveal::new(),
+            state: ShowHands::new(),
         }
     }
 }
 
-impl From<Game<Reveal>> for Game<Distribute> {
-    fn from(mut value: Game<Reveal>) -> Self {
+impl Game<ShowHands> {
+    pub fn show_hand(&mut self, username: &str) -> Result<(), UserError> {
+        match self
+            .data
+            .seats
+            .iter_mut()
+            .flatten()
+            .find(|s| s.name == username)
+        {
+            Some(player) => {
+                if player.state != PlayerState::Show {
+                    player.state = PlayerState::Show;
+                    Ok(())
+                } else {
+                    Err(UserError::UserAlreadyShowingHand)
+                }
+            }
+            None => Err(UserError::UserNotPlaying),
+        }
+    }
+}
+
+impl From<Game<ShowHands>> for Game<DistributePot> {
+    fn from(mut value: Game<ShowHands>) -> Self {
         if let Some(pot) = value.data.pots.last() {
             for (seat_idx, _) in pot.investments.iter() {
                 let player = value.data.seats[*seat_idx].as_mut().unwrap();
@@ -948,7 +976,7 @@ impl From<Game<Reveal>> for Game<Distribute> {
         }
         Self {
             data: value.data,
-            state: Distribute {
+            state: DistributePot {
                 hand_eval_cache: value.state.hand_eval_cache,
             },
         }
@@ -963,8 +991,8 @@ impl From<Game<Reveal>> for Game<Distribute> {
 /// as a winner had invested, whichever is lower. This prevents folks
 /// that went all-in, but have much more money than the winner, from
 /// losing the extra money.
-impl From<Game<Distribute>> for Game<Reveal> {
-    fn from(mut value: Game<Distribute>) -> Self {
+impl From<Game<DistributePot>> for Game<ShowHands> {
+    fn from(mut value: Game<DistributePot>) -> Self {
         if let Some(mut pot) = value.data.pots.pop() {
             let mut seats_in_pot = Vec::with_capacity(MAX_PLAYERS);
             let mut hands_in_pot = Vec::with_capacity(MAX_PLAYERS);
@@ -1064,15 +1092,15 @@ impl From<Game<Distribute>> for Game<Reveal> {
         }
         Self {
             data: value.data,
-            state: Reveal {
+            state: ShowHands {
                 hand_eval_cache: value.state.hand_eval_cache,
             },
         }
     }
 }
 
-impl From<Game<Reveal>> for Game<RemovePlayers> {
-    fn from(value: Game<Reveal>) -> Self {
+impl From<Game<ShowHands>> for Game<RemovePlayers> {
+    fn from(value: Game<ShowHands>) -> Self {
         Self {
             data: value.data,
             state: RemovePlayers {},
@@ -1175,13 +1203,13 @@ mod tests {
 
     use crate::poker::entities::{Action, Suit, STARTING_STACK};
     use crate::poker::game::{
-        Distribute, DivideDonations, RemovePlayers, TakeAction, UpdateBlinds, MIN_BIG_BLIND,
+        DistributePot, DivideDonations, RemovePlayers, TakeAction, UpdateBlinds, MIN_BIG_BLIND,
         MIN_SMALL_BLIND,
     };
 
     use super::{
-        BootPlayers, CollectBlinds, Deal, Flop, Game, MoveButton, Reveal, River, SeatPlayers, Turn,
-        UserError, UserState, MAX_PLAYERS, MAX_USERS,
+        BootPlayers, CollectBlinds, Deal, Flop, Game, MoveButton, River, SeatPlayers, ShowHands,
+        Turn, UserError, UserState, MAX_PLAYERS, MAX_USERS,
     };
 
     fn init_game() -> Game<SeatPlayers> {
@@ -1224,7 +1252,7 @@ mod tests {
         game
     }
 
-    fn init_game_at_showdown_with_2_all_ins() -> Game<Reveal> {
+    fn init_game_at_showdown_with_2_all_ins() -> Game<ShowHands> {
         let mut game = init_game_at_deal();
         game.act(Action::Fold).unwrap();
         game.act(Action::AllIn).unwrap();
@@ -1232,11 +1260,11 @@ mod tests {
         let game: Game<Flop> = game.into();
         let game: Game<Turn> = game.into();
         let game: Game<River> = game.into();
-        let game: Game<Reveal> = game.into();
+        let game: Game<ShowHands> = game.into();
         game
     }
 
-    fn init_game_at_showdown_with_3_all_ins() -> Game<Reveal> {
+    fn init_game_at_showdown_with_3_all_ins() -> Game<ShowHands> {
         let mut game = init_game_at_deal();
         game.act(Action::AllIn).unwrap();
         game.act(Action::AllIn).unwrap();
@@ -1244,7 +1272,7 @@ mod tests {
         let game: Game<Flop> = game.into();
         let game: Game<Turn> = game.into();
         let game: Game<River> = game.into();
-        let game: Game<Reveal> = game.into();
+        let game: Game<ShowHands> = game.into();
         game
     }
 
@@ -1281,7 +1309,7 @@ mod tests {
         assert_eq!(game.get_num_community_cards(), 3);
         let game: Game<River> = game.into();
         assert_eq!(game.get_num_community_cards(), 4);
-        let game: Game<Reveal> = game.into();
+        let game: Game<ShowHands> = game.into();
         assert_eq!(game.get_num_community_cards(), 5);
     }
 
@@ -1300,9 +1328,9 @@ mod tests {
         ];
         game.data.seats[1].as_mut().unwrap().cards = vec![(1u8, Suit::Diamond), (7u8, Suit::Heart)];
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Diamond), (5u8, Suit::Heart)];
-        let game: Game<Reveal> = game.into();
-        let game: Game<Distribute> = game.into();
-        let game: Game<Reveal> = game.into();
+        let game: Game<ShowHands> = game.into();
+        let game: Game<DistributePot> = game.into();
+        let game: Game<ShowHands> = game.into();
         assert!(game.is_pot_empty());
         for (i, money) in [STARTING_STACK, 2 * STARTING_STACK, 0].iter().enumerate() {
             let username = i.to_string();
@@ -1322,9 +1350,9 @@ mod tests {
         ];
         game.data.seats[1].as_mut().unwrap().cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
-        let game: Game<Reveal> = game.into();
-        let game: Game<Distribute> = game.into();
-        let game: Game<Reveal> = game.into();
+        let game: Game<ShowHands> = game.into();
+        let game: Game<DistributePot> = game.into();
+        let game: Game<ShowHands> = game.into();
         assert!(game.is_pot_empty());
         for i in (0..3).into_iter() {
             let username = i.to_string();
@@ -1360,7 +1388,7 @@ mod tests {
         let game: Game<Flop> = game.into();
         let game: Game<Turn> = game.into();
         let game: Game<River> = game.into();
-        let mut game: Game<Reveal> = game.into();
+        let mut game: Game<ShowHands> = game.into();
         game.data.board = vec![
             (1u8, Suit::Spade),
             (4u8, Suit::Diamond),
@@ -1373,11 +1401,11 @@ mod tests {
         game.data.seats[1].as_mut().unwrap().cards =
             vec![(1u8, Suit::Heart), (10u8, Suit::Diamond)];
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (9u8, Suit::Diamond)];
-        let game: Game<Reveal> = game.into();
-        let game: Game<Distribute> = game.into();
-        let game: Game<Reveal> = game.into();
-        let game: Game<Distribute> = game.into();
-        let game: Game<Reveal> = game.into();
+        let game: Game<ShowHands> = game.into();
+        let game: Game<DistributePot> = game.into();
+        let game: Game<ShowHands> = game.into();
+        let game: Game<DistributePot> = game.into();
+        let game: Game<ShowHands> = game.into();
         assert!(game.is_pot_empty());
         for (i, money) in [6 * STARTING_STACK, 0, 0].iter().enumerate() {
             let username = i.to_string();
@@ -1418,7 +1446,7 @@ mod tests {
         let game: Game<Flop> = game.into();
         let game: Game<Turn> = game.into();
         let game: Game<River> = game.into();
-        let mut game: Game<Reveal> = game.into();
+        let mut game: Game<ShowHands> = game.into();
         game.data.board = vec![
             (1u8, Suit::Spade),
             (4u8, Suit::Diamond),
@@ -1431,13 +1459,13 @@ mod tests {
         game.data.seats[1].as_mut().unwrap().cards =
             vec![(1u8, Suit::Heart), (10u8, Suit::Diamond)];
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (9u8, Suit::Diamond)];
-        let game: Game<Reveal> = game.into();
-        let game: Game<Distribute> = game.into();
-        let game: Game<Reveal> = game.into();
-        let game: Game<Distribute> = game.into();
-        let game: Game<Reveal> = game.into();
-        let game: Game<Distribute> = game.into();
-        let game: Game<Reveal> = game.into();
+        let game: Game<ShowHands> = game.into();
+        let game: Game<DistributePot> = game.into();
+        let game: Game<ShowHands> = game.into();
+        let game: Game<DistributePot> = game.into();
+        let game: Game<ShowHands> = game.into();
+        let game: Game<DistributePot> = game.into();
+        let game: Game<ShowHands> = game.into();
         assert!(game.is_pot_empty());
         for (i, money) in [3 * STARTING_STACK, 2 * STARTING_STACK, STARTING_STACK]
             .iter()
@@ -1559,9 +1587,9 @@ mod tests {
         game.data.seats[0].as_mut().unwrap().cards = vec![(3u8, Suit::Heart), (8u8, Suit::Diamond)];
         game.data.seats[1].as_mut().unwrap().cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
-        let game: Game<Reveal> = game.into();
-        let game: Game<Distribute> = game.into();
-        let game: Game<Reveal> = game.into();
+        let game: Game<ShowHands> = game.into();
+        let game: Game<DistributePot> = game.into();
+        let game: Game<ShowHands> = game.into();
         let game: Game<RemovePlayers> = game.into();
         let game: Game<DivideDonations> = game.into();
         let game: Game<UpdateBlinds> = game.into();
@@ -1583,9 +1611,9 @@ mod tests {
         ];
         game.data.seats[1].as_mut().unwrap().cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
-        let game: Game<Reveal> = game.into();
-        let game: Game<Distribute> = game.into();
-        let game: Game<Reveal> = game.into();
+        let game: Game<ShowHands> = game.into();
+        let game: Game<DistributePot> = game.into();
+        let game: Game<ShowHands> = game.into();
         let game: Game<RemovePlayers> = game.into();
         let mut game: Game<DivideDonations> = game.into();
         game.remove_user("0").unwrap();
@@ -1615,9 +1643,9 @@ mod tests {
         game.data.seats[1].as_mut().unwrap().cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
         game.data.seats[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
         game.remove_user("0").unwrap();
-        let game: Game<Reveal> = game.into();
-        let game: Game<Distribute> = game.into();
-        let game: Game<Reveal> = game.into();
+        let game: Game<ShowHands> = game.into();
+        let game: Game<DistributePot> = game.into();
+        let game: Game<ShowHands> = game.into();
         let game: Game<RemovePlayers> = game.into();
         let game: Game<DivideDonations> = game.into();
         assert!(!game.data.users.contains_key("0"));

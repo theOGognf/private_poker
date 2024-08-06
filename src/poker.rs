@@ -5,8 +5,8 @@ pub mod game;
 
 use entities::Action;
 use game::{
-    BootPlayers, CollectBlinds, Deal, Distribute, DivideDonations, Flop, Game, MoveButton,
-    RemovePlayers, Reveal, River, SeatPlayers, TakeAction, Turn, UpdateBlinds, UserError,
+    BootPlayers, CollectBlinds, Deal, DistributePot, DivideDonations, Flop, Game, MoveButton,
+    RemovePlayers, River, SeatPlayers, ShowHands, TakeAction, Turn, UpdateBlinds, UserError,
 };
 
 #[derive(Debug)]
@@ -19,8 +19,8 @@ pub enum PokerState {
     Flop(Game<Flop>),
     Turn(Game<Turn>),
     River(Game<River>),
-    Reveal(Game<Reveal>),
-    Distribute(Game<Distribute>),
+    ShowHands(Game<ShowHands>),
+    DistributePot(Game<DistributePot>),
     RemovePlayers(Game<RemovePlayers>),
     DivideDonations(Game<DivideDonations>),
     UpdateBlinds(Game<UpdateBlinds>),
@@ -33,7 +33,17 @@ impl PokerState {
         PokerState::SeatPlayers(game)
     }
 
-    pub fn start(self) -> Result<Self, UserError> {
+    pub fn show_hand(self, username: &str) -> Result<Self, UserError> {
+        match self {
+            PokerState::ShowHands(mut game) => {
+                game.show_hand(username)?;
+                Ok(PokerState::ShowHands(game))
+            }
+            _ => Err(UserError::CannotShowHand),
+        }
+    }
+
+    pub fn start_game(self) -> Result<Self, UserError> {
         match self {
             PokerState::SeatPlayers(ref game) => {
                 if game.get_num_players() >= 2 {
@@ -63,7 +73,7 @@ impl PokerState {
                         0 => PokerState::Flop(game.into()),
                         3 => PokerState::Turn(game.into()),
                         4 => PokerState::River(game.into()),
-                        5 => PokerState::Reveal(game.into()),
+                        5 => PokerState::ShowHands(game.into()),
                         _ => unreachable!(
                             "There can only be 0, 3, 4, or 5 community cards on the board at a time."
                         ),
@@ -86,19 +96,19 @@ impl PokerState {
             }
             PokerState::River(game) => {
                 if game.is_ready_for_showdown() {
-                    PokerState::Reveal(game.into())
+                    PokerState::ShowHands(game.into())
                 } else {
                     PokerState::TakeAction(game.into())
                 }
             }
-            PokerState::Reveal(game) => {
+            PokerState::ShowHands(game) => {
                 if !game.is_pot_empty() {
-                    PokerState::Distribute(game.into())
+                    PokerState::DistributePot(game.into())
                 } else {
                     PokerState::RemovePlayers(game.into())
                 }
             }
-            PokerState::Distribute(game) => PokerState::Reveal(game.into()),
+            PokerState::DistributePot(game) => PokerState::ShowHands(game.into()),
             PokerState::RemovePlayers(game) => PokerState::DivideDonations(game.into()),
             PokerState::DivideDonations(game) => PokerState::UpdateBlinds(game.into()),
             PokerState::UpdateBlinds(game) => PokerState::BootPlayers(game.into()),
@@ -111,10 +121,8 @@ impl PokerState {
             PokerState::TakeAction(mut game)
                 if !game.is_ready_for_next_phase() && game.is_turn(username) =>
             {
-                match game.act(action) {
-                    Ok(()) => Ok(PokerState::TakeAction(game)),
-                    Err(err) => Err(err),
-                }
+                game.act(action)?;
+                Ok(PokerState::TakeAction(game))
             }
             _ => Err(UserError::OutOfTurnAction),
         }
@@ -134,8 +142,8 @@ macro_rules! impl_user_managers {
                     PokerState::Flop(ref mut game)  => {game.$name(username)?;},
                     PokerState::Turn(ref mut game)  => {game.$name(username)?;},
                     PokerState::River(ref mut game)  => {game.$name(username)?;},
-                    PokerState::Reveal(ref mut game)  => {game.$name(username)?;},
-                    PokerState::Distribute(ref mut game)  => {game.$name(username)?;},
+                    PokerState::ShowHands(ref mut game)  => {game.$name(username)?;},
+                    PokerState::DistributePot(ref mut game)  => {game.$name(username)?;},
                     PokerState::RemovePlayers(ref mut game)  => {game.$name(username)?;},
                     PokerState::DivideDonations(ref mut game)  =>{game.$name(username)?;},
                     PokerState::UpdateBlinds(ref mut game)  => {game.$name(username)?;},
