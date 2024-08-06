@@ -11,7 +11,7 @@ pub struct Client {
 
 impl Client {
     pub fn take_action(&mut self, action: Action) -> Result<messages::GameView, Error> {
-        let request = messages::ClientMessage::Action(action);
+        let request = messages::ClientMessage::TakeAction(action);
         if let Err(error) = utils::write_prefixed(&mut self.stream, &request) {
             bail!(error)
         }
@@ -34,7 +34,7 @@ impl Client {
                     bail!(error)
                 }
                 match utils::read_prefixed::<messages::ServerMessage, TcpStream>(&mut stream) {
-                    Ok(messages::ServerMessage::ActionSignal(_)) => {
+                    Ok(messages::ServerMessage::TurnSignal(_)) => {
                         bail!("Invalid server response.")
                     }
                     Ok(messages::ServerMessage::Error(error)) => bail!(error),
@@ -56,7 +56,7 @@ impl Client {
 
     fn recv_view(&mut self) -> Result<messages::GameView, Error> {
         match utils::read_prefixed::<messages::ServerMessage, TcpStream>(&mut self.stream) {
-            Ok(messages::ServerMessage::ActionSignal(_)) => {
+            Ok(messages::ServerMessage::TurnSignal(_)) => {
                 bail!("Invalid server response.")
             }
             Ok(messages::ServerMessage::Error(error)) => bail!(error),
@@ -66,7 +66,7 @@ impl Client {
     }
 
     pub fn show_hand(&mut self) -> Result<messages::GameView, Error> {
-        let request = messages::ClientMessage::Show;
+        let request = messages::ClientMessage::ShowHand;
         if let Err(error) = utils::write_prefixed(&mut self.stream, &request) {
             bail!(error)
         }
@@ -74,7 +74,7 @@ impl Client {
     }
 
     pub fn start_game(&mut self) -> Result<messages::GameView, Error> {
-        let request = messages::ClientMessage::Start;
+        let request = messages::ClientMessage::StartGame;
         if let Err(error) = utils::write_prefixed(&mut self.stream, &request) {
             bail!(error)
         }

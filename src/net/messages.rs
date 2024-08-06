@@ -88,16 +88,16 @@ impl<T> Game<T> {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum ClientMessage {
-    Action(Action),
+    TakeAction(Action),
     Connect(String),
     ChangeState(UserState),
-    Show,
-    Start,
+    ShowHand,
+    StartGame,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum ServerMessage {
-    ActionSignal(HashSet<Action>),
+    TurnSignal(HashSet<Action>),
     Error(UserError),
     GameView(GameView),
 }
