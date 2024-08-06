@@ -46,7 +46,7 @@ impl Client {
         }
     }
 
-    pub fn recv_any(&mut self) -> Result<messages::ServerMessage, Error> {
+    pub fn recv(&mut self) -> Result<messages::ServerMessage, Error> {
         match utils::read_prefixed::<messages::ServerMessage, TcpStream>(&mut self.stream) {
             Ok(messages::ServerMessage::Error(error)) => bail!(error),
             Ok(msg) => Ok(msg),
@@ -54,7 +54,7 @@ impl Client {
         }
     }
 
-    pub fn recv_view(&mut self) -> Result<messages::GameView, Error> {
+    fn recv_view(&mut self) -> Result<messages::GameView, Error> {
         match utils::read_prefixed::<messages::ServerMessage, TcpStream>(&mut self.stream) {
             Ok(messages::ServerMessage::ActionSignal(_)) => {
                 bail!("Invalid server response.")
