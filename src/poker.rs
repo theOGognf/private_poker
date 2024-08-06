@@ -58,7 +58,7 @@ impl PokerState {
 
     pub fn step(self) -> Self {
         match self {
-            PokerState::SeatPlayers(game) => PokerState::MoveButton(game.into()),
+            PokerState::SeatPlayers(game) => PokerState::SeatPlayers(game),
             PokerState::MoveButton(game) => PokerState::CollectBlinds(game.into()),
             PokerState::CollectBlinds(game) => PokerState::Deal(game.into()),
             PokerState::Deal(game) => PokerState::TakeAction(game.into()),
