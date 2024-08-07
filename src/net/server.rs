@@ -16,7 +16,7 @@ fn change_user_state(
     user_state: &UserState,
 ) -> Result<(), UserError> {
     match user_state {
-        UserState::Playing => state.waitlist_user(username)?,
+        UserState::Playing(_) => state.waitlist_user(username)?,
         UserState::Spectating => state.spectate_user(username)?,
         UserState::Waiting => state.waitlist_user(username)?,
     }

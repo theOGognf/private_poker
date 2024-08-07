@@ -384,7 +384,7 @@ impl<T> Game<T> {
                     // The user is already playing, so we don't need to do anything,
                     // but we should acknowledge that the user still isn't
                     // technically waitlisted.
-                    UserState::Playing => Ok(false),
+                    UserState::Playing(_) => Ok(false),
                     UserState::Spectating => {
                         if user.money < self.data.big_blind {
                             return Err(UserError::InsufficientFunds {
@@ -413,15 +413,10 @@ macro_rules! impl_user_managers {
                 match self.data.users.remove(username) {
                     Some(mut user) => {
                         match user.state {
-                            UserState::Playing => {
+                            UserState::Playing(seat_idx) => {
                                 // Need to remove the player from other queues just in
                                 // case they changed their mind.
                                 self.data.players_to_spectate.remove(username);
-                                let seat_idx = self
-                                    .data.seats
-                                    .iter()
-                                    .position(|o| o.as_ref().is_some_and(|p| p.name == username))
-                                    .unwrap();
                                 self.data.seats[seat_idx] = None;
                                 self.data.num_players -= 1;
                             }
@@ -451,15 +446,10 @@ macro_rules! impl_user_managers {
                             return Ok(false);
                         }
                         match user.state {
-                            UserState::Playing => {
+                            UserState::Playing(seat_idx) => {
                                 // Need to remove the player from other queues just in
                                 // case they changed their mind.
                                 self.data.players_to_remove.remove(username);
-                                let seat_idx = self
-                                    .data.seats
-                                    .iter()
-                                    .position(|o| o.as_ref().is_some_and(|p| p.name == username))
-                                    .unwrap();
                                 self.data.seats[seat_idx] = None;
                                 self.data.num_players -= 1;
                             }
@@ -494,7 +484,7 @@ macro_rules! impl_user_managers_with_queue {
                             return Ok(false);
                         }
                         match user.state {
-                            UserState::Playing => {
+                            UserState::Playing(_) => {
                                 // Need to remove the player from other queues just in
                                 // case they changed their mind.
                                 self.data.players_to_spectate.remove(username);
@@ -531,7 +521,7 @@ macro_rules! impl_user_managers_with_queue {
                             return Ok(false);
                         }
                         match user.state {
-                            UserState::Playing => {
+                            UserState::Playing(_) => {
                                 // Need to remove the player from other queues just in
                                 // case they changed their mind.
                                 self.data.players_to_remove.remove(username);
@@ -618,21 +608,21 @@ impl From<Game<SeatPlayers>> for Game<Lobby> {
 
 impl From<Game<SeatPlayers>> for Game<MoveButton> {
     fn from(mut value: Game<SeatPlayers>) -> Self {
-        let mut i: usize = 0;
+        let mut seat_idx: usize = 0;
         while value.data.num_players < MAX_PLAYERS && !value.data.waitlist.is_empty() {
-            if value.data.seats[i].is_none() {
+            if value.data.seats[seat_idx].is_none() {
                 let username = value.data.waitlist.pop_front().unwrap();
                 let user = value.data.users.get_mut(&username).unwrap();
                 if user.money < value.data.big_blind {
                     value.spectate_user(&username).unwrap();
                 } else {
-                    value.data.seats[i] = Some(Player::new(&username));
-                    user.state = UserState::Playing;
+                    value.data.seats[seat_idx] = Some(Player::new(&username));
+                    user.state = UserState::Playing(seat_idx);
                     value.data.num_players += 1;
                 }
             }
-            if value.data.seats[i].is_some() {
-                i += 1;
+            if value.data.seats[seat_idx].is_some() {
+                seat_idx += 1;
             }
         }
         value.data.num_players_active = value.data.num_players;
@@ -1716,8 +1706,11 @@ mod tests {
         let game = init_game_at_seat_players();
         assert_eq!(game.data.num_players, game.data.users.len());
         assert_eq!(game.data.num_players_active, game.data.users.len());
-        for (_, user) in game.data.users {
-            assert_eq!(user.state, UserState::Playing);
+        for (seat_idx, player) in game.data.seats.iter().enumerate() {
+            if let Some(player) = player {
+                let user = game.data.users.get(&player.name).unwrap();
+                assert_eq!(user.state, UserState::Playing(seat_idx));
+            }
         }
     }
 

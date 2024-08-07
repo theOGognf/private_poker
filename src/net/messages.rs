@@ -38,7 +38,14 @@ pub struct GameView {
 }
 
 impl<T> Game<T> {
-    pub fn as_view(&self, seat_idx: Option<usize>) -> GameView {
+    pub fn as_view(&self, username: &str) -> GameView {
+        let seat_idx = match self.data.users.get(username) {
+            Some(user) => match user.state {
+                UserState::Playing(seat_idx) => Some(seat_idx),
+                _ => None,
+            },
+            None => None,
+        };
         let mut seats = [const { None }; MAX_PLAYERS];
         for (idx, seat) in self.data.seats.iter().enumerate() {
             if let Some(player) = seat {

@@ -72,7 +72,7 @@ pub const MIN_SMALL_BLIND: Usd = MIN_BIG_BLIND / 2;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum UserState {
     Spectating,
-    Playing,
+    Playing(usize),
     Waiting,
 }
 
