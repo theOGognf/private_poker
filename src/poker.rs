@@ -5,12 +5,14 @@ pub mod game;
 
 use entities::Action;
 use game::{
-    BootPlayers, CollectBlinds, Deal, DistributePot, DivideDonations, Flop, Game, MoveButton,
-    RemovePlayers, River, SeatPlayers, ShowHands, TakeAction, Turn, UpdateBlinds, UserError,
+    BootPlayers, CollectBlinds, Deal, DistributePot, DivideDonations, Flop, Game, Lobby,
+    MoveButton, RemovePlayers, River, SeatPlayers, ShowHands, TakeAction, Turn, UpdateBlinds,
+    UserError,
 };
 
 #[derive(Debug)]
 pub enum PokerState {
+    Lobby(Game<Lobby>),
     SeatPlayers(Game<SeatPlayers>),
     MoveButton(Game<MoveButton>),
     CollectBlinds(Game<CollectBlinds>),
@@ -28,37 +30,41 @@ pub enum PokerState {
 }
 
 impl PokerState {
+    pub fn init_game_start(&mut self) -> Result<(), UserError> {
+        match self {
+            PokerState::Lobby(ref mut game) => game.init_game_start(),
+            _ => Err(UserError::GameAlreadyInProgress),
+        }
+    }
+
     pub fn new() -> Self {
         let game = Game::<SeatPlayers>::new();
         PokerState::SeatPlayers(game)
     }
 
-    pub fn show_hand(self, username: &str) -> Result<Self, UserError> {
+    pub fn show_hand(&mut self, username: &str) -> Result<(), UserError> {
         match self {
-            PokerState::ShowHands(mut game) => {
-                game.show_hand(username)?;
-                Ok(PokerState::ShowHands(game))
-            }
+            PokerState::ShowHands(ref mut game) => game.show_hand(username),
             _ => Err(UserError::CannotShowHand),
-        }
-    }
-
-    pub fn start_game(self) -> Result<Self, UserError> {
-        match self {
-            PokerState::SeatPlayers(ref game) => {
-                if game.get_num_players() >= 2 {
-                    Ok(self.step())
-                } else {
-                    Err(UserError::NotEnoughPlayers)
-                }
-            }
-            _ => Err(UserError::GameAlreadyInProgress),
         }
     }
 
     pub fn step(self) -> Self {
         match self {
-            PokerState::SeatPlayers(game) => PokerState::SeatPlayers(game),
+            PokerState::Lobby(game) => {
+                if game.is_ready_for_game_start() {
+                    PokerState::SeatPlayers(game.into())
+                } else {
+                    PokerState::Lobby(game)
+                }
+            }
+            PokerState::SeatPlayers(game) => {
+                if game.get_num_potential_players() >= 2 {
+                    PokerState::MoveButton(game.into())
+                } else {
+                    PokerState::Lobby(game.into())
+                }
+            }
             PokerState::MoveButton(game) => PokerState::CollectBlinds(game.into()),
             PokerState::CollectBlinds(game) => PokerState::Deal(game.into()),
             PokerState::Deal(game) => PokerState::TakeAction(game.into()),
@@ -112,17 +118,17 @@ impl PokerState {
             PokerState::RemovePlayers(game) => PokerState::DivideDonations(game.into()),
             PokerState::DivideDonations(game) => PokerState::UpdateBlinds(game.into()),
             PokerState::UpdateBlinds(game) => PokerState::BootPlayers(game.into()),
-            PokerState::BootPlayers(game) => PokerState::SeatPlayers(game.into()),
+            PokerState::BootPlayers(game) => PokerState::Lobby(game.into()),
         }
     }
 
-    pub fn take_action(self, username: &str, action: Action) -> Result<Self, UserError> {
+    pub fn take_action(&mut self, username: &str, action: Action) -> Result<(), UserError> {
         match self {
-            PokerState::TakeAction(mut game)
+            PokerState::TakeAction(ref mut game)
                 if !game.is_ready_for_next_phase() && game.is_turn(username) =>
             {
                 game.act(action)?;
-                Ok(PokerState::TakeAction(game))
+                Ok(())
             }
             _ => Err(UserError::OutOfTurnAction),
         }
@@ -132,8 +138,9 @@ impl PokerState {
 macro_rules! impl_user_managers {
     ($($name:ident),+) => {
         impl PokerState {
-            $(pub fn $name(mut self, username: &str) -> Result<Self, UserError> {
+            $(pub fn $name(&mut self, username: &str) -> Result<(), UserError> {
                 match self {
+                    PokerState::Lobby(ref mut game) => {game.$name(username)?;},
                     PokerState::SeatPlayers(ref mut game) => {game.$name(username)?;},
                     PokerState::MoveButton(ref mut game)  => {game.$name(username)?;},
                     PokerState::CollectBlinds(ref mut game)  => {game.$name(username)?;},
@@ -149,7 +156,7 @@ macro_rules! impl_user_managers {
                     PokerState::UpdateBlinds(ref mut game)  => {game.$name(username)?;},
                     PokerState::BootPlayers(ref mut game) => {game.$name(username)?;},
                 }
-                Ok(self)
+                Ok(())
             })*
         }
     }

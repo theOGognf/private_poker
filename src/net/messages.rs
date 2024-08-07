@@ -37,21 +37,16 @@ pub struct GameView {
     next_action_idx: Option<usize>,
 }
 
-impl GameView {
-    pub fn is_pot_empty(&self) -> bool {
-        self.pots.is_empty()
-    }
-}
-
 impl<T> Game<T> {
-    pub fn as_view(&self, seat_idx: usize) -> GameView {
+    pub fn as_view(&self, seat_idx: Option<usize>) -> GameView {
         let mut seats = [const { None }; MAX_PLAYERS];
         for (idx, seat) in self.data.seats.iter().enumerate() {
             if let Some(player) = seat {
-                let cards = if idx == seat_idx || player.state == PlayerState::Show {
-                    Some(player.cards.clone())
-                } else {
-                    None
+                let cards = match seat_idx {
+                    Some(seat_idx) if idx == seat_idx || player.state == PlayerState::Show => {
+                        Some(player.cards.clone())
+                    }
+                    _ => None,
                 };
                 let player_view = PlayerView {
                     name: player.name.clone(),
@@ -87,17 +82,23 @@ impl<T> Game<T> {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub enum ClientMessage {
-    TakeAction(Action),
-    Connect(String),
+pub enum ClientCommand {
+    Connect,
     ChangeState(UserState),
     ShowHand,
     StartGame,
+    TakeAction(Action),
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ClientMessage {
+    pub username: String,
+    pub command: ClientCommand,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum ServerMessage {
     TurnSignal(HashSet<Action>),
-    Error(UserError),
+    Error { username: String, error: UserError },
     GameView(GameView),
 }

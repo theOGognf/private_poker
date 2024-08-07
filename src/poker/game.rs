@@ -123,6 +123,17 @@ impl GameData {
 }
 
 #[derive(Debug)]
+pub struct Lobby {
+    start_game: bool,
+}
+
+impl Lobby {
+    pub fn new() -> Self {
+        Self { start_game: false }
+    }
+}
+
+#[derive(Debug)]
 pub struct SeatPlayers {}
 
 #[derive(Debug)]
@@ -254,6 +265,11 @@ impl<T> Game<T> {
     /// Return the number of players.
     pub fn get_num_players(&self) -> usize {
         self.data.num_players
+    }
+
+    /// Return the number of players.
+    pub fn get_num_potential_players(&self) -> usize {
+        self.data.num_players + self.data.waitlist.len()
     }
 
     /// Return the sum of all calls for all pots. A player's total investment
@@ -542,6 +558,7 @@ macro_rules! impl_user_managers_with_queue {
 }
 
 impl_user_managers!(
+    Game<Lobby>,
     Game<SeatPlayers>,
     // There's an edge case where a player can queue for removal
     // when the game is in the `RemovePlayers` state, but before
@@ -565,6 +582,39 @@ impl_user_managers_with_queue!(
     Game<ShowHands>,
     Game<DistributePot>
 );
+
+impl Game<Lobby> {
+    pub fn init_game_start(&mut self) -> Result<(), UserError> {
+        if self.get_num_potential_players() >= 2 {
+            self.state.start_game = true;
+            Ok(())
+        } else {
+            Err(UserError::NotEnoughPlayers)
+        }
+    }
+
+    pub fn is_ready_for_game_start(&self) -> bool {
+        self.state.start_game
+    }
+}
+
+impl From<Game<Lobby>> for Game<SeatPlayers> {
+    fn from(value: Game<Lobby>) -> Self {
+        Self {
+            data: value.data,
+            state: SeatPlayers {},
+        }
+    }
+}
+
+impl From<Game<SeatPlayers>> for Game<Lobby> {
+    fn from(value: Game<SeatPlayers>) -> Self {
+        Self {
+            data: value.data,
+            state: Lobby::new(),
+        }
+    }
+}
 
 impl From<Game<SeatPlayers>> for Game<MoveButton> {
     fn from(mut value: Game<SeatPlayers>) -> Self {
@@ -1176,7 +1226,7 @@ impl From<Game<UpdateBlinds>> for Game<BootPlayers> {
 /// Remove players from seats that don't have enough money to satisfy
 /// the big blind, and reset player states for players that do have
 /// enough money to play.
-impl From<Game<BootPlayers>> for Game<SeatPlayers> {
+impl From<Game<BootPlayers>> for Game<Lobby> {
     fn from(mut value: Game<BootPlayers>) -> Self {
         value.data.board.clear();
         for player in value.data.seats.iter_mut().flatten() {
@@ -1192,7 +1242,7 @@ impl From<Game<BootPlayers>> for Game<SeatPlayers> {
         }
         Self {
             data: value.data,
-            state: SeatPlayers {},
+            state: Lobby::new(),
         }
     }
 }
@@ -1203,8 +1253,8 @@ mod tests {
 
     use crate::poker::entities::{Action, Suit, STARTING_STACK};
     use crate::poker::game::{
-        DistributePot, DivideDonations, RemovePlayers, TakeAction, UpdateBlinds, MIN_BIG_BLIND,
-        MIN_SMALL_BLIND,
+        DistributePot, DivideDonations, Lobby, RemovePlayers, TakeAction, UpdateBlinds,
+        MIN_BIG_BLIND, MIN_SMALL_BLIND,
     };
 
     use super::{
@@ -1595,7 +1645,7 @@ mod tests {
         let game: Game<UpdateBlinds> = game.into();
         let game: Game<BootPlayers> = game.into();
         assert_eq!(game.data.big_blind, 3 * MIN_BIG_BLIND);
-        let game: Game<SeatPlayers> = game.into();
+        let game: Game<Lobby> = game.into();
         assert_eq!(game.data.num_players, 1);
     }
 
