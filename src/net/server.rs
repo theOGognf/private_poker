@@ -6,7 +6,7 @@ use std::{
 
 use crate::poker::{entities::UserState, game::UserError, PokerState};
 
-use super::messages;
+use super::messages::{ClientCommand, ClientMessage, ServerMessage, ServerResponse};
 
 pub const STATE_CHANGE_WAIT_DURATION: u64 = 5;
 
@@ -26,14 +26,8 @@ fn change_user_state(
 // Lots of TODO: Just making sure server run generally works with the state
 // mutation and references.
 pub fn run() -> Result<(), Error> {
-    let (_, rx_client): (
-        Sender<messages::ClientMessage>,
-        Receiver<messages::ClientMessage>,
-    ) = channel();
-    let (tx_server, _): (
-        Sender<messages::ServerMessage>,
-        Receiver<messages::ServerMessage>,
-    ) = channel();
+    let (_, rx_client): (Sender<ClientMessage>, Receiver<ClientMessage>) = channel();
+    let (tx_server, _): (Sender<ServerMessage>, Receiver<ServerMessage>) = channel();
 
     let mut state = PokerState::new();
     loop {
@@ -43,46 +37,60 @@ pub fn run() -> Result<(), Error> {
             let start = Instant::now();
             if let Ok(msg) = rx_client.recv_timeout(wait_duration) {
                 match msg.command {
-                    messages::ClientCommand::Connect => {
-                        if let Err(error) = state.new_user(&msg.username) {
-                            tx_server.send(messages::ServerMessage::Error {
-                                username: msg.username,
-                                error,
-                            })?;
-                        }
-                    }
-                    messages::ClientCommand::ChangeState(new_user_state) => {
+                    ClientCommand::ChangeState(new_user_state) => {
                         if let Err(error) =
                             change_user_state(&mut state, &msg.username, &new_user_state)
                         {
-                            tx_server.send(messages::ServerMessage::Error {
+                            let msg = ServerMessage::Response {
                                 username: msg.username,
-                                error,
-                            })?;
+                                data: Box::new(ServerResponse::Error(error)),
+                            };
+                            tx_server.send(msg)?;
                         }
                     }
-                    messages::ClientCommand::ShowHand => {
+                    ClientCommand::Connect => {
+                        if let Err(error) = state.new_user(&msg.username) {
+                            let msg = ServerMessage::Response {
+                                username: msg.username,
+                                data: Box::new(ServerResponse::Error(error)),
+                            };
+                            tx_server.send(msg)?;
+                        }
+                    }
+                    ClientCommand::Leave => {
+                        if let Err(error) = state.remove_user(&msg.username) {
+                            let msg = ServerMessage::Response {
+                                username: msg.username,
+                                data: Box::new(ServerResponse::Error(error)),
+                            };
+                            tx_server.send(msg)?;
+                        }
+                    }
+                    ClientCommand::ShowHand => {
                         if let Err(error) = state.show_hand(&msg.username) {
-                            tx_server.send(messages::ServerMessage::Error {
+                            let msg = ServerMessage::Response {
                                 username: msg.username,
-                                error,
-                            })?;
+                                data: Box::new(ServerResponse::Error(error)),
+                            };
+                            tx_server.send(msg)?;
                         }
                     }
-                    messages::ClientCommand::StartGame => {
+                    ClientCommand::StartGame => {
                         if let Err(error) = state.init_game_start() {
-                            tx_server.send(messages::ServerMessage::Error {
+                            let msg = ServerMessage::Response {
                                 username: msg.username,
-                                error,
-                            })?;
+                                data: Box::new(ServerResponse::Error(error)),
+                            };
+                            tx_server.send(msg)?;
                         }
                     }
-                    messages::ClientCommand::TakeAction(action) => {
+                    ClientCommand::TakeAction(action) => {
                         if let Err(error) = state.take_action(&msg.username, action) {
-                            tx_server.send(messages::ServerMessage::Error {
+                            let msg = ServerMessage::Response {
                                 username: msg.username,
-                                error,
-                            })?;
+                                data: Box::new(ServerResponse::Error(error)),
+                            };
+                            tx_server.send(msg)?;
                         }
                     }
                 }

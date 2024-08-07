@@ -83,8 +83,9 @@ impl<T> Game<T> {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum ClientCommand {
-    Connect,
     ChangeState(UserState),
+    Connect,
+    Leave,
     ShowHand,
     StartGame,
     TakeAction(Action),
@@ -97,8 +98,19 @@ pub struct ClientMessage {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub enum ServerMessage {
-    TurnSignal(HashSet<Action>),
-    Error { username: String, error: UserError },
+pub enum ServerResponse {
+    Error(UserError),
     GameView(GameView),
+    TurnSignal(HashSet<Action>),
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub enum ServerMessage {
+    Response {
+        username: String,
+        data: Box<ServerResponse>,
+    },
+    Views {
+        username_to_view: HashMap<String, GameView>,
+    },
 }
