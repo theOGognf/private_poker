@@ -1535,7 +1535,7 @@ mod tests {
         }
         let game: Game<MoveButton> = game.into();
         let mut game: Game<CollectBlinds> = game.into();
-        for i in 3..MAX_PLAYERS {
+        for i in 3..game.get_num_players() {
             assert_eq!(game.data.next_action_idx, Some(i));
             game.data.next_action_idx = game.get_next_action_idx(false);
         }
