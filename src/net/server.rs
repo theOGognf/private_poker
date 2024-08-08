@@ -9,6 +9,7 @@ use crate::poker::{game::UserError, PokerState};
 use super::messages::{ClientCommand, ClientMessage, ServerMessage, ServerResponse, UserState};
 
 pub const STATE_CHANGE_WAIT_DURATION: u64 = 5;
+pub const TURN_SIGNAL_WAIT_DURATION: u64 = 10;
 
 fn change_user_state(
     state: &mut PokerState,
@@ -30,6 +31,7 @@ pub fn run() -> Result<(), Error> {
     let (tx_server, _): (Sender<ServerMessage>, Receiver<ServerMessage>) = channel();
 
     let mut state = PokerState::new();
+    let mut wait_duration = Duration::from_secs(STATE_CHANGE_WAIT_DURATION);
     loop {
         state = state.step();
 
@@ -37,7 +39,17 @@ pub fn run() -> Result<(), Error> {
         let msg = ServerMessage::Views(views);
         tx_server.send(msg)?;
 
-        let mut wait_duration = Duration::from_secs(STATE_CHANGE_WAIT_DURATION);
+        if let (Some(username), Some(action_options)) =
+            (state.get_next_action_username(), state.get_action_options())
+        {
+            let msg = ServerMessage::Response {
+                username,
+                data: Box::new(ServerResponse::TurnSignal(action_options)),
+            };
+            tx_server.send(msg)?;
+            wait_duration = Duration::from_secs(TURN_SIGNAL_WAIT_DURATION);
+        }
+
         while wait_duration.as_secs() > 0 {
             let start = Instant::now();
             if let Ok(msg) = rx_client.recv_timeout(wait_duration) {
@@ -98,6 +110,17 @@ pub fn run() -> Result<(), Error> {
                             Ok(views) => {
                                 let msg = ServerMessage::Views(views);
                                 tx_server.send(msg)?;
+
+                                if let (Some(username), Some(action_options)) =
+                                    (state.get_next_action_username(), state.get_action_options())
+                                {
+                                    let msg = ServerMessage::Response {
+                                        username,
+                                        data: Box::new(ServerResponse::TurnSignal(action_options)),
+                                    };
+                                    tx_server.send(msg)?;
+                                    wait_duration = Duration::from_secs(TURN_SIGNAL_WAIT_DURATION);
+                                }
                             }
                             Err(error) => {
                                 let msg = ServerMessage::Response {

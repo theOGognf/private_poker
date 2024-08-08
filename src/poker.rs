@@ -3,6 +3,8 @@ pub mod entities;
 pub mod functional;
 pub mod game;
 
+use std::collections::HashSet;
+
 use entities::Action;
 use game::{
     BootPlayers, CollectBlinds, Deal, DistributePot, DivideDonations, Flop, Game, GameViews, Lobby,
@@ -30,6 +32,20 @@ pub enum PokerState {
 }
 
 impl PokerState {
+    pub fn get_action_options(&self) -> Option<HashSet<Action>> {
+        match self {
+            PokerState::TakeAction(ref game) => game.get_action_options(),
+            _ => None,
+        }
+    }
+
+    pub fn get_next_action_username(&self) -> Option<String> {
+        match self {
+            PokerState::TakeAction(ref game) => game.get_next_action_username(),
+            _ => None,
+        }
+    }
+
     pub fn get_views(&self) -> GameViews {
         match self {
             PokerState::Lobby(ref game) => game.get_views(),

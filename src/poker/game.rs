@@ -230,7 +230,7 @@ pub struct Game<T> {
 
 /// General game methods.
 impl<T> Game<T> {
-    pub fn as_view(&self, username: &str) -> GameView {
+    fn as_view(&self, username: &str) -> GameView {
         let mut players = Vec::with_capacity(MAX_PLAYERS);
         for player in self.data.players.iter() {
             let cards = if player.user.name == username || player.state == PlayerState::Show {
@@ -909,6 +909,10 @@ impl Game<TakeAction> {
             }
             _ => Err(UserError::OutOfTurnAction),
         }
+    }
+
+    pub fn get_action_options(&self) -> Option<HashSet<Action>> {
+        self.state.action_options.clone()
     }
 }
 
