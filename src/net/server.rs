@@ -32,6 +32,11 @@ pub fn run() -> Result<(), Error> {
     let mut state = PokerState::new();
     loop {
         state = state.step();
+
+        let views = state.get_views();
+        let msg = ServerMessage::Views(views);
+        tx_server.send(msg)?;
+
         let mut wait_duration = Duration::from_secs(STATE_CHANGE_WAIT_DURATION);
         while wait_duration.as_secs() > 0 {
             let start = Instant::now();
@@ -66,15 +71,19 @@ pub fn run() -> Result<(), Error> {
                             tx_server.send(msg)?;
                         }
                     }
-                    ClientCommand::ShowHand => {
-                        if let Err(error) = state.show_hand(&msg.username) {
+                    ClientCommand::ShowHand => match state.show_hand(&msg.username) {
+                        Ok(views) => {
+                            let msg = ServerMessage::Views(views);
+                            tx_server.send(msg)?;
+                        }
+                        Err(error) => {
                             let msg = ServerMessage::Response {
                                 username: msg.username,
                                 data: Box::new(ServerResponse::Error(error)),
                             };
                             tx_server.send(msg)?;
                         }
-                    }
+                    },
                     ClientCommand::StartGame => {
                         if let Err(error) = state.init_game_start() {
                             let msg = ServerMessage::Response {
@@ -85,12 +94,18 @@ pub fn run() -> Result<(), Error> {
                         }
                     }
                     ClientCommand::TakeAction(action) => {
-                        if let Err(error) = state.take_action(&msg.username, action) {
-                            let msg = ServerMessage::Response {
-                                username: msg.username,
-                                data: Box::new(ServerResponse::Error(error)),
-                            };
-                            tx_server.send(msg)?;
+                        match state.take_action(&msg.username, action) {
+                            Ok(views) => {
+                                let msg = ServerMessage::Views(views);
+                                tx_server.send(msg)?;
+                            }
+                            Err(error) => {
+                                let msg = ServerMessage::Response {
+                                    username: msg.username,
+                                    data: Box::new(ServerResponse::Error(error)),
+                                };
+                                tx_server.send(msg)?;
+                            }
                         }
                     }
                 }

@@ -5,7 +5,7 @@ pub mod game;
 
 use entities::Action;
 use game::{
-    BootPlayers, CollectBlinds, Deal, DistributePot, DivideDonations, Flop, Game, Lobby,
+    BootPlayers, CollectBlinds, Deal, DistributePot, DivideDonations, Flop, Game, GameViews, Lobby,
     MoveButton, RemovePlayers, River, SeatPlayers, ShowHands, TakeAction, Turn, UpdateBlinds,
     UserError,
 };
@@ -30,6 +30,26 @@ pub enum PokerState {
 }
 
 impl PokerState {
+    pub fn get_views(&self) -> GameViews {
+        match self {
+            PokerState::Lobby(ref game) => game.get_views(),
+            PokerState::SeatPlayers(ref game) => game.get_views(),
+            PokerState::MoveButton(ref game) => game.get_views(),
+            PokerState::CollectBlinds(ref game) => game.get_views(),
+            PokerState::Deal(ref game) => game.get_views(),
+            PokerState::TakeAction(ref game) => game.get_views(),
+            PokerState::Flop(ref game) => game.get_views(),
+            PokerState::Turn(ref game) => game.get_views(),
+            PokerState::River(ref game) => game.get_views(),
+            PokerState::ShowHands(ref game) => game.get_views(),
+            PokerState::DistributePot(ref game) => game.get_views(),
+            PokerState::RemovePlayers(ref game) => game.get_views(),
+            PokerState::DivideDonations(ref game) => game.get_views(),
+            PokerState::UpdateBlinds(ref game) => game.get_views(),
+            PokerState::BootPlayers(ref game) => game.get_views(),
+        }
+    }
+
     pub fn init_game_start(&mut self) -> Result<(), UserError> {
         match self {
             PokerState::Lobby(ref mut game) => game.init_game_start(),
@@ -38,13 +58,16 @@ impl PokerState {
     }
 
     pub fn new() -> Self {
-        let game = Game::<SeatPlayers>::new();
-        PokerState::SeatPlayers(game)
+        let game = Game::<Lobby>::new();
+        PokerState::Lobby(game)
     }
 
-    pub fn show_hand(&mut self, username: &str) -> Result<(), UserError> {
+    pub fn show_hand(&mut self, username: &str) -> Result<GameViews, UserError> {
         match self {
-            PokerState::ShowHands(ref mut game) => game.show_hand(username),
+            PokerState::ShowHands(ref mut game) => {
+                game.show_hand(username)?;
+                Ok(game.get_views())
+            }
             _ => Err(UserError::CannotShowHand),
         }
     }
@@ -52,7 +75,7 @@ impl PokerState {
     pub fn step(self) -> Self {
         match self {
             PokerState::Lobby(game) => {
-                if game.is_ready_for_game_start() {
+                if game.is_ready_to_start() {
                     PokerState::SeatPlayers(game.into())
                 } else {
                     PokerState::Lobby(game)
@@ -122,13 +145,13 @@ impl PokerState {
         }
     }
 
-    pub fn take_action(&mut self, username: &str, action: Action) -> Result<(), UserError> {
+    pub fn take_action(&mut self, username: &str, action: Action) -> Result<GameViews, UserError> {
         match self {
             PokerState::TakeAction(ref mut game)
                 if !game.is_ready_for_next_phase() && game.is_turn(username) =>
             {
                 game.act(action)?;
-                Ok(())
+                Ok(game.get_views())
             }
             _ => Err(UserError::OutOfTurnAction),
         }

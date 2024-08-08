@@ -42,6 +42,39 @@ pub enum UserError {
     UserAlreadyShowingHand,
 }
 
+type UserView = User;
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct PlayerView {
+    name: String,
+    state: PlayerState,
+    cards: Option<Vec<Card>>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct PotView {
+    call: Usd,
+    size: Usd,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct GameView {
+    donations: Usdf,
+    small_blind: Usd,
+    big_blind: Usd,
+    spectators: HashMap<String, UserView>,
+    waitlist: VecDeque<UserView>,
+    open_seats: VecDeque<usize>,
+    players: Vec<PlayerView>,
+    board: Vec<Card>,
+    pots: Vec<PotView>,
+    small_blind_idx: usize,
+    big_blind_idx: usize,
+    next_action_idx: Option<usize>,
+}
+
+pub type GameViews = HashMap<String, GameView>;
+
 #[derive(Debug)]
 pub struct GameData {
     /// Deck of cards. This is instantiated once and reshuffled
@@ -140,7 +173,7 @@ pub struct CollectBlinds {}
 #[derive(Debug)]
 pub struct Deal {}
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TakeAction {
     pub action_options: Option<HashSet<Action>>,
 }
@@ -154,7 +187,7 @@ pub struct Turn {}
 #[derive(Debug)]
 pub struct River {}
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ShowHands {
     /// Temporarily maps player seats to poker hand evaluations so a player's
     /// hand doesn't have to be evaluated multiple times per game.
@@ -197,6 +230,45 @@ pub struct Game<T> {
 
 /// General game methods.
 impl<T> Game<T> {
+    pub fn as_view(&self, username: &str) -> GameView {
+        let mut players = Vec::with_capacity(MAX_PLAYERS);
+        for player in self.data.players.iter() {
+            let cards = if player.user.name == username || player.state == PlayerState::Show {
+                Some(player.cards.clone())
+            } else {
+                None
+            };
+            let player_view = PlayerView {
+                name: player.user.name.clone(),
+                state: player.state.clone(),
+                cards,
+            };
+            players.push(player_view);
+        }
+        GameView {
+            donations: self.data.donations,
+            small_blind: self.data.small_blind,
+            big_blind: self.data.big_blind,
+            spectators: self.data.spectators.clone(),
+            waitlist: self.data.waitlist.clone(),
+            open_seats: self.data.open_seats.clone(),
+            players,
+            board: self.data.board.clone(),
+            pots: self
+                .data
+                .pots
+                .iter()
+                .map(|pot| PotView {
+                    call: pot.call,
+                    size: pot.size,
+                })
+                .collect(),
+            small_blind_idx: self.data.small_blind_idx,
+            big_blind_idx: self.data.big_blind_idx,
+            next_action_idx: self.data.next_action_idx,
+        }
+    }
+
     fn contains_player(&self, username: &str) -> bool {
         self.data.players.iter().any(|p| p.user.name == username)
     }
@@ -320,6 +392,20 @@ impl<T> Game<T> {
         2 * self.get_total_call() - self.get_total_investment_by_player_idx(player_idx)
     }
 
+    pub fn get_views(&self) -> GameViews {
+        let mut views = HashMap::with_capacity(MAX_USERS);
+        for username in self
+            .data
+            .spectators
+            .keys()
+            .chain(self.data.waitlist.iter().map(|u| &u.name))
+            .chain(self.data.players.iter().map(|p| &p.user.name))
+        {
+            views.insert(username.to_string(), self.as_view(username));
+        }
+        views
+    }
+
     /// Return whether the game is ready to move onto the next phase
     /// now that the betting round is over.
     fn is_end_of_round(&self) -> bool {
@@ -355,10 +441,10 @@ impl<T> Game<T> {
         }
     }
 
-    pub fn new() -> Game<SeatPlayers> {
+    pub fn new() -> Game<Lobby> {
         Game {
             data: GameData::new(),
-            state: SeatPlayers {},
+            state: Lobby::new(),
         }
     }
 
@@ -558,7 +644,7 @@ impl Game<Lobby> {
         }
     }
 
-    pub fn is_ready_for_game_start(&self) -> bool {
+    pub fn is_ready_to_start(&self) -> bool {
         self.state.start_game
     }
 }
@@ -596,7 +682,7 @@ impl From<Game<SeatPlayers>> for Game<MoveButton> {
                         value.data.players[player_idx].seat_idx < open_seat_idx
                             && value.data.players[player_idx + 1].seat_idx > open_seat_idx
                     }) {
-                        Some(player_idx) => value.data.players.insert(player_idx, player),
+                        Some(player_idx) => value.data.players.insert(player_idx + 1, player),
                         None => value.data.players.push(player),
                     }
                 } else {
@@ -1221,7 +1307,8 @@ mod tests {
     };
 
     fn init_game() -> Game<SeatPlayers> {
-        let mut game = Game::<SeatPlayers>::new();
+        let game = Game::<Lobby>::new();
+        let mut game: Game<SeatPlayers> = game.into();
         for i in 0..3 {
             let username = i.to_string();
             game.new_user(&username).unwrap();
@@ -1527,7 +1614,8 @@ mod tests {
     // Every player should get their turn.
     #[test]
     fn move_next_action_idx() {
-        let mut game = Game::<SeatPlayers>::new();
+        let game = Game::<Lobby>::new();
+        let mut game: Game<SeatPlayers> = game.into();
         for i in 0..MAX_USERS {
             let username = i.to_string();
             game.new_user(&username).unwrap();

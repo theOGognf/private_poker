@@ -84,7 +84,7 @@ impl User {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Action {
     AllIn,
     Call(Usd),
@@ -168,7 +168,7 @@ pub enum PlayerState {
     Show,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Player {
     pub user: User,
     pub state: PlayerState,
