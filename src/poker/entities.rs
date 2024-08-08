@@ -78,16 +78,30 @@ pub enum UserState {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct User {
+    pub name: String,
     pub money: Usd,
-    pub state: UserState,
 }
 
 impl User {
-    pub fn new() -> User {
-        User {
+    pub fn new(name: String) -> User {
+        User { 
+            name,
             money: STARTING_STACK,
-            state: UserState::Spectating,
         }
+    }
+}
+
+impl Eq for User {}
+
+impl Hash for User {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+    }
+}
+
+impl PartialEq for User {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
     }
 }
 
@@ -177,17 +191,19 @@ pub enum PlayerState {
 
 #[derive(Debug)]
 pub struct Player {
-    pub name: String,
+    pub user: User,
     pub state: PlayerState,
     pub cards: Vec<Card>,
+    seat_idx: usize,
 }
 
 impl Player {
-    pub fn new(name: &str) -> Player {
+    pub fn new(user: User, seat_idx: usize) -> Player {
         Player {
-            name: name.to_string(),
+            user,
             state: PlayerState::Wait,
             cards: Vec::with_capacity(constants::MAX_CARDS),
+            seat_idx
         }
     }
 

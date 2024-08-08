@@ -39,7 +39,7 @@ pub struct GameView {
 
 impl<T> Game<T> {
     pub fn as_view(&self, username: &str) -> GameView {
-        let seat_idx = match self.data.users.get(username) {
+        let seat_idx = match self.data.user_states.get(username) {
             Some(user) => match user.state {
                 UserState::Playing(seat_idx) => Some(seat_idx),
                 _ => None,
@@ -47,7 +47,7 @@ impl<T> Game<T> {
             None => None,
         };
         let mut seats = [const { None }; MAX_PLAYERS];
-        for (idx, seat) in self.data.seats.iter().enumerate() {
+        for (idx, seat) in self.data.players.iter().enumerate() {
             if let Some(player) = seat {
                 let cards = match seat_idx {
                     Some(seat_idx) if idx == seat_idx || player.state == PlayerState::Show => {
@@ -67,7 +67,7 @@ impl<T> Game<T> {
             donations: self.data.donations,
             small_blind: self.data.small_blind,
             big_blind: self.data.big_blind,
-            users: self.data.users.clone(),
+            users: self.data.user_states.clone(),
             spectators: self.data.spectators.clone(),
             waitlist: self.data.waitlist.clone(),
             seats: Box::new(seats),
