@@ -206,8 +206,8 @@ pub struct Pot {
 }
 
 impl Pot {
-    pub fn bet(&mut self, seat_idx: usize, bet: &Bet) -> Option<Pot> {
-        let investment = self.investments.entry(seat_idx).or_default();
+    pub fn bet(&mut self, player_idx: usize, bet: &Bet) -> Option<Pot> {
+        let investment = self.investments.entry(player_idx).or_default();
         let mut new_call = self.call;
         let mut new_investment = *investment + bet.amount;
         let mut pot_increase = bet.amount;
@@ -237,7 +237,7 @@ impl Pot {
                     self.side_pot_state = Some(SidePotState::Raise);
                     side_pot = Some(Pot::new());
                     side_pot.as_mut().unwrap().bet(
-                        seat_idx,
+                        player_idx,
                         &Bet {
                             action: bet.action,
                             amount: new_investment - self.call,
@@ -264,13 +264,16 @@ impl Pot {
     /// Return the amount the player must bet to remain in the hand, and
     /// the minimum the player must raise by for it to be considered
     /// a valid raise.
-    pub fn get_call_by_seat(&self, seat_idx: usize) -> Usd {
-        self.call - self.get_investment_by_seat(seat_idx)
+    pub fn get_call_by_player_idx(&self, player_idx: usize) -> Usd {
+        self.call - self.get_investment_by_player_idx(player_idx)
     }
 
     /// Return the amount the player has invested in the pot.
-    pub fn get_investment_by_seat(&self, seat_idx: usize) -> Usd {
-        self.investments.get(&seat_idx).copied().unwrap_or_default()
+    pub fn get_investment_by_player_idx(&self, player_idx: usize) -> Usd {
+        self.investments
+            .get(&player_idx)
+            .copied()
+            .unwrap_or_default()
     }
 
     pub fn new() -> Pot {

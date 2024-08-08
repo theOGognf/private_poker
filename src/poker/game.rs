@@ -301,7 +301,7 @@ impl<T> Game<T> {
         self.data
             .pots
             .iter()
-            .map(|p| p.get_call_by_seat(player_idx))
+            .map(|p| p.get_call_by_player_idx(player_idx))
             .sum()
     }
 
@@ -310,7 +310,7 @@ impl<T> Game<T> {
         self.data
             .pots
             .iter()
-            .map(|p| p.get_investment_by_seat(player_idx))
+            .map(|p| p.get_investment_by_player_idx(player_idx))
             .sum()
     }
 
@@ -795,7 +795,7 @@ impl Game<TakeAction> {
                 // been caught earlier during bet sanitization).
                 let num_pots = self.data.pots.len();
                 for pot in self.data.pots.iter_mut().take(num_pots - 1) {
-                    let call = pot.get_call_by_seat(player_idx);
+                    let call = pot.get_call_by_player_idx(player_idx);
                     let pot_bet = if bet.amount <= call {
                         Bet {
                             action: BetAction::AllIn,
@@ -984,8 +984,8 @@ impl Game<ShowHands> {
 impl From<Game<ShowHands>> for Game<DistributePot> {
     fn from(mut value: Game<ShowHands>) -> Self {
         if let Some(pot) = value.data.pots.last() {
-            for (seat_idx, _) in pot.investments.iter() {
-                let player = &mut value.data.players[*seat_idx];
+            for (player_idx, _) in pot.investments.iter() {
+                let player = &mut value.data.players[*player_idx];
                 if player.state != PlayerState::Show {
                     player.state = PlayerState::Show;
                 }
@@ -1013,10 +1013,10 @@ impl From<Game<DistributePot>> for Game<ShowHands> {
         if let Some(mut pot) = value.data.pots.pop() {
             let mut seats_in_pot = Vec::with_capacity(MAX_PLAYERS);
             let mut hands_in_pot = Vec::with_capacity(MAX_PLAYERS);
-            for (seat_idx, _) in pot.investments.iter() {
-                let player = &mut value.data.players[*seat_idx];
+            for (player_idx, _) in pot.investments.iter() {
+                let player = &mut value.data.players[*player_idx];
                 if player.state != PlayerState::Fold {
-                    seats_in_pot.push(*seat_idx);
+                    seats_in_pot.push(*player_idx);
                     let hand_eval = || {
                         let mut cards = player.cards.clone();
                         cards.extend(value.data.board.clone());
@@ -1032,7 +1032,7 @@ impl From<Game<DistributePot>> for Game<ShowHands> {
                     let hand = value
                         .state
                         .hand_eval_cache
-                        .entry(*seat_idx)
+                        .entry(*player_idx)
                         .or_insert_with(hand_eval);
                     hands_in_pot.push(hand.clone());
                 }
@@ -1049,19 +1049,19 @@ impl From<Game<DistributePot>> for Game<ShowHands> {
             let mut money_per_winner: HashMap<usize, Usd> = HashMap::with_capacity(4);
             let mut max_winner_investment = Usd::MIN;
             for winner_idx in winner_indices {
-                let winner_seat_idx = seats_in_pot[winner_idx];
+                let winner_player_idx = seats_in_pot[winner_idx];
                 let (_, winner_investment) =
-                    pot.investments.remove_entry(&winner_seat_idx).unwrap();
+                    pot.investments.remove_entry(&winner_player_idx).unwrap();
                 if winner_investment > max_winner_investment {
                     max_winner_investment = winner_investment;
                 }
-                money_per_winner.insert(winner_seat_idx, winner_investment);
+                money_per_winner.insert(winner_player_idx, winner_investment);
                 pot.size -= winner_investment;
             }
-            for (seat_idx, investment) in pot.investments {
+            for (player_idx, investment) in pot.investments {
                 if investment > max_winner_investment {
                     let remainder = investment - max_winner_investment;
-                    distributions_per_player.insert(seat_idx, remainder);
+                    distributions_per_player.insert(player_idx, remainder);
                     pot.size -= remainder;
                 }
             }
@@ -1074,15 +1074,15 @@ impl From<Game<DistributePot>> for Game<ShowHands> {
             // and continue playing with them.
             let pot_split = pot.size / num_winners as Usd;
             let mut pot_remainder = pot.size as Usdf;
-            for (winner_seat_idx, money) in money_per_winner {
-                distributions_per_player.insert(winner_seat_idx, money + pot_split);
+            for (winner_player_idx, money) in money_per_winner {
+                distributions_per_player.insert(winner_player_idx, money + pot_split);
                 pot_remainder -= pot_split as Usdf;
             }
             value.data.donations += pot_remainder;
 
             // Give money back to players.
-            for (seat_idx, distribution) in distributions_per_player {
-                let player = &mut value.data.players[seat_idx];
+            for (player_idx, distribution) in distributions_per_player {
+                let player = &mut value.data.players[player_idx];
                 player.user.money += distribution;
             }
         }
