@@ -9,7 +9,7 @@ use super::{
     constants::{MAX_PLAYERS, MAX_POTS, MAX_USERS},
     entities::{
         Action, Bet, BetAction, Card, Player, PlayerState, Pot, SubHand, Usd, Usdf, User,
-        UserState, MIN_BIG_BLIND, MIN_SMALL_BLIND, STARTING_STACK,
+        MIN_BIG_BLIND, MIN_SMALL_BLIND, STARTING_STACK,
     },
     functional,
 };
@@ -54,10 +54,9 @@ pub struct GameData {
     pub donations: Usdf,
     pub small_blind: Usd,
     pub big_blind: Usd,
-    pub user_states: HashMap<String, UserState>,
     pub spectators: HashMap<String, User>,
     pub waitlist: VecDeque<User>,
-    pub open_seats: Vec<usize>,
+    pub open_seats: VecDeque<usize>,
     pub players: Vec<Player>,
     /// Community cards shared amongst all players.
     pub board: Vec<Card>,
@@ -99,10 +98,9 @@ impl GameData {
             donations: 0.0,
             small_blind: MIN_SMALL_BLIND,
             big_blind: MIN_BIG_BLIND,
-            user_states: HashMap::with_capacity(MAX_USERS),
             spectators: HashMap::with_capacity(MAX_USERS),
             waitlist: VecDeque::with_capacity(MAX_USERS),
-            open_seats: Vec::from_iter(0..MAX_PLAYERS),
+            open_seats: VecDeque::from_iter(0..MAX_PLAYERS),
             players: Vec::with_capacity(MAX_PLAYERS),
             board: Vec::with_capacity(5),
             num_players_active: 0,
@@ -199,6 +197,28 @@ pub struct Game<T> {
 
 /// General game methods.
 impl<T> Game<T> {
+    fn contains_player(&self, username: &str) -> bool {
+        self.data.players.iter().any(|p| p.user.name == username)
+    }
+
+    fn contains_user(&self, username: &str) -> bool {
+        self.data.spectators.contains_key(username)
+            || self
+                .data
+                .waitlist
+                .iter()
+                .chain(self.data.players.iter().map(|p| &p.user))
+                .any(|u| u.name == username)
+    }
+
+    fn contains_spectator(&self, username: &str) -> bool {
+        self.data.spectators.contains_key(username)
+    }
+
+    fn contains_waitlister(&self, username: &str) -> bool {
+        self.data.waitlist.iter().any(|u| u.name == username)
+    }
+
     /// Return the index of the player who has the next action.
     fn get_next_action_idx(&self, new_phase: bool) -> Option<usize> {
         if self.is_end_of_round() {
@@ -228,8 +248,8 @@ impl<T> Game<T> {
             Some(action_idx) => {
                 let mut action_options = HashSet::from([Action::AllIn, Action::Fold]);
                 let user = &self.data.players[action_idx].user;
-                let raise = self.get_total_min_raise_by_seat(action_idx);
-                let call = self.get_total_call_by_seat(action_idx);
+                let raise = self.get_total_min_raise_by_player_idx(action_idx);
+                let call = self.get_total_call_by_player_idx(action_idx);
                 if call > 0 && call < user.money {
                     action_options.insert(Action::Call(call));
                 } else if call == 0 {
@@ -245,10 +265,9 @@ impl<T> Game<T> {
     }
 
     pub fn get_next_action_username(&self) -> Option<String> {
-        match self.data.next_action_idx {
-            Some(action_idx) => Some(self.data.players[action_idx].user.name.clone()),
-            None => None,
-        }
+        self.data
+            .next_action_idx
+            .map(|action_idx| self.data.players[action_idx].user.name.clone())
     }
 
     /// Return the number of cards that've been dealt.
@@ -257,13 +276,17 @@ impl<T> Game<T> {
     }
 
     /// Return the number of players.
-    pub fn get_num_players(&self) -> usize {
+    fn get_num_players(&self) -> usize {
         self.data.players.len()
     }
 
     /// Return the number of players.
     pub fn get_num_potential_players(&self) -> usize {
         self.data.players.len() + self.data.waitlist.len()
+    }
+
+    fn get_num_users(&self) -> usize {
+        self.data.spectators.len() + self.data.waitlist.len() + self.data.players.len()
     }
 
     /// Return the sum of all calls for all pots. A player's total investment
@@ -274,27 +297,27 @@ impl<T> Game<T> {
 
     /// Return the remaining amount a player has to bet in order to stay
     /// in the pot(s).
-    fn get_total_call_by_seat(&self, seat_idx: usize) -> Usd {
+    fn get_total_call_by_player_idx(&self, player_idx: usize) -> Usd {
         self.data
             .pots
             .iter()
-            .map(|p| p.get_call_by_seat(seat_idx))
+            .map(|p| p.get_call_by_seat(player_idx))
             .sum()
     }
 
     /// Return the total amount a player has invested in the pot(s).
-    fn get_total_investment_by_seat(&self, seat_idx: usize) -> Usd {
+    fn get_total_investment_by_player_idx(&self, player_idx: usize) -> Usd {
         self.data
             .pots
             .iter()
-            .map(|p| p.get_investment_by_seat(seat_idx))
+            .map(|p| p.get_investment_by_seat(player_idx))
             .sum()
     }
 
     /// Return the minimum amount a player has to bet in order for their
     /// raise to be considered a valid raise.
-    fn get_total_min_raise_by_seat(&self, seat_idx: usize) -> Usd {
-        2 * self.get_total_call() - self.get_total_investment_by_seat(seat_idx)
+    fn get_total_min_raise_by_player_idx(&self, player_idx: usize) -> Usd {
+        2 * self.get_total_call() - self.get_total_investment_by_player_idx(player_idx)
     }
 
     /// Return whether the game is ready to move onto the next phase
@@ -318,7 +341,8 @@ impl<T> Game<T> {
     pub fn is_ready_for_showdown(&self) -> bool {
         match self.data.next_action_idx {
             Some(action_idx) => {
-                self.data.num_players_active <= 1 && self.get_total_call_by_seat(action_idx) == 0
+                self.data.num_players_active <= 1
+                    && self.get_total_call_by_player_idx(action_idx) == 0
             }
             None => self.data.num_players_active <= 1,
         }
@@ -339,9 +363,9 @@ impl<T> Game<T> {
     }
 
     pub fn new_user(&mut self, username: &str) -> Result<bool, UserError> {
-        if self.data.user_states.len() == MAX_USERS {
+        if self.get_num_users() == MAX_USERS {
             return Err(UserError::CapacityReached);
-        } else if self.data.user_states.contains_key(username) {
+        } else if self.contains_user(username) {
             // Check if player already exists but is queued for removal.
             // This probably means the user disconnected and is trying
             // to reconnect.
@@ -351,8 +375,9 @@ impl<T> Game<T> {
                 return Ok(false);
             }
         }
-        self.data.user_states.insert(username.to_string(), UserState::Spectating);
-        self.data.spectators.insert(username.to_string(), User::new(username.to_string()));
+        self.data
+            .spectators
+            .insert(username.to_string(), User::new(username.to_string()));
         Ok(true)
     }
 
@@ -367,36 +392,30 @@ impl<T> Game<T> {
     }
 
     pub fn waitlist_user(&mut self, username: &str) -> Result<bool, UserError> {
-        match self.data.user_states.get_mut(username) {
-            Some(state) => {
-                // Need to remove the player from the removal and spectate sets just in
-                // case they wanted to do one of those, but then changed their mind and
-                // want to play again.
-                self.data.players_to_spectate.remove(username);
-                self.data.players_to_remove.remove(username);
-                match state {
-                    // The user is already playing, so we don't need to do anything,
-                    // but we should acknowledge that the user still isn't
-                    // technically waitlisted.
-                    UserState::Playing(_) => Ok(false),
-                    UserState::Spectating => {
-                        let user = self.data.spectators.get(username).unwrap();
-                        if user.money < self.data.big_blind {
-                            return Err(UserError::InsufficientFunds {
-                                big_blind: self.data.big_blind,
-                            });
-                        }
-                        let user = self.data.spectators.remove(username).unwrap();
-                        self.data.waitlist.push_back(user);
-                        *state = UserState::Waiting;
-                        Ok(true)
-                    }
-                    // The user is already waitlisted, so we can just quietly
-                    // say that they're waitlisted.
-                    UserState::Waiting => Ok(true),
-                }
+        // Need to remove the player from the removal and spectate sets just in
+        // case they wanted to do one of those, but then changed their mind and
+        // want to play again.
+        self.data.players_to_spectate.remove(username);
+        self.data.players_to_remove.remove(username);
+        if let Some(user) = self.data.spectators.remove(username) {
+            if user.money < self.data.big_blind {
+                self.data.spectators.insert(username.to_string(), user);
+                return Err(UserError::InsufficientFunds {
+                    big_blind: self.data.big_blind,
+                });
             }
-            None => Err(UserError::UserDoesNotExist),
+            self.data.waitlist.push_back(user);
+            Ok(true)
+        } else if self.contains_player(username) {
+            // The user is already playing, so we don't need to do anything,
+            // but we should acknowledge that the user still isn't
+            // technically waitlisted.
+            Ok(false)
+        } else if self.contains_waitlister(username) {
+            // The user is already waitlisted.
+            Ok(true)
+        } else {
+            Err(UserError::UserDoesNotExist)
         }
     }
 }
@@ -405,61 +424,43 @@ macro_rules! impl_user_managers {
     ($($t:ty),+) => {
         $(impl $t {
             pub fn remove_user(&mut self, username: &str) -> Result<bool, UserError> {
-                match self.data.user_states.remove(username) {
-                    Some(state) => {
-                        let mut user = match state {
-                            UserState::Playing(seat_idx) => {
-                                // Need to remove the player from other queues just in
-                                // case they changed their mind.
-                                self.data.players_to_spectate.remove(username);
-                                self.data.players.remove(seat_idx).user
-                            }
-                            UserState::Spectating => {
-                                self.data.spectators.remove(username).unwrap()
-                            }
-                            UserState::Waiting => {
-                                // We can remove the user from the waitlist anytime we want.
-                                let waitlist_idx = self.data.waitlist.iter().position(|u| u.name == username).unwrap();
-                                self.data.waitlist.remove(waitlist_idx).unwrap()
-                            }
-                        };
-                        self.data.donations += user.money as Usdf;
-                        user.money = 0;
-                        Ok(true)
-                    },
-                    None => Err(UserError::UserDoesNotExist),
-                }
+                let mut user = if let Some(user) = self.data.spectators.remove(username) {
+                    user
+                } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
+                    self.data.waitlist.remove(waitlist_idx).unwrap()
+                } else if let Some(player_idx) = self.data.players.iter().position(|p| p.user.name == username) {
+                    self.data.players_to_spectate.remove(username);
+                    let player = self.data.players.remove(player_idx);
+                    self.data.open_seats.push_back(player.seat_idx);
+                    player.user
+                } else {
+                    return Err(UserError::UserDoesNotExist);
+                };
+                self.data.donations += user.money as Usdf;
+                user.money = 0;
+                Ok(true)
             }
 
             pub fn spectate_user(&mut self, username: &str) -> Result<bool, UserError> {
-                match self.data.user_states.get_mut(username) {
-                    Some(state) => {
-                        // The player has already been queued for spectate. Just wait for
-                        // the next spectate phase.
-                        if self.data.players_to_spectate.contains(username) {
-                            return Ok(false);
-                        }
-                        let user = match state {
-                            UserState::Playing(player_idx) => {
-                                // Need to remove the player from other queues just in
-                                // case they changed their mind.
-                                self.data.players_to_remove.remove(username);
-                                self.data.players.remove(*player_idx).user
-                            }
-                            // The user is already spectating, so we can just quietly
-                            // say that they're spectating.
-                            UserState::Spectating => return Ok(true),
-                            UserState::Waiting => {
-                                let waitlist_idx = self.data.waitlist.iter().position(|u| u.name == username).unwrap();
-                                self.data.waitlist.remove(waitlist_idx).unwrap()
-                            }
-                        };
-                        self.data.spectators.insert(username.to_string(), user);
-                        *state = UserState::Spectating;
-                        Ok(true)
-                    },
-                    None => Err(UserError::UserDoesNotExist),
+                // The player has already been queued for spectate. Just wait for
+                // the next spectate phase.
+                if self.data.players_to_spectate.contains(username) {
+                    return Ok(false);
                 }
+                let user = if self.data.spectators.contains_key(username) {
+                    return Ok(true);
+                } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
+                    self.data.waitlist.remove(waitlist_idx).unwrap()
+                } else if let Some(player_idx) = self.data.players.iter().position(|p| p.user.name == username) {
+                    self.data.players_to_remove.remove(username);
+                    let player = self.data.players.remove(player_idx);
+                    self.data.open_seats.push_back(player.seat_idx);
+                    player.user
+                } else {
+                    return Err(UserError::UserDoesNotExist);
+                };
+                self.data.spectators.insert(username.to_string(), user);
+                Ok(true)
             }
         })*
     }
@@ -469,72 +470,53 @@ macro_rules! impl_user_managers_with_queue {
     ($($t:ty),+) => {
         $(impl $t {
             pub fn remove_user(&mut self, username: &str) -> Result<bool, UserError> {
-                match self.data.user_states.get_mut(username) {
-                    Some(state) =>  {
-                        // The player has already been queued for removal. Just wait for
-                        // the next removal phase.
-                        if self.data.players_to_remove.contains(username) {
-                            return Ok(false);
-                        }
-                        let mut user = match state {
-                            UserState::Playing(_) => {
-                                // Need to remove the player from other queues just in
-                                // case they changed their mind.
-                                self.data.players_to_spectate.remove(username);
-                                // The player is still at the table while the game is ongoing.
-                                // We don't want to disrupt gameplay, so we just queue the
-                                // player for removal and remove them later.
-                                self.data.players_to_remove.insert(username.to_string());
-                                return Ok(false);
-                            }
-                            UserState::Spectating => {
-                                self.data.spectators.remove(username).unwrap()
-                            }
-                            UserState::Waiting => {
-                                // We can remove the user from the waitlist anytime we want.
-                                let waitlist_idx = self.data.waitlist.iter().position(|u| u.name == username).unwrap();
-                                self.data.waitlist.remove(waitlist_idx).unwrap()
-                            }
-                        };
-                        self.data.donations += user.money as Usdf;
-                        user.money = 0;
-                        self.data.user_states.remove(username);
-                        Ok(true)
-                    },
-                    None => Err(UserError::UserDoesNotExist)
+                // The player has already been queued for removal. Just wait for
+                // the next removal phase.
+                if self.data.players_to_remove.contains(username) {
+                    return Ok(false);
                 }
+                let mut user = if let Some(user) = self.data.spectators.remove(username) {
+                    user
+                } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
+                    self.data.waitlist.remove(waitlist_idx).unwrap()
+                } else if let Some(_) = self.data.players.iter().position(|p| p.user.name == username) {
+                    // Need to remove the player from other queues just in
+                    // case they changed their mind.
+                    self.data.players_to_spectate.remove(username);
+                    // The player is still at the table while the game is ongoing.
+                    // We don't want to disrupt gameplay, so we just queue the
+                    // player for removal and remove them later.
+                    self.data.players_to_remove.insert(username.to_string());
+                    return Ok(false);
+                } else {
+                    return Err(UserError::UserDoesNotExist);
+                };
+                self.data.donations += user.money as Usdf;
+                user.money = 0;
+                Ok(true)
             }
 
             pub fn spectate_user(&mut self, username: &str) -> Result<bool, UserError> {
-                match self.data.user_states.get_mut(username) {
-                    Some(state) => {
-                        // The player has already been queued for spectate. Just wait for
-                        // the next spectate phase.
-                        if self.data.players_to_spectate.contains(username) {
-                            return Ok(false);
-                        }
-                        let user = match state {
-                            UserState::Playing(_) => {
-                                // Need to remove the player from other queues just in
-                                // case they changed their mind.
-                                self.data.players_to_remove.remove(username);
-                                self.data.players_to_spectate.insert(username.to_string());
-                                return Ok(false);
-                            }
-                            // The user is already spectating, so we can just quietly
-                            // say that they're spectating.
-                            UserState::Spectating => return Ok(true),
-                            UserState::Waiting => {
-                                let waitlist_idx = self.data.waitlist.iter().position(|u| u.name == username).unwrap();
-                                self.data.waitlist.remove(waitlist_idx).unwrap()
-                            }
-                        };
-                        self.data.spectators.insert(username.to_string(), user);
-                        *state = UserState::Spectating;
-                        Ok(true)
-                    },
-                    None => Err(UserError::UserDoesNotExist)
+                // The player has already been queued for spectate. Just wait for
+                // the next spectate phase.
+                if self.data.players_to_spectate.contains(username) {
+                    return Ok(false);
                 }
+                let user = if self.data.spectators.contains_key(username) {
+                    return Ok(true)
+                } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
+                    self.data.waitlist.remove(waitlist_idx).unwrap()
+                } else if let Some(_) = self.data.players.iter().position(|p| p.user.name == username) {
+                    // Need to remove the player from other queues just in
+                    // case they changed their mind.
+                    self.data.players_to_remove.remove(username);
+                    self.data.players_to_spectate.insert(username.to_string());
+                    return Ok(false);
+                } else {
+                    return Err(UserError::UserDoesNotExist);
+                };
+                self.data.spectators.insert(username.to_string(), user);
+                Ok(true)
             }
         })*
     }
@@ -601,21 +583,25 @@ impl From<Game<SeatPlayers>> for Game<Lobby> {
 
 impl From<Game<SeatPlayers>> for Game<MoveButton> {
     fn from(mut value: Game<SeatPlayers>) -> Self {
-        let mut seat_idx: usize = 0;
-        while value.data.num_players < MAX_PLAYERS && !value.data.waitlist.is_empty() {
-            if value.data.players[seat_idx].is_none() {
-                let username = value.data.waitlist.pop_front().unwrap();
-                let user = value.data.user_states.get_mut(&username).unwrap();
-                if user.money < value.data.big_blind {
-                    value.spectate_user(&username).unwrap();
+        while !value.data.waitlist.is_empty() && !value.data.open_seats.is_empty() {
+            let open_seat_idx = value.data.open_seats.pop_front().unwrap();
+            let user = value.data.waitlist.pop_front().unwrap();
+            if user.money < value.data.big_blind {
+                value.data.spectators.insert(user.name.clone(), user);
+            } else {
+                let num_players = value.get_num_players();
+                let player = Player::new(user, open_seat_idx);
+                if num_players > 0 {
+                    match (0..num_players - 1).position(|player_idx| {
+                        value.data.players[player_idx].seat_idx < open_seat_idx
+                            && value.data.players[player_idx + 1].seat_idx > open_seat_idx
+                    }) {
+                        Some(player_idx) => value.data.players.insert(player_idx, player),
+                        None => value.data.players.push(player),
+                    }
                 } else {
-                    value.data.players[seat_idx] = Some(Player::new(&username));
-                    user.state = UserState::Playing(seat_idx);
-                    value.data.num_players += 1;
+                    value.data.players.push(player);
                 }
-            }
-            if value.data.players[seat_idx].is_some() {
-                seat_idx += 1;
             }
         }
         value.data.num_players_active = value.get_num_players();
@@ -631,16 +617,18 @@ impl From<Game<SeatPlayers>> for Game<MoveButton> {
 /// the first action.
 impl From<Game<MoveButton>> for Game<CollectBlinds> {
     fn from(mut value: Game<MoveButton>) -> Self {
+        let num_players = value.get_num_players();
         // Search for the big blind and starting positions.
         let mut seats = value
             .data
             .players
             .iter()
             .enumerate()
+            .map(|(player_idx, _)| player_idx)
             .cycle()
             .skip(value.data.big_blind_idx + 1);
-        (value.data.big_blind_idx, _) = seats.next().unwrap();
-        (value.data.starting_action_idx, _) = seats.next().unwrap();
+        value.data.big_blind_idx = seats.next().unwrap();
+        value.data.starting_action_idx = seats.next().unwrap();
         value.data.next_action_idx = Some(value.data.starting_action_idx);
         // Reverse the table search to find the small blind position relative
         // to the big blind position since the small blind must always trail the big
@@ -650,10 +638,11 @@ impl From<Game<MoveButton>> for Game<CollectBlinds> {
             .players
             .iter()
             .enumerate()
+            .map(|(player_idx, _)| player_idx)
             .rev()
             .cycle()
-            .skip(MAX_PLAYERS - value.data.big_blind_idx);
-        (value.data.small_blind_idx, _) = seats.next().unwrap();
+            .skip(num_players - value.data.big_blind_idx);
+        value.data.small_blind_idx = seats.next().unwrap();
         Self {
             data: value.data,
             state: CollectBlinds {},
@@ -666,11 +655,11 @@ impl From<Game<CollectBlinds>> for Game<Deal> {
     fn from(mut value: Game<CollectBlinds>) -> Self {
         value.data.pots.push(Pot::new());
         let pot = &mut value.data.pots[0];
-        for (seat_idx, blind) in [
+        for (player_idx, blind) in [
             (value.data.small_blind_idx, value.data.small_blind),
             (value.data.big_blind_idx, value.data.big_blind),
         ] {
-            let player = &mut value.data.players[seat_idx];
+            let player = &mut value.data.players[player_idx];
             let bet = match player.user.money.cmp(&blind) {
                 Ordering::Equal => {
                     player.state = PlayerState::AllIn;
@@ -692,7 +681,7 @@ impl From<Game<CollectBlinds>> for Game<Deal> {
             };
             // Impossible for a side pot to be created from the blinds, so
             // we don't even need to check.
-            pot.bet(seat_idx, &bet);
+            pot.bet(player_idx, &bet);
             player.user.money -= blind;
         }
         value.data.num_players_called = 0;
@@ -709,10 +698,11 @@ impl From<Game<Deal>> for Game<TakeAction> {
         value.data.deck.shuffle(&mut thread_rng());
         value.data.deck_idx = 0;
 
-        let mut seats = (0..MAX_PLAYERS).cycle().skip(value.data.small_blind_idx);
+        let num_players = value.get_num_players();
+        let mut seats = (0..num_players).cycle().skip(value.data.small_blind_idx);
         // Deal 2 cards per player, looping over players and dealing them 1 card
         // at a time.
-        while value.data.deck_idx < (2 * value.get_num_players()) {
+        while value.data.deck_idx < (2 * num_players) {
             let deal_idx = seats.next().unwrap();
             let player = &mut value.data.players[deal_idx];
             let card = value.data.deck[value.data.deck_idx];
@@ -736,105 +726,103 @@ impl Game<TakeAction> {
     }
 
     fn affect(&mut self, action: Action) -> Result<(), UserError> {
-        let seat_idx = self.data.next_action_idx.unwrap();
-        if !self
-            .state
-            .action_options
-            .as_ref()
-            .unwrap()
-            .contains(&action)
-        {
-            return Err(UserError::InvalidAction { action });
-        }
-        let player = &mut self.data.players[seat_idx];
-        // Convert the action to a valid bet. Sanitize the bet amount according
-        // to the player's intended action.
-        let mut bet = match action {
-            Action::AllIn => Bet {
-                action: BetAction::AllIn,
-                amount: player.user.money,
-            },
-            Action::Call(amount) => Bet {
-                action: BetAction::Call,
-                amount,
-            },
-            Action::Check => {
-                self.data.num_players_called += 1;
-                return Ok(());
-            }
-            Action::Fold => {
-                player.state = PlayerState::Fold;
-                self.data.num_players_active -= 1;
-                return Ok(());
-            }
-            Action::Raise(amount) => Bet {
-                action: BetAction::Raise,
-                amount,
-            },
-        };
-        if bet.amount >= player.user.money {
-            bet.action = BetAction::AllIn;
-            bet.amount = player.user.money;
-            player.state = PlayerState::AllIn;
-        }
-        // Do some additional bet validation based on the bet's amount.
-        let total_call = self.get_total_call();
-        let total_investment = self.get_total_investment_by_seat(seat_idx);
-        let new_total_investment = total_investment + bet.amount;
-        match bet.action {
-            BetAction::AllIn => {
-                self.data.num_players_active -= 1;
-                if new_total_investment > total_call {
-                    self.data.num_players_called = 0;
+        match (self.data.next_action_idx, &self.state.action_options) {
+            (Some(player_idx), Some(action_options)) => {
+                if !action_options.contains(&action) {
+                    return Err(UserError::InvalidAction { action });
                 }
-            }
-            BetAction::Call => {
-                if new_total_investment != total_call {
-                    return Err(UserError::InvalidBet { bet });
+                let player = &mut self.data.players[player_idx];
+                // Convert the action to a valid bet. Sanitize the bet amount according
+                // to the player's intended action.
+                let mut bet = match action {
+                    Action::AllIn => Bet {
+                        action: BetAction::AllIn,
+                        amount: player.user.money,
+                    },
+                    Action::Call(amount) => Bet {
+                        action: BetAction::Call,
+                        amount,
+                    },
+                    Action::Check => {
+                        self.data.num_players_called += 1;
+                        return Ok(());
+                    }
+                    Action::Fold => {
+                        player.state = PlayerState::Fold;
+                        self.data.num_players_active -= 1;
+                        return Ok(());
+                    }
+                    Action::Raise(amount) => Bet {
+                        action: BetAction::Raise,
+                        amount,
+                    },
+                };
+                if bet.amount >= player.user.money {
+                    bet.action = BetAction::AllIn;
+                    bet.amount = player.user.money;
+                    player.state = PlayerState::AllIn;
                 }
-                self.data.num_players_called += 1;
-            }
-            BetAction::Raise => {
-                if new_total_investment < (2 * total_call) {
-                    return Err(UserError::InvalidBet { bet });
+                // Do some additional bet validation based on the bet's amount.
+                let total_call = self.get_total_call();
+                let total_investment = self.get_total_investment_by_player_idx(player_idx);
+                let new_total_investment = total_investment + bet.amount;
+                match bet.action {
+                    BetAction::AllIn => {
+                        self.data.num_players_active -= 1;
+                        if new_total_investment > total_call {
+                            self.data.num_players_called = 0;
+                        }
+                    }
+                    BetAction::Call => {
+                        if new_total_investment != total_call {
+                            return Err(UserError::InvalidBet { bet });
+                        }
+                        self.data.num_players_called += 1;
+                    }
+                    BetAction::Raise => {
+                        if new_total_investment < (2 * total_call) {
+                            return Err(UserError::InvalidBet { bet });
+                        }
+                        self.data.num_players_called = 1;
+                    }
                 }
-                self.data.num_players_called = 1;
+                // The player's bet is OK. Remove the bet amount from the player's
+                // stack and start distributing it appropriately amongst all the pots.
+                let player = &mut self.data.players[player_idx];
+                player.user.money -= bet.amount;
+                // Place bets for all pots except for the last. If the player's bet
+                // is too small, it's considered an all-in (though this really should've
+                // been caught earlier during bet sanitization).
+                let num_pots = self.data.pots.len();
+                for pot in self.data.pots.iter_mut().take(num_pots - 1) {
+                    let call = pot.get_call_by_seat(player_idx);
+                    let pot_bet = if bet.amount <= call {
+                        Bet {
+                            action: BetAction::AllIn,
+                            amount: bet.amount,
+                        }
+                    } else {
+                        Bet {
+                            action: BetAction::Call,
+                            amount: call,
+                        }
+                    };
+                    pot.bet(player_idx, &pot_bet);
+                    bet.amount -= pot_bet.amount;
+                }
+                // Can only continue betting for the final pot if the player
+                // still has money to bet with.
+                if bet.amount > 0 {
+                    let pot = &mut self.data.pots[num_pots - 1];
+                    // Make sure we catch the side pot if one was created.
+                    if let Some(side_pot) = pot.bet(player_idx, &bet) {
+                        self.data.pots.push(side_pot);
+                    }
+                }
+                Ok(())
             }
+            _ => Err(UserError::OutOfTurnAction),
         }
-        // The player's bet is OK. Remove the bet amount from the player's
-        // stack and start distributing it appropriately amongst all the pots.
-        let player = &mut self.data.players[seat_idx];
-        player.user.money -= bet.amount;
-        // Place bets for all pots except for the last. If the player's bet
-        // is too small, it's considered an all-in (though this really should've
-        // been caught earlier during bet sanitization).
-        let num_pots = self.data.pots.len();
-        for pot in self.data.pots.iter_mut().take(num_pots - 1) {
-            let call = pot.get_call_by_seat(seat_idx);
-            let pot_bet = if bet.amount <= call {
-                Bet {
-                    action: BetAction::AllIn,
-                    amount: bet.amount,
-                }
-            } else {
-                Bet {
-                    action: BetAction::Call,
-                    amount: call,
-                }
-            };
-            pot.bet(seat_idx, &pot_bet);
-            bet.amount -= pot_bet.amount;
-        }
-        // Can only continue betting for the final pot if the player
-        // still has money to bet with.
-        if bet.amount > 0 {
-            let pot = &mut self.data.pots[num_pots - 1];
-            // Make sure we catch the side pot if one was created.
-            if let Some(side_pot) = pot.bet(seat_idx, &bet) {
-                self.data.pots.push(side_pot);
-            }
-        }
-        Ok(())
     }
 }
 
@@ -1049,47 +1037,48 @@ impl From<Game<DistributePot>> for Game<ShowHands> {
                     hands_in_pot.push(hand.clone());
                 }
             }
-            // Only up to 4 players can split the pot (only four suits per card value).
+            // Most likely that up to four players will tie. It's possible
+            // for more players to tie, but very unlikely.
             let mut distributions_per_player: HashMap<usize, Usd> = HashMap::with_capacity(4);
             let winner_indices = functional::argmax(&hands_in_pot);
             let num_winners = winner_indices.len();
-                    // Need to first give each winner's original investment back
-                    // to them so the pot can be split fairly. The max winner
-                    // investment is tracked to handle the edge case of some
-                    // whale going all-in with no one else to call them.
-                    let mut money_per_winner: HashMap<usize, Usd> = HashMap::with_capacity(4);
-                    let mut max_winner_investment = Usd::MIN;
-                    for winner_idx in winner_indices {
-                        let winner_seat_idx = seats_in_pot[winner_idx];
-                        let (_, winner_investment) =
-                            pot.investments.remove_entry(&winner_seat_idx).unwrap();
-                        if winner_investment > max_winner_investment {
-                            max_winner_investment = winner_investment;
-                        }
-                        money_per_winner.insert(winner_seat_idx, winner_investment);
-                        pot.size -= winner_investment;
-                    }
-                    for (seat_idx, investment) in pot.investments {
-                        if investment > max_winner_investment {
-                            let remainder = investment - max_winner_investment;
-                            distributions_per_player.insert(seat_idx, remainder);
-                            pot.size -= remainder;
-                        }
-                    }
-                    // Finally, split the remaining pot amongst all the winners.
-                    // There's a possibility for the pot to not split perfectly
-                    // amongst all players; in this case, the remainder is
-                    // put in the donations and will eventually be redistributed
-                    // amongst remaining users. This also encourages users to
-                    // stay in the game so they can be donated these breadcrumbs
-                    // and continue playing with them.
-                    let pot_split = pot.size / num_winners as Usd;
-                    let mut pot_remainder = pot.size as Usdf;
-                    for (winner_seat_idx, money) in money_per_winner {
-                        distributions_per_player.insert(winner_seat_idx, money + pot_split);
-                        pot_remainder -= pot_split as Usdf;
-                    }
-                    value.data.donations += pot_remainder;
+            // Need to first give each winner's original investment back
+            // to them so the pot can be split fairly. The max winner
+            // investment is tracked to handle the edge case of some
+            // whale going all-in with no one else to call them.
+            let mut money_per_winner: HashMap<usize, Usd> = HashMap::with_capacity(4);
+            let mut max_winner_investment = Usd::MIN;
+            for winner_idx in winner_indices {
+                let winner_seat_idx = seats_in_pot[winner_idx];
+                let (_, winner_investment) =
+                    pot.investments.remove_entry(&winner_seat_idx).unwrap();
+                if winner_investment > max_winner_investment {
+                    max_winner_investment = winner_investment;
+                }
+                money_per_winner.insert(winner_seat_idx, winner_investment);
+                pot.size -= winner_investment;
+            }
+            for (seat_idx, investment) in pot.investments {
+                if investment > max_winner_investment {
+                    let remainder = investment - max_winner_investment;
+                    distributions_per_player.insert(seat_idx, remainder);
+                    pot.size -= remainder;
+                }
+            }
+            // Finally, split the remaining pot amongst all the winners.
+            // There's a possibility for the pot to not split perfectly
+            // amongst all players; in this case, the remainder is
+            // put in the donations and will eventually be redistributed
+            // amongst remaining users. This also encourages users to
+            // stay in the game so they can be donated these breadcrumbs
+            // and continue playing with them.
+            let pot_split = pot.size / num_winners as Usd;
+            let mut pot_remainder = pot.size as Usdf;
+            for (winner_seat_idx, money) in money_per_winner {
+                distributions_per_player.insert(winner_seat_idx, money + pot_split);
+                pot_remainder -= pot_split as Usdf;
+            }
+            value.data.donations += pot_remainder;
 
             // Give money back to players.
             for (seat_idx, distribution) in distributions_per_player {
@@ -1118,7 +1107,7 @@ impl From<Game<ShowHands>> for Game<RemovePlayers> {
 impl From<Game<RemovePlayers>> for Game<DivideDonations> {
     fn from(mut value: Game<RemovePlayers>) -> Self {
         while let Some(username) = value.data.players_to_remove.pop_first() {
-            value.remove_user(&username);
+            value.remove_user(&username).unwrap();
         }
         Self {
             data: value.data,
@@ -1137,10 +1126,17 @@ impl From<Game<RemovePlayers>> for Game<DivideDonations> {
 /// create a new game.
 impl From<Game<DivideDonations>> for Game<UpdateBlinds> {
     fn from(mut value: Game<DivideDonations>) -> Self {
-        let num_users = value.data.user_states.len();
+        let num_users = value.get_num_users();
         if num_users > 0 {
             let donation_per_user = value.data.donations as Usd / num_users as Usd;
-            for (_, user) in value.data.user_states.iter_mut() {
+            for user in value
+                .data
+                .spectators
+                .iter_mut()
+                .map(|(_, u)| u)
+                .chain(value.data.waitlist.iter_mut())
+                .chain(value.data.players.iter_mut().map(|p| &mut p.user))
+            {
                 user.money += donation_per_user;
                 value.data.donations -= donation_per_user as Usdf;
             }
@@ -1162,9 +1158,11 @@ impl From<Game<UpdateBlinds>> for Game<BootPlayers> {
     fn from(mut value: Game<UpdateBlinds>) -> Self {
         let min_money = value
             .data
-            .user_states
+            .spectators
             .values()
-            .map(|user| user.money)
+            .map(|u| u.money)
+            .chain(value.data.waitlist.iter().map(|u| u.money))
+            .chain(value.data.players.iter().map(|p| p.user.money))
             .filter(|money| *money >= value.data.big_blind)
             .min()
             .unwrap_or(Usd::MAX);
@@ -1188,13 +1186,17 @@ impl From<Game<BootPlayers>> for Game<Lobby> {
         value.data.board.clear();
         for player in value.data.players.iter_mut() {
             if player.user.money < value.data.big_blind {
-                value.data.players_to_spectate.insert(player.user.name.clone());
+                value.data.open_seats.push_back(player.seat_idx);
+                value
+                    .data
+                    .players_to_spectate
+                    .insert(player.user.name.clone());
             } else {
                 player.reset();
             }
         }
         while let Some(username) = value.data.players_to_spectate.pop_first() {
-            value.spectate_user(&username);
+            value.spectate_user(&username).unwrap();
         }
         Self {
             data: value.data,
@@ -1215,7 +1217,7 @@ mod tests {
 
     use super::{
         BootPlayers, CollectBlinds, Deal, Flop, Game, MoveButton, River, SeatPlayers, ShowHands,
-        Turn, UserError, UserState, MAX_PLAYERS, MAX_USERS,
+        Turn, UserError, MAX_PLAYERS, MAX_USERS,
     };
 
     fn init_game() -> Game<SeatPlayers> {
@@ -1286,11 +1288,7 @@ mod tests {
     fn collect_blinds() {
         let game = init_game_at_collect_blinds();
         for (i, blind) in [0, MIN_SMALL_BLIND, MIN_BIG_BLIND].iter().enumerate() {
-            let username = i.to_string();
-            assert_eq!(
-                game.data.user_states.get(&username).unwrap().money,
-                STARTING_STACK - blind
-            );
+            assert_eq!(game.data.players[i].user.money, STARTING_STACK - blind);
         }
     }
 
@@ -1298,7 +1296,7 @@ mod tests {
     fn deal() {
         let game = init_game_at_deal();
         assert_eq!(game.get_num_community_cards(), 0);
-        assert_eq!(game.data.deck_idx, 2 * game.data.user_states.len());
+        assert_eq!(game.data.deck_idx, 2 * game.get_num_users());
         for player in game.data.players.iter() {
             assert_eq!(player.cards.len(), 2);
         }
@@ -1332,15 +1330,14 @@ mod tests {
             (6u8, Suit::Diamond),
             (7u8, Suit::Diamond),
         ];
-        game.data.players[1].as_mut().unwrap().cards = vec![(1u8, Suit::Diamond), (7u8, Suit::Heart)];
-        game.data.players[2].as_mut().unwrap().cards = vec![(2u8, Suit::Diamond), (5u8, Suit::Heart)];
+        game.data.players[1].cards = vec![(1u8, Suit::Diamond), (7u8, Suit::Heart)];
+        game.data.players[2].cards = vec![(2u8, Suit::Diamond), (5u8, Suit::Heart)];
         let game: Game<ShowHands> = game.into();
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         assert!(game.is_pot_empty());
         for (i, money) in [STARTING_STACK, 2 * STARTING_STACK, 0].iter().enumerate() {
-            let username = i.to_string();
-            assert_eq!(game.data.user_states.get(&username).unwrap().money, *money);
+            assert_eq!(game.data.players[i].user.money, *money);
         }
     }
 
@@ -1354,18 +1351,14 @@ mod tests {
             (6u8, Suit::Diamond),
             (7u8, Suit::Diamond),
         ];
-        game.data.players[1].as_mut().unwrap().cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
-        game.data.players[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
+        game.data.players[1].cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
+        game.data.players[2].cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
         let game: Game<ShowHands> = game.into();
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         assert!(game.is_pot_empty());
         for i in (0..3).into_iter() {
-            let username = i.to_string();
-            assert_eq!(
-                game.data.user_states.get(&username).unwrap().money,
-                STARTING_STACK
-            );
+            assert_eq!(game.data.players[i].user.money, STARTING_STACK);
         }
     }
 
@@ -1374,8 +1367,7 @@ mod tests {
         let game = init_game();
         let mut game: Game<MoveButton> = game.into();
         for i in (0..3).into_iter() {
-            let username = i.to_string();
-            game.data.user_states.get_mut(&username).unwrap().money = STARTING_STACK * (3 - i);
+            game.data.players[i].user.money = STARTING_STACK * (3 - i as u32);
         }
         let game: Game<CollectBlinds> = game.into();
         let game: Game<Deal> = game.into();
@@ -1402,10 +1394,8 @@ mod tests {
             (6u8, Suit::Diamond),
             (7u8, Suit::Diamond),
         ];
-        game.data.players[0].cards =
-            vec![(3u8, Suit::Heart), (11u8, Suit::Diamond)];
-        game.data.players[1].cards =
-            vec![(1u8, Suit::Heart), (10u8, Suit::Diamond)];
+        game.data.players[0].cards = vec![(3u8, Suit::Heart), (11u8, Suit::Diamond)];
+        game.data.players[1].cards = vec![(1u8, Suit::Heart), (10u8, Suit::Diamond)];
         game.data.players[2].cards = vec![(2u8, Suit::Heart), (9u8, Suit::Diamond)];
         let game: Game<ShowHands> = game.into();
         let game: Game<DistributePot> = game.into();
@@ -1423,8 +1413,7 @@ mod tests {
         let game = init_game();
         let mut game: Game<MoveButton> = game.into();
         for i in (0..3).into_iter() {
-            let username = i.to_string();
-            game.data.user_states.get_mut(&username).unwrap().money = STARTING_STACK * (i + 1);
+            game.data.players[i].user.money = STARTING_STACK * (i as u32 + 1);
         }
         let game: Game<CollectBlinds> = game.into();
         let game: Game<Deal> = game.into();
@@ -1459,10 +1448,8 @@ mod tests {
             (6u8, Suit::Diamond),
             (7u8, Suit::Diamond),
         ];
-        game.data.players[0].cards =
-            vec![(3u8, Suit::Heart), (11u8, Suit::Diamond)];
-        game.data.players[1].cards =
-            vec![(1u8, Suit::Heart), (10u8, Suit::Diamond)];
+        game.data.players[0].cards = vec![(3u8, Suit::Heart), (11u8, Suit::Diamond)];
+        game.data.players[1].cards = vec![(1u8, Suit::Heart), (10u8, Suit::Diamond)];
         game.data.players[2].cards = vec![(2u8, Suit::Heart), (9u8, Suit::Diamond)];
         let game: Game<ShowHands> = game.into();
         let game: Game<DistributePot> = game.into();
@@ -1476,8 +1463,7 @@ mod tests {
             .iter()
             .enumerate()
         {
-            let username = i.to_string();
-            assert_eq!(game.data.user_states.get(&username).unwrap().money, *money);
+            assert_eq!(game.data.players[i].user.money, *money);
         }
     }
 
@@ -1487,32 +1473,18 @@ mod tests {
         let username = "ognf";
 
         game.new_user(username).unwrap();
-        assert!(game.data.user_states.contains_key(username));
-        assert!(game.data.spectators.contains(username));
-        assert_eq!(
-            game.data.user_states.get(username).unwrap().state,
-            UserState::Spectating
-        );
+        assert!(game.contains_spectator(username));
 
         assert_eq!(game.new_user(username), Err(UserError::UserAlreadyExists));
 
         game.waitlist_user(username).unwrap();
-        assert!(game.data.waitlist.contains(&username.to_string()));
-        assert_eq!(
-            game.data.user_states.get(username).unwrap().state,
-            UserState::Waiting
-        );
+        assert!(game.contains_waitlister(username));
 
         game.spectate_user(username).unwrap();
-        assert!(game.data.spectators.contains(username));
-        assert_eq!(
-            game.data.user_states.get(username).unwrap().state,
-            UserState::Spectating
-        );
+        assert!(game.contains_spectator(username));
 
         game.remove_user(username).unwrap();
-        assert!(!game.data.user_states.contains_key(username));
-        assert!(!game.data.spectators.contains(username));
+        assert!(!game.contains_user(username));
 
         assert_eq!(game.remove_user(username), Err(UserError::UserDoesNotExist));
         assert_eq!(
@@ -1525,19 +1497,13 @@ mod tests {
         );
 
         game.new_user(username).unwrap();
-        assert!(game.data.user_states.contains_key(username));
-        assert!(game.data.spectators.contains(username));
+        assert!(game.contains_spectator(username));
 
         game.waitlist_user(username).unwrap();
-        assert!(game.data.waitlist.contains(&username.to_string()));
-        assert_eq!(
-            game.data.user_states.get(username).unwrap().state,
-            UserState::Waiting
-        );
+        assert!(game.contains_waitlister(username));
 
         game.remove_user(username).unwrap();
-        assert!(!game.data.user_states.contains_key(username));
-        assert!(!game.data.waitlist.contains(&username.to_string()));
+        assert!(!game.contains_user(username));
 
         for i in 0..MAX_USERS {
             game.new_user(&i.to_string()).unwrap();
@@ -1589,9 +1555,9 @@ mod tests {
             (6u8, Suit::Diamond),
             (7u8, Suit::Diamond),
         ];
-        game.data.players[0].as_mut().unwrap().cards = vec![(3u8, Suit::Heart), (8u8, Suit::Diamond)];
-        game.data.players[1].as_mut().unwrap().cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
-        game.data.players[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
+        game.data.players[0].cards = vec![(3u8, Suit::Heart), (8u8, Suit::Diamond)];
+        game.data.players[1].cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
+        game.data.players[2].cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
         let game: Game<ShowHands> = game.into();
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
@@ -1601,7 +1567,7 @@ mod tests {
         let game: Game<BootPlayers> = game.into();
         assert_eq!(game.data.big_blind, 3 * MIN_BIG_BLIND);
         let game: Game<Lobby> = game.into();
-        assert_eq!(game.data.num_players, 1);
+        assert_eq!(game.get_num_players(), 1);
     }
 
     #[test]
@@ -1614,25 +1580,27 @@ mod tests {
             (6u8, Suit::Diamond),
             (7u8, Suit::Diamond),
         ];
-        game.data.players[1].as_mut().unwrap().cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
-        game.data.players[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
+        game.data.players[1].cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
+        game.data.players[2].cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
         let game: Game<ShowHands> = game.into();
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         let game: Game<RemovePlayers> = game.into();
         let mut game: Game<DivideDonations> = game.into();
         game.remove_user("0").unwrap();
-        assert!(!game.data.user_states.contains_key("0"));
-        assert!(game.data.user_states.contains_key("1"));
-        assert!(game.data.user_states.contains_key("2"));
+        assert!(!game.contains_user("0"));
+        assert!(game.contains_player("1"));
+        assert!(game.contains_player("2"));
         let game: Game<UpdateBlinds> = game.into();
-        for i in (1..3).into_iter() {
-            let username = i.to_string();
+        for i in (0..2).into_iter() {
             assert_eq!(
-                game.data.user_states.get(&username).unwrap().money,
+                game.data.players[i].user.money,
                 STARTING_STACK + STARTING_STACK / 2
             );
         }
+        let mut expected_open_seats = Vec::from_iter(3..MAX_PLAYERS);
+        expected_open_seats.push(0);
+        assert_eq!(game.data.open_seats, expected_open_seats)
     }
 
     #[test]
@@ -1645,38 +1613,36 @@ mod tests {
             (6u8, Suit::Diamond),
             (7u8, Suit::Diamond),
         ];
-        game.data.players[1].as_mut().unwrap().cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
-        game.data.players[2].as_mut().unwrap().cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
+        game.data.players[1].cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
+        game.data.players[2].cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
         game.remove_user("0").unwrap();
         let game: Game<ShowHands> = game.into();
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         let game: Game<RemovePlayers> = game.into();
         let game: Game<DivideDonations> = game.into();
-        assert!(!game.data.user_states.contains_key("0"));
-        assert!(game.data.user_states.contains_key("1"));
-        assert!(game.data.user_states.contains_key("2"));
+        assert!(!game.contains_user("0"));
+        assert!(game.contains_player("1"));
+        assert!(game.contains_player("2"));
         let game: Game<UpdateBlinds> = game.into();
-        for i in (1..3).into_iter() {
-            let username = i.to_string();
+        for i in (0..2).into_iter() {
             assert_eq!(
-                game.data.user_states.get(&username).unwrap().money,
+                game.data.players[i].user.money,
                 STARTING_STACK + STARTING_STACK / 2
             );
         }
+        let mut expected_open_seats = Vec::from_iter(3..MAX_PLAYERS);
+        expected_open_seats.push(0);
+        assert_eq!(game.data.open_seats, expected_open_seats)
     }
 
     #[test]
     fn seat_players() {
         let game = init_game_at_seat_players();
-        assert_eq!(game.data.num_players, game.data.user_states.len());
-        assert_eq!(game.data.num_players_active, game.data.user_states.len());
-        for (seat_idx, player) in game.data.players.iter().enumerate() {
-            if let Some(player) = player {
-                let user = game.data.user_states.get(&player.name).unwrap();
-                assert_eq!(user.state, UserState::Playing(seat_idx));
-            }
-        }
+        assert_eq!(game.data.num_players_active, game.get_num_players());
+        assert!(game.contains_player("0"));
+        assert!(game.contains_player("1"));
+        assert!(game.contains_player("2"));
     }
 
     #[test]

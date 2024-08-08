@@ -1,6 +1,6 @@
 use crate::poker::{
     constants::MAX_PLAYERS,
-    entities::{Action, Card, PlayerState, Usd, Usdf, User, UserState},
+    entities::{Action, Card, PlayerState, Usd, Usdf, User},
     game::{Game, UserError},
 };
 use serde::{Deserialize, Serialize};
@@ -26,10 +26,10 @@ pub struct GameView {
     donations: Usdf,
     small_blind: Usd,
     big_blind: Usd,
-    users: HashMap<String, UserView>,
-    spectators: HashSet<String>,
-    waitlist: VecDeque<String>,
-    seats: Box<[Option<PlayerView>; MAX_PLAYERS]>,
+    spectators: HashMap<String, UserView>,
+    waitlist: VecDeque<UserView>,
+    open_seats: VecDeque<usize>,
+    players: Vec<PlayerView>,
     board: Vec<Card>,
     pots: Vec<PotView>,
     small_blind_idx: usize,
@@ -39,38 +39,28 @@ pub struct GameView {
 
 impl<T> Game<T> {
     pub fn as_view(&self, username: &str) -> GameView {
-        let seat_idx = match self.data.user_states.get(username) {
-            Some(user) => match user.state {
-                UserState::Playing(seat_idx) => Some(seat_idx),
-                _ => None,
-            },
-            None => None,
-        };
-        let mut seats = [const { None }; MAX_PLAYERS];
-        for (idx, seat) in self.data.players.iter().enumerate() {
-            if let Some(player) = seat {
-                let cards = match seat_idx {
-                    Some(seat_idx) if idx == seat_idx || player.state == PlayerState::Show => {
-                        Some(player.cards.clone())
-                    }
-                    _ => None,
-                };
-                let player_view = PlayerView {
-                    name: player.name.clone(),
-                    state: player.state.clone(),
-                    cards,
-                };
-                seats[idx] = Some(player_view);
-            }
+        let mut players = Vec::with_capacity(MAX_PLAYERS);
+        for player in self.data.players.iter() {
+            let cards = if player.user.name == username || player.state == PlayerState::Show {
+                Some(player.cards.clone())
+            } else {
+                None
+            };
+            let player_view = PlayerView {
+                name: player.user.name.clone(),
+                state: player.state.clone(),
+                cards,
+            };
+            players.push(player_view);
         }
         GameView {
             donations: self.data.donations,
             small_blind: self.data.small_blind,
             big_blind: self.data.big_blind,
-            users: self.data.user_states.clone(),
             spectators: self.data.spectators.clone(),
             waitlist: self.data.waitlist.clone(),
-            seats: Box::new(seats),
+            open_seats: self.data.open_seats.clone(),
+            players,
             board: self.data.board.clone(),
             pots: self
                 .data
@@ -86,6 +76,13 @@ impl<T> Game<T> {
             next_action_idx: self.data.next_action_idx,
         }
     }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub enum UserState {
+    Spectating,
+    Playing,
+    Waiting,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

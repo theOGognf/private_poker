@@ -69,13 +69,6 @@ pub const STARTING_STACK: Usd = 200;
 pub const MIN_BIG_BLIND: Usd = STARTING_STACK / 20;
 pub const MIN_SMALL_BLIND: Usd = MIN_BIG_BLIND / 2;
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum UserState {
-    Spectating,
-    Playing(usize),
-    Waiting,
-}
-
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct User {
     pub name: String,
@@ -84,24 +77,10 @@ pub struct User {
 
 impl User {
     pub fn new(name: String) -> User {
-        User { 
+        User {
             name,
             money: STARTING_STACK,
         }
-    }
-}
-
-impl Eq for User {}
-
-impl Hash for User {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
-    }
-}
-
-impl PartialEq for User {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
     }
 }
 
@@ -194,7 +173,7 @@ pub struct Player {
     pub user: User,
     pub state: PlayerState,
     pub cards: Vec<Card>,
-    seat_idx: usize,
+    pub seat_idx: usize,
 }
 
 impl Player {
@@ -202,8 +181,8 @@ impl Player {
         Player {
             user,
             state: PlayerState::Wait,
-            cards: Vec::with_capacity(constants::MAX_CARDS),
-            seat_idx
+            cards: Vec::with_capacity(2),
+            seat_idx,
         }
     }
 

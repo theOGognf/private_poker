@@ -1,10 +1,10 @@
 use anyhow::{bail, Error};
 use std::net::TcpStream;
 
-use crate::poker::entities::{Action, UserState};
+use crate::poker::entities::Action;
 
 use super::{
-    messages::{ClientCommand, ClientMessage, GameView, ServerResponse},
+    messages::{ClientCommand, ClientMessage, GameView, ServerResponse, UserState},
     utils,
 };
 

@@ -4,9 +4,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::poker::{entities::UserState, game::UserError, PokerState};
+use crate::poker::{game::UserError, PokerState};
 
-use super::messages::{ClientCommand, ClientMessage, ServerMessage, ServerResponse};
+use super::messages::{ClientCommand, ClientMessage, ServerMessage, ServerResponse, UserState};
 
 pub const STATE_CHANGE_WAIT_DURATION: u64 = 5;
 
@@ -16,7 +16,7 @@ fn change_user_state(
     user_state: &UserState,
 ) -> Result<(), UserError> {
     match user_state {
-        UserState::Playing(_) => state.waitlist_user(username)?,
+        UserState::Playing => state.waitlist_user(username)?,
         UserState::Spectating => state.spectate_user(username)?,
         UserState::Waiting => state.waitlist_user(username)?,
     }
