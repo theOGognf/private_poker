@@ -36,9 +36,9 @@ pub enum UserError {
     NotEnoughPlayers,
     #[error("Tried acting out of turn.")]
     OutOfTurnAction,
-    #[error("Username already exists.")]
+    #[error("User already exists.")]
     UserAlreadyExists,
-    #[error("Username does not exist.")]
+    #[error("User does not exist.")]
     UserDoesNotExist,
     #[error("User is not playing.")]
     UserNotPlaying,
