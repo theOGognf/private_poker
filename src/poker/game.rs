@@ -24,6 +24,8 @@ pub enum UserError {
     CapacityReached,
     #[error("Game already in progress.")]
     GameAlreadyInProgress,
+    #[error("Game already starting.")]
+    GameAlreadyStarting,
     #[error("Insufficient funds to satisfy the ${big_blind} big blind.")]
     InsufficientFunds { big_blind: Usd },
     #[error("Tried an illegal {action}.")]
@@ -61,7 +63,6 @@ pub struct PotView {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct GameView {
-    is_in_progress: bool,
     donations: Usdf,
     small_blind: Usd,
     big_blind: Usd,
@@ -249,7 +250,6 @@ impl<T> Game<T> {
             players.push(player_view);
         }
         GameView {
-            is_in_progress: self.is_in_progress(),
             donations: self.data.donations,
             small_blind: self.data.small_blind,
             big_blind: self.data.big_blind,
@@ -429,12 +429,6 @@ impl<T> Game<T> {
     /// now that the betting round is over.
     fn is_end_of_round(&self) -> bool {
         self.data.num_players_active == self.data.num_players_called
-    }
-
-    /// Return whether the game is in progress (i.e., players have been
-    /// seated and the showdown hasn't occurred yet).
-    pub fn is_in_progress(&self) -> bool {
-        self.data.num_players_active > 0
     }
 
     /// Return whether the pot is empty, signaling whether to continue
@@ -671,16 +665,18 @@ impl_user_managers_with_queue!(
 
 impl Game<Lobby> {
     pub fn init_start(&mut self) -> Result<(), UserError> {
-        if self.get_num_potential_players() >= 2 {
-            self.state.start_game = true;
-            Ok(())
-        } else {
-            Err(UserError::NotEnoughPlayers)
+        match (self.state.start_game, self.get_num_potential_players() >= 2) {
+            (false, false) => Err(UserError::NotEnoughPlayers),
+            (false, true) => {
+                self.state.start_game = true;
+                Ok(())
+            }
+            (true, _) => Err(UserError::GameAlreadyStarting),
         }
     }
 
     pub fn is_ready_to_start(&self) -> bool {
-        self.state.start_game
+        self.state.start_game && self.get_num_potential_players() >= 2
     }
 }
 
@@ -979,8 +975,7 @@ impl From<Game<TakeAction>> for Game<River> {
 }
 
 impl From<Game<TakeAction>> for Game<ShowHands> {
-    fn from(mut value: Game<TakeAction>) -> Self {
-        value.data.num_players_active = 0;
+    fn from(value: Game<TakeAction>) -> Self {
         Self {
             data: value.data,
             state: ShowHands::new(),
@@ -1078,7 +1073,6 @@ impl From<Game<River>> for Game<TakeAction> {
 /// showdown.
 impl From<Game<River>> for Game<ShowHands> {
     fn from(mut value: Game<River>) -> Self {
-        value.data.num_players_active = 0;
         value.step();
         Self {
             data: value.data,
@@ -1223,7 +1217,8 @@ impl From<Game<DistributePot>> for Game<ShowHands> {
 }
 
 impl From<Game<ShowHands>> for Game<RemovePlayers> {
-    fn from(value: Game<ShowHands>) -> Self {
+    fn from(mut value: Game<ShowHands>) -> Self {
+        value.data.num_players_active = 0;
         Self {
             data: value.data,
             state: RemovePlayers {},

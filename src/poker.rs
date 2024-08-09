@@ -75,6 +75,7 @@ impl PokerState {
                     Err(UserError::CannotStartGame)
                 }
             }
+            PokerState::SeatPlayers(_) => Err(UserError::GameAlreadyStarting),
             _ => Err(UserError::GameAlreadyInProgress),
         }
     }
