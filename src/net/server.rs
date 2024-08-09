@@ -19,7 +19,6 @@ fn change_user_state(
     match user_state {
         UserState::Playing => state.waitlist_user(username)?,
         UserState::Spectating => state.spectate_user(username)?,
-        UserState::Waiting => state.waitlist_user(username)?,
     }
     Ok(())
 }
@@ -120,6 +119,8 @@ pub fn run() -> Result<(), Error> {
                                     };
                                     tx_server.send(msg)?;
                                     wait_duration = Duration::from_secs(TURN_SIGNAL_WAIT_DURATION);
+                                } else {
+                                    wait_duration = Duration::from_secs(0);
                                 }
                             }
                             Err(error) => {
