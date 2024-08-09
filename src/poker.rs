@@ -66,9 +66,15 @@ impl PokerState {
         }
     }
 
-    pub fn init_game_start(&mut self) -> Result<(), UserError> {
+    pub fn init_start(&mut self, username: &str) -> Result<(), UserError> {
         match self {
-            PokerState::Lobby(ref mut game) => game.init_game_start(),
+            PokerState::Lobby(ref mut game) => {
+                if game.contains_waitlister(username) || game.contains_player(username) {
+                    game.init_start()
+                } else {
+                    Err(UserError::CannotStartGame)
+                }
+            }
             _ => Err(UserError::GameAlreadyInProgress),
         }
     }
@@ -177,25 +183,69 @@ impl PokerState {
 macro_rules! impl_user_managers {
     ($($name:ident),+) => {
         impl PokerState {
-            $(pub fn $name(&mut self, username: &str) -> Result<(), UserError> {
+            $(pub fn $name(&mut self, username: &str) -> Result<GameViews, UserError> {
                 match self {
-                    PokerState::Lobby(ref mut game) => {game.$name(username)?;},
-                    PokerState::SeatPlayers(ref mut game) => {game.$name(username)?;},
-                    PokerState::MoveButton(ref mut game)  => {game.$name(username)?;},
-                    PokerState::CollectBlinds(ref mut game)  => {game.$name(username)?;},
-                    PokerState::Deal(ref mut game)  => {game.$name(username)?;},
-                    PokerState::TakeAction(ref mut game) => {game.$name(username)?;},
-                    PokerState::Flop(ref mut game)  => {game.$name(username)?;},
-                    PokerState::Turn(ref mut game)  => {game.$name(username)?;},
-                    PokerState::River(ref mut game)  => {game.$name(username)?;},
-                    PokerState::ShowHands(ref mut game)  => {game.$name(username)?;},
-                    PokerState::DistributePot(ref mut game)  => {game.$name(username)?;},
-                    PokerState::RemovePlayers(ref mut game)  => {game.$name(username)?;},
-                    PokerState::DivideDonations(ref mut game)  =>{game.$name(username)?;},
-                    PokerState::UpdateBlinds(ref mut game)  => {game.$name(username)?;},
-                    PokerState::BootPlayers(ref mut game) => {game.$name(username)?;},
+                    PokerState::Lobby(ref mut game) => {
+                        game.$name(username)?;
+                        Ok(game.get_views())
+                    },
+                    PokerState::SeatPlayers(ref mut game) => {
+                        game.$name(username)?;
+                        Ok(game.get_views())
+                    },
+                    PokerState::MoveButton(ref mut game)  => {
+                        game.$name(username)?;
+                        Ok(game.get_views())
+                    },
+                    PokerState::CollectBlinds(ref mut game)  => {
+                        game.$name(username)?;
+                        Ok(game.get_views())
+                    },
+                    PokerState::Deal(ref mut game)  => {
+                        game.$name(username)?;
+                        Ok(game.get_views())
+                    },
+                    PokerState::TakeAction(ref mut game) => {
+                        game.$name(username)?;
+                        Ok(game.get_views())
+                    },
+                    PokerState::Flop(ref mut game)  => {
+                        game.$name(username)?;
+                        Ok(game.get_views())
+                    },
+                    PokerState::Turn(ref mut game)  => {
+                        game.$name(username)?;
+                        Ok(game.get_views())
+                    },
+                    PokerState::River(ref mut game)  => {
+                        game.$name(username)?;
+                        Ok(game.get_views())
+                    },
+                    PokerState::ShowHands(ref mut game)  => {
+                        game.$name(username)?;
+                        Ok(game.get_views())
+                    },
+                    PokerState::DistributePot(ref mut game)  => {
+                        game.$name(username)?;
+                        Ok(game.get_views())
+                    },
+                    PokerState::RemovePlayers(ref mut game)  => {
+                        game.$name(username)?;
+                        Ok(game.get_views())
+                    },
+                    PokerState::DivideDonations(ref mut game)  => {
+                        game.$name(username)?;
+                        Ok(game.get_views())
+                    },
+                    PokerState::UpdateBlinds(ref mut game)  => {
+                        game.$name(username)?;
+                        Ok(game.get_views())
+                    },
+                    PokerState::BootPlayers(ref mut game) => {
+                        game.$name(username)?;
+                        Ok(game.get_views())
+                    },
                 }
-                Ok(())
             })*
         }
     }

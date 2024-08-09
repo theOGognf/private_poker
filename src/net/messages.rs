@@ -6,8 +6,8 @@ use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum UserState {
-    Spectating,
-    Playing,
+    Play,
+    Spectate,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

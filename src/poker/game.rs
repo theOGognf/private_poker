@@ -1,7 +1,7 @@
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use serde::{Deserialize, Serialize};
-use std::cmp::{max, Ordering};
+use std::cmp::{max, min, Ordering};
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use thiserror::Error;
 
@@ -18,6 +18,8 @@ use super::{
 pub enum UserError {
     #[error("Cannot show hand now.")]
     CannotShowHand,
+    #[error("Cannot start game unless you're waitlisted or playing.")]
+    CannotStartGame,
     #[error("Game is full.")]
     CapacityReached,
     #[error("Game already in progress.")]
@@ -59,6 +61,7 @@ pub struct PotView {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct GameView {
+    is_in_progress: bool,
     donations: Usdf,
     small_blind: Usd,
     big_blind: Usd,
@@ -246,6 +249,7 @@ impl<T> Game<T> {
             players.push(player_view);
         }
         GameView {
+            is_in_progress: self.is_in_progress(),
             donations: self.data.donations,
             small_blind: self.data.small_blind,
             big_blind: self.data.big_blind,
@@ -269,7 +273,7 @@ impl<T> Game<T> {
         }
     }
 
-    fn contains_player(&self, username: &str) -> bool {
+    pub fn contains_player(&self, username: &str) -> bool {
         self.data.players.iter().any(|p| p.user.name == username)
     }
 
@@ -287,11 +291,12 @@ impl<T> Game<T> {
         self.data.spectators.contains_key(username)
     }
 
-    fn contains_waitlister(&self, username: &str) -> bool {
+    pub fn contains_waitlister(&self, username: &str) -> bool {
         self.data.waitlist.iter().any(|u| u.name == username)
     }
 
-    /// Return the index of the player who has the next action.
+    /// Return the index of the player who has the next action, or
+    /// nothing if no one has the next turn.
     fn get_next_action_idx(&self, new_phase: bool) -> Option<usize> {
         if self.is_end_of_round() {
             return None;
@@ -311,7 +316,8 @@ impl<T> Game<T> {
     }
 
     /// Return the set of possible actions the next player can
-    /// make.
+    /// make, or nothing if there are no actions possible for the current
+    /// state.
     fn get_next_action_options(&self) -> Option<HashSet<Action>> {
         if self.is_ready_for_next_phase() {
             return None;
@@ -336,25 +342,35 @@ impl<T> Game<T> {
         }
     }
 
+    /// Return the username of the user that has the next turn (or nothing
+    /// if there is no turn next). Helps determine whether to notify the
+    /// player that their turn has come.
     pub fn get_next_action_username(&self) -> Option<String> {
         self.data
             .next_action_idx
             .map(|action_idx| self.data.players[action_idx].user.name.clone())
     }
 
-    /// Return the number of cards that've been dealt.
+    /// Return the number of cards that've been dealt. This helps
+    /// signal state transitions (i.e., determine whether to move on
+    /// to the flop, turn, river, etc).
     pub fn get_num_community_cards(&self) -> usize {
         self.data.board.len()
     }
 
-    /// Return the number of players.
     fn get_num_players(&self) -> usize {
         self.data.players.len()
     }
 
-    /// Return the number of players.
+    /// Return the number of players plus the number of players in
+    /// the waitlist. This is equal to the number of players that
+    /// could play the game if the game started. This helps determine
+    /// whether the game can actually start.
     pub fn get_num_potential_players(&self) -> usize {
-        self.data.players.len() + self.data.waitlist.len()
+        min(
+            self.data.players.len() + self.data.waitlist.len(),
+            MAX_PLAYERS,
+        )
     }
 
     fn get_num_users(&self) -> usize {
@@ -392,6 +408,9 @@ impl<T> Game<T> {
         2 * self.get_total_call() - self.get_total_investment_by_player_idx(player_idx)
     }
 
+    /// Return independent views of the game for each user. For non-players,
+    /// only the board is shown until the showdown. For players, only their
+    /// hand and the board is shown until the showdown.
     pub fn get_views(&self) -> GameViews {
         let mut views = HashMap::with_capacity(MAX_USERS);
         for username in self
@@ -412,6 +431,15 @@ impl<T> Game<T> {
         self.data.num_players_active == self.data.num_players_called
     }
 
+    /// Return whether the game is in progress (i.e., players have been
+    /// seated and the showdown hasn't occurred yet).
+    pub fn is_in_progress(&self) -> bool {
+        self.data.num_players_active > 0
+    }
+
+    /// Return whether the pot is empty, signaling whether to continue
+    /// showing player hands and distributing the pots, or whether
+    /// to move on to other post-game phases.
     pub fn is_pot_empty(&self) -> bool {
         self.data.pots.is_empty()
     }
@@ -434,6 +462,9 @@ impl<T> Game<T> {
         }
     }
 
+    /// Return whether it's the user's turn. This helps determine whether
+    /// a user trying to take an action can actually take an action, or
+    /// if they're violating rules of play.
     pub fn is_turn(&self, username: &str) -> bool {
         match self.data.next_action_idx {
             Some(action_idx) => self.data.players[action_idx].user.name == username,
@@ -448,6 +479,7 @@ impl<T> Game<T> {
         }
     }
 
+    /// Add a new user to the game, making them a spectator.
     pub fn new_user(&mut self, username: &str) -> Result<bool, UserError> {
         if self.get_num_users() == MAX_USERS {
             return Err(UserError::CapacityReached);
@@ -477,6 +509,9 @@ impl<T> Game<T> {
         self.get_next_action_options()
     }
 
+    /// Add a user to the waitlist, putting them in queue to play. The queue
+    /// is eventually drained until the table is full and there are no more
+    /// seats available for play.
     pub fn waitlist_user(&mut self, username: &str) -> Result<bool, UserError> {
         // Need to remove the player from the removal and spectate sets just in
         // case they wanted to do one of those, but then changed their mind and
@@ -635,7 +670,7 @@ impl_user_managers_with_queue!(
 );
 
 impl Game<Lobby> {
-    pub fn init_game_start(&mut self) -> Result<(), UserError> {
+    pub fn init_start(&mut self) -> Result<(), UserError> {
         if self.get_num_potential_players() >= 2 {
             self.state.start_game = true;
             Ok(())
@@ -944,7 +979,8 @@ impl From<Game<TakeAction>> for Game<River> {
 }
 
 impl From<Game<TakeAction>> for Game<ShowHands> {
-    fn from(value: Game<TakeAction>) -> Self {
+    fn from(mut value: Game<TakeAction>) -> Self {
+        value.data.num_players_active = 0;
         Self {
             data: value.data,
             state: ShowHands::new(),
@@ -1042,6 +1078,7 @@ impl From<Game<River>> for Game<TakeAction> {
 /// showdown.
 impl From<Game<River>> for Game<ShowHands> {
     fn from(mut value: Game<River>) -> Self {
+        value.data.num_players_active = 0;
         value.step();
         Self {
             data: value.data,
