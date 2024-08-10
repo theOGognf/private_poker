@@ -11,9 +11,9 @@ use crate::poker::{
 
 use super::messages::{ClientCommand, ClientMessage, ServerMessage, ServerResponse, UserState};
 
-pub const NO_WAIT_DURATION: Duration = Duration::from_secs(0);
-pub const STATE_CHANGE_WAIT_DURATION: Duration = Duration::from_secs(5);
-pub const TURN_SIGNAL_WAIT_DURATION: Duration = Duration::from_secs(10);
+pub const ACTION_TIMEOUT: Duration = Duration::from_secs(10);
+pub const NO_TIMEOUT: Duration = Duration::from_secs(0);
+pub const STEP_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn change_user_state(
     state: &mut PokerState,
@@ -33,7 +33,6 @@ pub fn run() -> Result<(), Error> {
     let (tx_server, _): (Sender<ServerMessage>, Receiver<ServerMessage>) = channel();
 
     let mut state = PokerState::new();
-    let mut time_until_next_step = STATE_CHANGE_WAIT_DURATION;
     loop {
         state = state.step();
 
@@ -41,49 +40,79 @@ pub fn run() -> Result<(), Error> {
         let msg = ServerMessage::Views(views);
         tx_server.send(msg)?;
 
-        loop {
-            if let (Some(username), Some(action_options)) =
-                (state.get_next_action_username(), state.get_action_options())
-            {
-                let msg = ServerMessage::Response {
-                    username,
-                    data: Box::new(ServerResponse::TurnSignal(action_options)),
-                };
-                tx_server.send(msg)?;
-                time_until_next_step = TURN_SIGNAL_WAIT_DURATION;
-            }
-
-            if time_until_next_step.as_secs() == 0 {
-                break;
-            }
-
-            let start = Instant::now();
-            if let Ok(msg) = rx_client.recv_timeout(time_until_next_step) {
-                let result = match msg.command {
-                    ClientCommand::ChangeState(new_user_state) => {
-                        change_user_state(&mut state, &msg.username, &new_user_state)
+        let mut next_action_username = state.get_next_action_username();
+        let mut timeout = STEP_TIMEOUT;
+        'command: loop {
+            // Check if it's a user's turn. If so, send them a turn signal
+            // and increase the timeout to give them time to make their
+            // decision. We also keep track of their username so we
+            // can tell if they don't make a decision in time.
+            match (state.get_next_action_username(), state.get_action_options()) {
+                (Some(action_username), Some(action_options)) => {
+                    // Check if the username from the last turn is the same as the
+                    // username from this turn. If so, we need to check if there
+                    // was a timeout. If there's a timeout, then that means the
+                    // user didn't make a decision, and they have to fold. The
+                    // poker state will fold for them, so we just break.
+                    if let Some(last_action_username) = next_action_username {
+                        if timeout.as_secs() == 0 && last_action_username == action_username {
+                            break 'command;
+                        }
                     }
-                    ClientCommand::Connect => state.new_user(&msg.username),
-                    ClientCommand::Leave => state.remove_user(&msg.username),
-                    ClientCommand::ShowHand => state.show_hand(&msg.username),
-                    ClientCommand::StartGame => state.init_start(&msg.username),
-                    ClientCommand::TakeAction(action) => state.take_action(&msg.username, action),
-                };
-                match result {
-                    Ok(views) => {
-                        let msg = ServerMessage::Views(views);
-                        tx_server.send(msg)?;
-                    }
-                    Err(error) => {
-                        let msg = ServerMessage::Response {
-                            username: msg.username,
-                            data: Box::new(ServerResponse::Error(error)),
-                        };
-                        tx_server.send(msg)?;
+                    let msg = ServerMessage::Response {
+                        username: action_username.clone(),
+                        data: Box::new(ServerResponse::TurnSignal(action_options)),
+                    };
+                    tx_server.send(msg)?;
+                    next_action_username = Some(action_username);
+                    timeout = ACTION_TIMEOUT;
+                }
+                // If it's no one's turn and there's a timeout, then we must
+                // break to update the poker state.
+                _ => {
+                    if timeout.as_secs() == 0 {
+                        break 'command;
                     }
                 }
             }
-            time_until_next_step -= Instant::now() - start;
+
+            while timeout.as_secs() > 0 {
+                let start = Instant::now();
+                if let Ok(msg) = rx_client.recv_timeout(timeout) {
+                    let result = match msg.command {
+                        ClientCommand::ChangeState(new_user_state) => {
+                            change_user_state(&mut state, &msg.username, &new_user_state)
+                        }
+                        ClientCommand::Connect => state.new_user(&msg.username),
+                        ClientCommand::Leave => state.remove_user(&msg.username),
+                        ClientCommand::ShowHand => state.show_hand(&msg.username),
+                        ClientCommand::StartGame => state.init_start(&msg.username),
+                        ClientCommand::TakeAction(action) => {
+                            let result = state.take_action(&msg.username, action);
+                            timeout = NO_TIMEOUT;
+                            result
+                        }
+                    };
+
+                    // Get the result from a client's command. If their command
+                    // is OK, update all clients with the new game state. If
+                    // their command is bad, send an error back to the client.
+                    match result {
+                        Ok(views) => {
+                            let msg = ServerMessage::Views(views);
+                            tx_server.send(msg)?;
+                        }
+                        Err(error) => {
+                            let msg = ServerMessage::Response {
+                                username: msg.username,
+                                data: Box::new(ServerResponse::Error(error)),
+                            };
+                            tx_server.send(msg)?;
+                        }
+                    }
+                }
+                timeout -= Instant::now() - start;
+            }
         }
     }
 }
