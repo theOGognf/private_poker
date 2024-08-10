@@ -48,23 +48,23 @@ pub fn run() -> Result<(), Error> {
             // decision. We also keep track of their username so we
             // can tell if they don't make a decision in time.
             match (state.get_next_action_username(), state.get_action_options()) {
-                (Some(action_username), Some(action_options)) => {
+                (Some(username), Some(action_options)) => {
                     // Check if the username from the last turn is the same as the
                     // username from this turn. If so, we need to check if there
                     // was a timeout. If there's a timeout, then that means the
                     // user didn't make a decision, and they have to fold. The
                     // poker state will fold for them, so we just break.
-                    if let Some(last_action_username) = next_action_username {
-                        if timeout.as_secs() == 0 && last_action_username == action_username {
+                    if let Some(last_username) = next_action_username {
+                        if timeout.as_secs() == 0 && last_username == username {
                             break 'command;
                         }
                     }
                     let msg = ServerMessage::Response {
-                        username: action_username.clone(),
+                        username: username.clone(),
                         data: Box::new(ServerResponse::TurnSignal(action_options)),
                     };
                     tx_server.send(msg)?;
-                    next_action_username = Some(action_username);
+                    next_action_username = Some(username);
                     timeout = ACTION_TIMEOUT;
                 }
                 // If it's no one's turn and there's a timeout, then we must
