@@ -66,11 +66,12 @@ impl PokerState {
         }
     }
 
-    pub fn init_start(&mut self, username: &str) -> Result<(), UserError> {
+    pub fn init_start(&mut self, username: &str) -> Result<GameViews, UserError> {
         match self {
             PokerState::Lobby(ref mut game) => {
                 if game.contains_waitlister(username) || game.contains_player(username) {
-                    game.init_start()
+                    game.init_start()?;
+                    Ok(game.get_views())
                 } else {
                     Err(UserError::CannotStartGame)
                 }
