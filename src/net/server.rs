@@ -4,10 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::poker::{
-    game::{GameViews, UserError},
-    PokerState,
-};
+use crate::poker::{game::UserError, PokerState};
 
 use super::messages::{ClientCommand, ClientMessage, ServerMessage, ServerResponse, UserState};
 
@@ -19,7 +16,7 @@ fn change_user_state(
     state: &mut PokerState,
     username: &str,
     user_state: &UserState,
-) -> Result<GameViews, UserError> {
+) -> Result<(), UserError> {
     match user_state {
         UserState::Play => state.waitlist_user(username),
         UserState::Spectate => state.spectate_user(username),
@@ -80,26 +77,30 @@ pub fn run() -> Result<(), Error> {
                 let start = Instant::now();
                 if let Ok(msg) = rx_client.recv_timeout(timeout) {
                     let result = match msg.command {
-                        ClientCommand::ChangeState(new_user_state) => {
-                            change_user_state(&mut state, &msg.username, &new_user_state)
+                        ClientCommand::ChangeState(ref new_user_state) => {
+                            change_user_state(&mut state, &msg.username, new_user_state)
                         }
                         ClientCommand::Connect => state.new_user(&msg.username),
                         ClientCommand::Leave => state.remove_user(&msg.username),
                         ClientCommand::ShowHand => state.show_hand(&msg.username),
                         ClientCommand::StartGame => state.init_start(&msg.username),
-                        ClientCommand::TakeAction(action) => {
-                            let result = state.take_action(&msg.username, action);
-                            timeout = NO_TIMEOUT;
-                            result
+                        ClientCommand::TakeAction(ref action) => {
+                            state.take_action(&msg.username, action.clone()).map(|()| {
+                                timeout = NO_TIMEOUT;
+                            })
                         }
                     };
 
                     // Get the result from a client's command. If their command
-                    // is OK, update all clients with the new game state. If
-                    // their command is bad, send an error back to the client.
+                    // is OK, update all clients with the client's command and
+                    // the new game state. If their command is bad, send an
+                    // error back to the client.
                     match result {
-                        Ok(views) => {
-                            let msg = ServerMessage::Views(views);
+                        Ok(()) => {
+                            let msg = ServerMessage::Ack(msg);
+                            tx_server.send(msg)?;
+
+                            let msg = ServerMessage::Views(state.get_views());
                             tx_server.send(msg)?;
                         }
                         Err(error) => {

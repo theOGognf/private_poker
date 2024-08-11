@@ -35,6 +35,7 @@ pub enum ServerResponse {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum ServerMessage {
+    Ack(ClientMessage),
     Response {
         username: String,
         data: Box<ServerResponse>,
