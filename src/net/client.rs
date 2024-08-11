@@ -19,7 +19,7 @@ impl Client {
             username: self.username.clone(),
             command: ClientCommand::ChangeState(state),
         };
-        utils::write_value_prefixed(&mut self.stream, &msg)?;
+        utils::write_prefixed(&mut self.stream, &msg)?;
         self.recv_view()
     }
 
@@ -29,8 +29,8 @@ impl Client {
             username: username.to_string(),
             command: ClientCommand::Connect,
         };
-        utils::write_value_prefixed(&mut stream, &msg)?;
-        match utils::read_value_prefixed::<ServerResponse, TcpStream>(&mut stream) {
+        utils::write_prefixed(&mut stream, &msg)?;
+        match utils::read_prefixed::<ServerResponse, TcpStream>(&mut stream) {
             Ok(ServerResponse::TurnSignal(_)) => {
                 bail!("Invalid server response.")
             }
@@ -47,7 +47,7 @@ impl Client {
     }
 
     pub fn recv(&mut self) -> Result<ServerResponse, Error> {
-        match utils::read_value_prefixed::<ServerResponse, TcpStream>(&mut self.stream) {
+        match utils::read_prefixed::<ServerResponse, TcpStream>(&mut self.stream) {
             Ok(ServerResponse::Error(error)) => bail!(error),
             Ok(msg) => Ok(msg),
             Err(error) => bail!(error),
@@ -55,7 +55,7 @@ impl Client {
     }
 
     fn recv_view(&mut self) -> Result<GameView, Error> {
-        match utils::read_value_prefixed::<ServerResponse, TcpStream>(&mut self.stream) {
+        match utils::read_prefixed::<ServerResponse, TcpStream>(&mut self.stream) {
             Ok(ServerResponse::TurnSignal(_)) => {
                 bail!("Invalid server response.")
             }
@@ -70,7 +70,7 @@ impl Client {
             username: self.username.to_string(),
             command: ClientCommand::ShowHand,
         };
-        utils::write_value_prefixed(&mut self.stream, &msg)?;
+        utils::write_prefixed(&mut self.stream, &msg)?;
         self.recv_view()
     }
 
@@ -79,7 +79,7 @@ impl Client {
             username: self.username.to_string(),
             command: ClientCommand::StartGame,
         };
-        utils::write_value_prefixed(&mut self.stream, &msg)?;
+        utils::write_prefixed(&mut self.stream, &msg)?;
         self.recv_view()
     }
 
@@ -88,7 +88,7 @@ impl Client {
             username: self.username.to_string(),
             command: ClientCommand::TakeAction(action),
         };
-        utils::write_value_prefixed(&mut self.stream, &msg)?;
+        utils::write_prefixed(&mut self.stream, &msg)?;
         self.recv_view()
     }
 }

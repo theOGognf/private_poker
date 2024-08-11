@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::poker::{game::UserError, PokerState};
+use crate::poker::{entities::Action, game::UserError, PokerState};
 
 use super::messages::{ClientCommand, ClientMessage, ServerMessage, ServerResponse, UserState};
 
@@ -13,13 +13,13 @@ pub const NO_TIMEOUT: Duration = Duration::from_secs(0);
 pub const STEP_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn change_user_state(
-    state: &mut PokerState,
+    poker_state: &mut PokerState,
     username: &str,
     user_state: &UserState,
 ) -> Result<(), UserError> {
     match user_state {
-        UserState::Play => state.waitlist_user(username),
-        UserState::Spectate => state.spectate_user(username),
+        UserState::Play => poker_state.waitlist_user(username),
+        UserState::Spectate => poker_state.spectate_user(username),
     }
 }
 
@@ -48,11 +48,16 @@ pub fn run() -> Result<(), Error> {
                 (Some(username), Some(action_options)) => {
                     // Check if the username from the last turn is the same as the
                     // username from this turn. If so, we need to check if there
-                    // was a timeout. If there's a timeout, then that means the
-                    // user didn't make a decision, and they have to fold. The
-                    // poker state will fold for them, so we just break.
+                    // was a timeout.
                     if let Some(last_username) = next_action_username {
+                        // If there's a timeout, then that means the user didn't
+                        // make a decision, and they have to fold. The poker
+                        // state will fold for them, so we just send the ack
+                        // and then break.
                         if timeout.as_secs() == 0 && last_username == username {
+                            let command = ClientCommand::TakeAction(Action::Fold);
+                            let msg = ServerMessage::Ack(ClientMessage { username, command });
+                            tx_server.send(msg)?;
                             break 'command;
                         }
                     }
@@ -92,9 +97,9 @@ pub fn run() -> Result<(), Error> {
                     };
 
                     // Get the result from a client's command. If their command
-                    // is OK, update all clients with the client's command and
-                    // the new game state. If their command is bad, send an
-                    // error back to the client.
+                    // is OK, ack the command to all clients so they know what
+                    // happened. If their command is bad, send an error back to
+                    // the commanding client.
                     match result {
                         Ok(()) => {
                             let msg = ServerMessage::Ack(msg);
