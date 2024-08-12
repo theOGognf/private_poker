@@ -5,26 +5,26 @@ use mio::{
     Events, Interest, Poll, Registry, Token,
 };
 use std::{
-    collections::HashMap,
+    cmp::max,
+    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
     io::{self},
     sync::mpsc::{channel, Receiver, Sender},
     thread,
     time::{Duration, Instant},
 };
+use thiserror;
 
 use crate::poker::{constants::MAX_USERS, entities::Action, game::UserError, PokerState};
 
 use super::messages::{ClientCommand, ClientMessage, ServerMessage, ServerResponse, UserState};
 
+pub const CLIENT_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 pub const MAX_NETWORK_EVENTS_PER_USER: usize = 6;
 pub const MAX_NETWORK_EVENTS: usize = MAX_NETWORK_EVENTS_PER_USER * MAX_USERS;
-pub const POLL_TIMEOUT: Duration = Duration::from_secs(1);
 pub const SERVER: Token = Token(0);
-
-// State transition timeouts.
-pub const ACTION_TIMEOUT: Duration = Duration::from_secs(10);
-pub const NO_TIMEOUT: Duration = Duration::from_secs(0);
-pub const STEP_TIMEOUT: Duration = Duration::from_secs(5);
+pub const SERVER_POLL_TIMEOUT: Duration = Duration::from_secs(1);
+pub const STATE_ACTION_TIMEOUT: Duration = Duration::from_secs(10);
+pub const STATE_STEP_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn change_user_state(
     poker_state: &mut PokerState,
@@ -70,7 +70,7 @@ pub fn run(addr: &str) -> Result<(), Error> {
         // as UIDs. Maybe some higher-level struct that combines the token manager,
         // the client time tracker, and this thing.
         loop {
-            if let Err(error) = poll.poll(&mut events, Some(POLL_TIMEOUT)) {
+            if let Err(error) = poll.poll(&mut events, Some(SERVER_POLL_TIMEOUT)) {
                 if error.kind() == io::ErrorKind::Interrupted {
                     continue;
                 }
@@ -121,7 +121,7 @@ pub fn run(addr: &str) -> Result<(), Error> {
         tx_server.send(msg)?;
 
         let mut next_action_username = state.get_next_action_username();
-        let mut timeout = STEP_TIMEOUT;
+        let mut timeout = STATE_STEP_TIMEOUT;
         'command: loop {
             // Check if it's a user's turn. If so, send them a turn signal
             // and increase the timeout to give them time to make their
@@ -158,7 +158,7 @@ pub fn run(addr: &str) -> Result<(), Error> {
                     };
                     tx_server.send(msg)?;
                     next_action_username = Some(username);
-                    timeout = ACTION_TIMEOUT;
+                    timeout = STATE_ACTION_TIMEOUT;
                 }
                 // If it's no one's turn and there's a timeout, then we must
                 // break to update the poker state.
@@ -182,7 +182,7 @@ pub fn run(addr: &str) -> Result<(), Error> {
                         ClientCommand::StartGame => state.init_start(&msg.username),
                         ClientCommand::TakeAction(ref action) => {
                             state.take_action(&msg.username, action.clone()).map(|()| {
-                                timeout = NO_TIMEOUT;
+                                timeout = Duration::ZERO;
                             })
                         }
                     };
@@ -211,5 +211,116 @@ pub fn run(addr: &str) -> Result<(), Error> {
                 timeout -= Instant::now() - start;
             }
         }
+    }
+}
+
+#[derive(Debug, Eq, thiserror::Error, PartialEq)]
+enum TokenError {
+    #[error("Token already associated.")]
+    AlreadyAssociated,
+    #[error("Token does not exist.")]
+    DoesNotExist,
+    #[error("Token expired.")]
+    Expired,
+}
+
+struct UnknownClient {
+    stream: TcpStream,
+    timeout: Duration,
+}
+
+impl UnknownClient {
+    pub fn new(stream: TcpStream) -> Self {
+        UnknownClient {
+            stream,
+            timeout: Duration::ZERO,
+        }
+    }
+}
+
+struct TokenManager {
+    recycled_tokens: BTreeSet<Token>,
+    t: Instant,
+    tokens_to_usernames: BTreeMap<Token, String>,
+    unverified_tokens: BTreeMap<Token, UnknownClient>,
+    verified_usernames: HashMap<String, TcpStream>,
+    verified_usernames_to_tokens: HashMap<String, Token>,
+}
+
+impl TokenManager {
+    /// Associate a token with a username.
+    pub fn associate_token(&mut self, token: Token, username: String) -> Result<(), TokenError> {
+        if self.tokens_to_usernames.contains_key(&token) {
+            Err(TokenError::AlreadyAssociated)
+        } else if !self.unverified_tokens.contains_key(&token) {
+            Err(TokenError::DoesNotExist)
+        } else if self.recycled_tokens.contains(&token) {
+            Err(TokenError::Expired)
+        } else {
+            self.tokens_to_usernames.insert(token, username);
+            Ok(())
+        }
+    }
+
+    /// Remove tokens that've gone stale because the client has yet
+    /// to associate a username with itself before the association timeout.
+    fn filter_unassociated_tokens(&mut self) {
+        let dt = Instant::now() - self.t;
+        let mut tokens_to_recycle = VecDeque::new();
+        for (token, unknown_client) in self
+            .unverified_tokens
+            .iter_mut()
+            .filter(|(token, _)| !self.tokens_to_usernames.contains_key(token))
+        {
+            unknown_client.timeout += dt;
+            if unknown_client.timeout >= CLIENT_CONNECT_TIMEOUT {
+                tokens_to_recycle.push_back(*token);
+            }
+        }
+        while let Some(token) = tokens_to_recycle.pop_front() {
+            self.unverified_tokens.remove(&token);
+            self.recycled_tokens.insert(token);
+        }
+        self.t = Instant::now();
+    }
+
+    pub fn get_stream_from_token(&self) -> &TcpStream {}
+
+    pub fn get_stream_from_username(&self) -> &TcpStream {}
+
+    /// Create a new token and link it to the given stream.
+    pub fn new_token(&mut self, stream: TcpStream) -> Token {
+        self.filter_unassociated_tokens();
+        let token = match self.recycled_tokens.pop_last() {
+            Some(token) => token,
+            None => {
+                let largest = match (
+                    self.unverified_tokens.last_key_value(),
+                    self.tokens_to_usernames.last_key_value(),
+                ) {
+                    (Some((reserved, _)), Some((verified, _))) => max(reserved, verified).0,
+                    (Some((reserved, _)), None) => reserved.0,
+                    (None, Some((verified, _))) => verified.0,
+                    (None, None) => SERVER.0,
+                };
+                Token(largest + 1)
+            }
+        };
+        let unknown_client = UnknownClient::new(stream);
+        self.unverified_tokens.insert(token, unknown_client);
+        token
+    }
+
+    pub fn recycle_token(&mut self, token: Token) -> TcpStream {
+        self.filter_unassociated_tokens();
+        self.tokens_to_usernames.remove(&token);
+        self.recycled_tokens.insert(token);
+    }
+
+    pub fn verify_token(&mut self, token: Token) {
+        self.filter_unassociated_tokens();
+        self.unverified_tokens.remove(&token);
+        self.verified_usernames.insert(username.clone(), stream);
+        self.tokens_to_usernames.insert(token, username);
     }
 }

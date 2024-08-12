@@ -9,8 +9,8 @@ use super::{
 };
 
 pub struct Client {
-    stream: TcpStream,
-    username: String,
+    pub username: String,
+    pub stream: TcpStream,
 }
 
 impl Client {
@@ -38,8 +38,8 @@ impl Client {
             Ok(ServerResponse::Error(error)) => bail!(error),
             Ok(ServerResponse::GameView(view)) => Ok((
                 Self {
-                    stream,
                     username: username.to_string(),
+                    stream,
                 },
                 view,
             )),
