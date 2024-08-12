@@ -1243,9 +1243,6 @@ impl From<Game<RemovePlayers>> for Game<DivideDonations> {
 /// users that left the game. Redistributing the money back to remaining
 /// users helps keep games going. It especially helps to continue
 /// gameplay if a user aggregates most of the money and then leaves.
-/// Rather than taking their money with them, their money is distributed
-/// to all the poor folks so they can keep playing and don't have to
-/// create a new game.
 impl From<Game<DivideDonations>> for Game<UpdateBlinds> {
     fn from(mut value: Game<DivideDonations>) -> Self {
         let num_users = value.get_num_users();
@@ -1271,11 +1268,11 @@ impl From<Game<DivideDonations>> for Game<UpdateBlinds> {
 }
 
 /// Update the blinds, checking if the minimum stack size for all users
-/// is larger than twice the blind. If it is, blinds are doubled. This
-/// helps progress the game, increasing the investment each player must
-/// make in each hand. This prevents longer games where a handful of
+/// is larger than a multiple of the blind. If it is, blinds are multiplied
+/// by that multiple. This helps progress the game, increasing the investment
+/// each player must make in each hand, preventing games where a handful of
 /// players have large stacks and can afford to fold many times without
-/// any action.
+/// any other action.
 impl From<Game<UpdateBlinds>> for Game<BootPlayers> {
     fn from(mut value: Game<UpdateBlinds>) -> Self {
         let min_money = value
@@ -1300,9 +1297,9 @@ impl From<Game<UpdateBlinds>> for Game<BootPlayers> {
     }
 }
 
-/// Remove players from seats that don't have enough money to satisfy
-/// the big blind, and reset player states for players that do have
-/// enough money to play.
+/// Spectate players that don't have enough money to satisfy the big blind
+/// from seats, and reset player states for players that do have enough
+/// money to play.
 impl From<Game<BootPlayers>> for Game<Lobby> {
     fn from(mut value: Game<BootPlayers>) -> Self {
         value.data.board.clear();

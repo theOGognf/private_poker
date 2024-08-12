@@ -1,5 +1,5 @@
 use anyhow::{bail, Error};
-use std::net::TcpStream;
+use mio::net::TcpStream;
 
 use crate::poker::entities::Action;
 
@@ -24,6 +24,7 @@ impl Client {
     }
 
     pub fn connect(addr: &str, username: &str) -> Result<(Self, GameView), Error> {
+        let addr = addr.parse()?;
         let mut stream = TcpStream::connect(addr)?;
         let msg = ClientMessage {
             username: username.to_string(),
