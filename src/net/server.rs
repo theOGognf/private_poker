@@ -48,11 +48,12 @@ pub fn run(addr: &str) -> Result<(), Error> {
     // Messages from the main thread are queued for each client/user
     // connection.
     thread::spawn(move || -> Result<(), Error> {
+        let mut events = Events::with_capacity(MAX_NETWORK_EVENTS);
         let mut poll = Poll::new()?;
         let mut registry = poll.registry();
         let mut server = TcpListener::bind(addr)?;
+        let mut token_manager = TokenManager::new();
         registry.register(&mut server, SERVER, Interest::READABLE)?;
-        let mut events = Events::with_capacity(MAX_NETWORK_EVENTS);
 
         // TODO:
         // - Need to read server messages from `rx_server` and send client messages
@@ -86,14 +87,12 @@ pub fn run(addr: &str) -> Result<(), Error> {
                             }
                         };
 
-                        let token = next(&mut unique_token);
+                        let token = token_manager.new_token(connection);
                         registry.register(
                             &mut connection,
                             token,
                             Interest::READABLE | Interest::WRITABLE,
                         )?;
-
-                        connections.insert(token, connection);
                     },
                 }
             }
@@ -202,6 +201,22 @@ pub fn run(addr: &str) -> Result<(), Error> {
     }
 }
 
+struct UnconfirmedClient {
+    stream: TcpStream,
+    t: Instant,
+    timeout: Duration,
+}
+
+impl UnconfirmedClient {
+    pub fn new(stream: TcpStream) -> Self {
+        UnconfirmedClient {
+            stream,
+            t: Instant::now(),
+            timeout: Duration::ZERO,
+        }
+    }
+}
+
 #[derive(Debug, Eq, thiserror::Error, PartialEq)]
 enum TokenError {
     #[error("Token already associated with a username.")]
@@ -214,29 +229,13 @@ enum TokenError {
     Unassociated,
 }
 
-struct UnverifiedClient {
-    stream: TcpStream,
-    t: Instant,
-    timeout: Duration,
-}
-
-impl UnverifiedClient {
-    pub fn new(stream: TcpStream) -> Self {
-        UnverifiedClient {
-            stream,
-            t: Instant::now(),
-            timeout: Duration::ZERO,
-        }
-    }
-}
-
 struct TokenManager {
+    confirmed_tokens: BTreeMap<Token, TcpStream>,
+    confirmed_usernames_to_tokens: HashMap<String, Token>,
     recycled_tokens: BTreeSet<Token>,
     tokens_to_usernames: BTreeMap<Token, String>,
-    unverified_tokens: BTreeMap<Token, UnverifiedClient>,
-    unverified_usernames_to_tokens: HashMap<String, Token>,
-    verified_tokens: BTreeMap<Token, TcpStream>,
-    verified_usernames_to_tokens: HashMap<String, Token>,
+    unconfirmed_tokens: BTreeMap<Token, UnconfirmedClient>,
+    unconfirmed_usernames_to_tokens: HashMap<String, Token>,
 }
 
 impl TokenManager {
@@ -247,35 +246,55 @@ impl TokenManager {
         username: String,
     ) -> Result<(), TokenError> {
         if self.tokens_to_usernames.contains_key(&token)
-            || self.unverified_usernames_to_tokens.contains_key(&username)
-            || self.verified_usernames_to_tokens.contains_key(&username)
+            || self.unconfirmed_usernames_to_tokens.contains_key(&username)
+            || self.confirmed_usernames_to_tokens.contains_key(&username)
         {
             Err(TokenError::AlreadyAssociated)
         } else if self.recycled_tokens.contains(&token) {
             Err(TokenError::Expired)
         } else {
             self.tokens_to_usernames.insert(token, username.clone());
-            self.unverified_usernames_to_tokens.insert(username, token);
+            self.unconfirmed_usernames_to_tokens.insert(username, token);
             Ok(())
+        }
+    }
+
+    pub fn confirm_username(&mut self, username: String) -> Result<(), TokenError> {
+        if self.confirmed_usernames_to_tokens.contains_key(&username) {
+            return Err(TokenError::AlreadyAssociated);
+        }
+        match self.unconfirmed_usernames_to_tokens.remove(&username) {
+            Some(token) => match self.unconfirmed_tokens.remove(&token) {
+                Some(unconfirmed_client) => {
+                    self.confirmed_tokens
+                        .insert(token, unconfirmed_client.stream);
+                    self.confirmed_usernames_to_tokens.insert(username, token);
+                    Ok(())
+                }
+                None => unreachable!(
+                    "An unconfirmed username always corresponds to an unconfirmed token."
+                ),
+            },
+            None => Err(TokenError::Unassociated),
         }
     }
 
     pub fn get_stream_with_token(&self, token: Token) -> Result<&TcpStream, TokenError> {
         match (
-            self.unverified_tokens.get(&token),
-            self.verified_tokens.get(&token),
+            self.unconfirmed_tokens.get(&token),
+            self.confirmed_tokens.get(&token),
         ) {
-            (Some(unverified_client), None) => Ok(&unverified_client.stream),
+            (Some(unconfirmed_client), None) => Ok(&unconfirmed_client.stream),
             (None, Some(stream)) => Ok(&stream),
             (None, None) => return Err(TokenError::DoesNotExist),
-            _ => unreachable!("A token must be either unverified or verified."),
+            _ => unreachable!("A token must be either unconfirmed or confirmed."),
         }
     }
 
     pub fn get_stream_with_username(&self, username: String) -> Result<&TcpStream, TokenError> {
         match (
-            self.unverified_usernames_to_tokens.get(&username),
-            self.verified_usernames_to_tokens.get(&username),
+            self.unconfirmed_usernames_to_tokens.get(&username),
+            self.confirmed_usernames_to_tokens.get(&username),
         ) {
             (Some(token), None) => self.get_stream_with_token(*token),
             (None, Some(token)) => self.get_stream_with_token(*token),
@@ -287,10 +306,10 @@ impl TokenManager {
         Self {
             recycled_tokens: BTreeSet::new(),
             tokens_to_usernames: BTreeMap::new(),
-            unverified_tokens: BTreeMap::new(),
-            unverified_usernames_to_tokens: HashMap::new(),
-            verified_tokens: BTreeMap::new(),
-            verified_usernames_to_tokens: HashMap::new(),
+            unconfirmed_tokens: BTreeMap::new(),
+            unconfirmed_usernames_to_tokens: HashMap::new(),
+            confirmed_tokens: BTreeMap::new(),
+            confirmed_usernames_to_tokens: HashMap::new(),
         }
     }
 
@@ -300,35 +319,35 @@ impl TokenManager {
             Some(token) => token,
             None => {
                 let newest = match (
-                    self.unverified_tokens.last_key_value(),
-                    self.verified_tokens.last_key_value(),
+                    self.unconfirmed_tokens.last_key_value(),
+                    self.confirmed_tokens.last_key_value(),
                 ) {
-                    (Some((unverified, _)), Some((verified, _))) => max(unverified, verified),
-                    (Some((unverified, _)), None) => unverified,
+                    (Some((unconfirmed, _)), Some((confirmed, _))) => max(unconfirmed, confirmed),
+                    (Some((unconfirmed, _)), None) => unconfirmed,
                     (None, Some((verified, _))) => verified,
                     (None, None) => &SERVER,
                 };
                 Token(newest.0 + 1)
             }
         };
-        let unverified_client = UnverifiedClient::new(stream);
-        self.unverified_tokens.insert(token, unverified_client);
+        let confirmed_client = UnconfirmedClient::new(stream);
+        self.unconfirmed_tokens.insert(token, confirmed_client);
         token
     }
 
     pub fn recycle_by_token(&mut self, token: Token) -> Result<TcpStream, TokenError> {
         if let Some(username) = self.tokens_to_usernames.remove(&token) {
-            self.unverified_usernames_to_tokens.remove(&username);
-            self.verified_usernames_to_tokens.remove(&username);
+            self.unconfirmed_usernames_to_tokens.remove(&username);
+            self.confirmed_usernames_to_tokens.remove(&username);
         }
         let stream = match (
-            self.unverified_tokens.remove(&token),
-            self.verified_tokens.remove(&token),
+            self.unconfirmed_tokens.remove(&token),
+            self.confirmed_tokens.remove(&token),
         ) {
-            (Some(unverified_client), None) => unverified_client.stream,
+            (Some(unconfirmed), None) => unconfirmed.stream,
             (None, Some(stream)) => stream,
             (None, None) => return Err(TokenError::DoesNotExist),
-            _ => unreachable!("A token must be either unverified or verified."),
+            _ => unreachable!("A token must be either unconfirmed or confirmed."),
         };
         self.recycled_tokens.insert(token);
         Ok(stream)
@@ -336,8 +355,8 @@ impl TokenManager {
 
     pub fn recycle_by_username(&mut self, username: String) -> Result<TcpStream, TokenError> {
         match (
-            self.unverified_usernames_to_tokens.remove(&username),
-            self.verified_usernames_to_tokens.remove(&username),
+            self.unconfirmed_usernames_to_tokens.remove(&username),
+            self.confirmed_usernames_to_tokens.remove(&username),
         ) {
             (Some(token), None) => self.recycle_by_token(token),
             (None, Some(token)) => self.recycle_by_token(token),
@@ -347,10 +366,10 @@ impl TokenManager {
 
     /// Remove tokens that've gone stale because the client has yet
     /// to associate a username with itself before the association timeout.
-    fn recycle_unassociated_tokens(&mut self) -> VecDeque<TcpStream> {
+    pub fn recycle_unassociated_tokens(&mut self) -> VecDeque<TcpStream> {
         let mut tokens_to_recycle = VecDeque::new();
         for (token, unknown_client) in self
-            .unverified_tokens
+            .unconfirmed_tokens
             .iter_mut()
             .filter(|(token, _)| !self.tokens_to_usernames.contains_key(token))
         {
@@ -364,31 +383,12 @@ impl TokenManager {
         }
         let mut recycled_streams = VecDeque::new();
         while let Some(token) = tokens_to_recycle.pop_front() {
-            match self.unverified_tokens.remove(&token) {
-                Some(unverified_client) => recycled_streams.push_back(unverified_client.stream),
-                None => unreachable!("An unassociated token is always unverified."),
+            match self.unconfirmed_tokens.remove(&token) {
+                Some(unconfirmed_client) => recycled_streams.push_back(unconfirmed_client.stream),
+                None => unreachable!("An unassociated token is always unconfirmed."),
             }
             self.recycled_tokens.insert(token);
         }
         recycled_streams
-    }
-
-    pub fn verify_username(&mut self, username: String) -> Result<(), TokenError> {
-        if self.verified_usernames_to_tokens.contains_key(&username) {
-            return Err(TokenError::AlreadyAssociated);
-        }
-        match self.unverified_usernames_to_tokens.remove(&username) {
-            Some(token) => match self.unverified_tokens.remove(&token) {
-                Some(unverified_client) => {
-                    self.verified_tokens.insert(token, unverified_client.stream);
-                    self.verified_usernames_to_tokens.insert(username, token);
-                    Ok(())
-                }
-                None => unreachable!(
-                    "An unverified username always corresponds to an unverified token."
-                ),
-            },
-            None => Err(TokenError::Unassociated),
-        }
     }
 }
