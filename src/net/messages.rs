@@ -4,6 +4,18 @@ use crate::poker::{entities::Action, game::UserError};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
+#[derive(Debug, Eq, Deserialize, thiserror::Error, PartialEq, Serialize)]
+pub enum ClientError {
+    #[error("Username already associated.")]
+    AlreadyAssociated,
+    #[error("Connection does not exist.")]
+    DoesNotExist,
+    #[error("Connection expired.")]
+    Expired,
+    #[error("Unassociated username.")]
+    Unassociated,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub enum UserState {
     Play,
@@ -28,9 +40,10 @@ pub struct ClientMessage {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum ServerResponse {
-    Error(UserError),
+    ClientError(ClientError),
     GameView(GameView),
     TurnSignal(HashSet<Action>),
+    UserError(UserError),
 }
 
 #[derive(Debug, Deserialize, Serialize)]

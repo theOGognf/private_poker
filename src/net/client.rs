@@ -32,10 +32,7 @@ impl Client {
         };
         utils::write_prefixed(&mut stream, &msg)?;
         match utils::read_prefixed::<ServerResponse, TcpStream>(&mut stream) {
-            Ok(ServerResponse::TurnSignal(_)) => {
-                bail!("Invalid server response.")
-            }
-            Ok(ServerResponse::Error(error)) => bail!(error),
+            Ok(ServerResponse::ClientError(error)) => bail!(error),
             Ok(ServerResponse::GameView(view)) => Ok((
                 Self {
                     username: username.to_string(),
@@ -43,13 +40,17 @@ impl Client {
                 },
                 view,
             )),
+            Ok(ServerResponse::TurnSignal(_)) => {
+                bail!("Invalid server response.")
+            }
+            Ok(ServerResponse::UserError(error)) => bail!(error),
             Err(error) => bail!(error),
         }
     }
 
     pub fn recv(&mut self) -> Result<ServerResponse, Error> {
         match utils::read_prefixed::<ServerResponse, TcpStream>(&mut self.stream) {
-            Ok(ServerResponse::Error(error)) => bail!(error),
+            Ok(ServerResponse::UserError(error)) => bail!(error),
             Ok(msg) => Ok(msg),
             Err(error) => bail!(error),
         }
@@ -57,11 +58,12 @@ impl Client {
 
     fn recv_view(&mut self) -> Result<GameView, Error> {
         match utils::read_prefixed::<ServerResponse, TcpStream>(&mut self.stream) {
+            Ok(ServerResponse::ClientError(error)) => bail!(error),
+            Ok(ServerResponse::GameView(view)) => Ok(view),
             Ok(ServerResponse::TurnSignal(_)) => {
                 bail!("Invalid server response.")
             }
-            Ok(ServerResponse::Error(error)) => bail!(error),
-            Ok(ServerResponse::GameView(view)) => Ok(view),
+            Ok(ServerResponse::UserError(error)) => bail!(error),
             Err(error) => bail!(error),
         }
     }
