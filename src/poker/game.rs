@@ -1452,7 +1452,7 @@ mod tests {
         ];
         game.data.players[1].cards = vec![(1u8, Suit::Diamond), (7u8, Suit::Heart)];
         game.data.players[2].cards = vec![(2u8, Suit::Diamond), (5u8, Suit::Heart)];
-        let game: Game<ShowHands> = game.into();
+        let game: Game<ShowHands> = game;
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         assert!(game.is_pot_empty());
@@ -1473,11 +1473,11 @@ mod tests {
         ];
         game.data.players[1].cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
         game.data.players[2].cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
-        let game: Game<ShowHands> = game.into();
+        let game: Game<ShowHands> = game;
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         assert!(game.is_pot_empty());
-        for i in (0..3).into_iter() {
+        for i in (0..3) {
             assert_eq!(game.data.players[i].user.money, STARTING_STACK);
         }
     }
@@ -1486,7 +1486,7 @@ mod tests {
     fn early_showdown_3_decreasing_all_ins() {
         let game = init_game();
         let mut game: Game<MoveButton> = game.into();
-        for i in (0..3).into_iter() {
+        for i in (0..3) {
             game.data.players[i].user.money = STARTING_STACK * (3 - i as u32);
         }
         let game: Game<CollectBlinds> = game.into();
@@ -1517,7 +1517,7 @@ mod tests {
         game.data.players[0].cards = vec![(3u8, Suit::Heart), (11u8, Suit::Diamond)];
         game.data.players[1].cards = vec![(1u8, Suit::Heart), (10u8, Suit::Diamond)];
         game.data.players[2].cards = vec![(2u8, Suit::Heart), (9u8, Suit::Diamond)];
-        let game: Game<ShowHands> = game.into();
+        let game: Game<ShowHands> = game;
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         let game: Game<DistributePot> = game.into();
@@ -1532,7 +1532,7 @@ mod tests {
     fn early_showdown_3_increasing_all_ins() {
         let game = init_game();
         let mut game: Game<MoveButton> = game.into();
-        for i in (0..3).into_iter() {
+        for i in (0..3) {
             game.data.players[i].user.money = STARTING_STACK * (i as u32 + 1);
         }
         let game: Game<CollectBlinds> = game.into();
@@ -1571,7 +1571,7 @@ mod tests {
         game.data.players[0].cards = vec![(3u8, Suit::Heart), (11u8, Suit::Diamond)];
         game.data.players[1].cards = vec![(1u8, Suit::Heart), (10u8, Suit::Diamond)];
         game.data.players[2].cards = vec![(2u8, Suit::Heart), (9u8, Suit::Diamond)];
-        let game: Game<ShowHands> = game.into();
+        let game: Game<ShowHands> = game;
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         let game: Game<DistributePot> = game.into();
@@ -1679,7 +1679,7 @@ mod tests {
         game.data.players[0].cards = vec![(3u8, Suit::Heart), (8u8, Suit::Diamond)];
         game.data.players[1].cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
         game.data.players[2].cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
-        let game: Game<ShowHands> = game.into();
+        let game: Game<ShowHands> = game;
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         let game: Game<RemovePlayers> = game.into();
@@ -1703,7 +1703,7 @@ mod tests {
         ];
         game.data.players[1].cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
         game.data.players[2].cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
-        let game: Game<ShowHands> = game.into();
+        let game: Game<ShowHands> = game;
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         let game: Game<RemovePlayers> = game.into();
@@ -1713,7 +1713,7 @@ mod tests {
         assert!(game.contains_player("1"));
         assert!(game.contains_player("2"));
         let game: Game<UpdateBlinds> = game.into();
-        for i in (0..2).into_iter() {
+        for i in (0..2) {
             assert_eq!(
                 game.data.players[i].user.money,
                 STARTING_STACK + STARTING_STACK / 2
@@ -1737,7 +1737,7 @@ mod tests {
         game.data.players[1].cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
         game.data.players[2].cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
         game.remove_user("0").unwrap();
-        let game: Game<ShowHands> = game.into();
+        let game: Game<ShowHands> = game;
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         let game: Game<RemovePlayers> = game.into();
@@ -1746,7 +1746,7 @@ mod tests {
         assert!(game.contains_player("1"));
         assert!(game.contains_player("2"));
         let game: Game<UpdateBlinds> = game.into();
-        for i in (0..2).into_iter() {
+        for i in (0..2) {
             assert_eq!(
                 game.data.players[i].user.money,
                 STARTING_STACK + STARTING_STACK / 2

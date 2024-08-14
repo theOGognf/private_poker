@@ -213,8 +213,7 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                     cards: vec![*value; 3],
                 };
                 subhands_per_rank
-                    .get_mut(&Rank::OnePair)
-                    .and_then(|one_pairs| Some(one_pairs.remove(&one_pair_subhand)));
+                    .get_mut(&Rank::OnePair).map(|one_pairs| one_pairs.remove(&one_pair_subhand));
                 subhands_per_rank
                     .entry(Rank::ThreeOfAKind)
                     .or_default()
@@ -265,10 +264,7 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                     cards: vec![*value; 4],
                 };
                 subhands_per_rank
-                    .get_mut(&Rank::ThreeOfAKind)
-                    .and_then(|three_of_a_kinds| {
-                        Some(three_of_a_kinds.remove(&three_of_a_kind_subhand))
-                    });
+                    .get_mut(&Rank::ThreeOfAKind).map(|three_of_a_kinds| three_of_a_kinds.remove(&three_of_a_kind_subhand));
                 subhands_per_rank
                     .entry(Rank::FourOfAKind)
                     .or_default()

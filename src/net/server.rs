@@ -1,9 +1,8 @@
 use anyhow::{bail, Error};
 use bincode::serialize;
 use mio::{
-    event::Event,
     net::{TcpListener, TcpStream},
-    Events, Interest, Poll, Registry, Token,
+    Events, Interest, Poll, Token,
 };
 use std::{
     cmp::max,
@@ -20,7 +19,7 @@ use super::{
     messages::{
         ClientCommand, ClientError, ClientMessage, ServerMessage, ServerResponse, UserState,
     },
-    utils::{read_prefixed, write_prefixed},
+    utils::{read_prefixed},
 };
 
 pub const CLIENT_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -124,7 +123,7 @@ impl TokenManager {
         ) {
             (Some(unconfirmed_client), None) => Ok(&mut unconfirmed_client.stream),
             (None, Some(stream)) => Ok(stream),
-            (None, None) => return Err(ClientError::DoesNotExist),
+            (None, None) => Err(ClientError::DoesNotExist),
             _ => unreachable!("A token must be either unconfirmed or confirmed."),
         }
     }
@@ -246,7 +245,7 @@ pub fn run(addr: &str) -> Result<(), Error> {
         let mut token_manager = TokenManager::new();
         // Each seralized message is a ServerResponse.
         let mut token_to_serialized_messages: HashMap<Token, VecDeque<Vec<u8>>> = HashMap::new();
-        let mut tokens_to_remove: HashSet<Token> = HashSet::new();
+        let tokens_to_remove: HashSet<Token> = HashSet::new();
         poll.registry()
             .register(&mut server, SERVER, Interest::READABLE)?;
 

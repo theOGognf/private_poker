@@ -15,8 +15,8 @@ pub fn read_prefixed<T: DeserializeOwned, R: Read>(reader: &mut R) -> io::Result
     match deserialize(&buf) {
         Ok(value) => Ok(value),
         Err(error) => match *error {
-            ErrorKind::Io(error) => return Err(error),
-            _ => return Err(io::ErrorKind::InvalidData.into()),
+            ErrorKind::Io(error) => Err(error),
+            _ => Err(io::ErrorKind::InvalidData.into()),
         },
     }
 }
@@ -34,8 +34,8 @@ pub fn write_prefixed<T: Serialize, W: Write>(writer: &mut W, value: &T) -> io::
             Ok(())
         }
         Err(error) => match *error {
-            ErrorKind::Io(error) => return Err(error),
-            _ => return Err(io::ErrorKind::InvalidData.into()),
+            ErrorKind::Io(error) => Err(error),
+            _ => Err(io::ErrorKind::InvalidData.into()),
         },
     }
 }
