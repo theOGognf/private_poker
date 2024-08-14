@@ -1,5 +1,4 @@
 use anyhow::{bail, Error};
-use bincode::serialize;
 use mio::{
     net::{TcpListener, TcpStream},
     Events, Interest, Poll, Token,
@@ -19,7 +18,7 @@ use super::{
     messages::{
         ClientCommand, ClientError, ClientMessage, ServerMessage, ServerResponse, UserState,
     },
-    utils::{read_prefixed},
+    utils::{read_prefixed, write_prefixed},
 };
 
 pub const CLIENT_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -93,8 +92,8 @@ impl TokenManager {
     }
 
     pub fn confirm_username(&mut self, token: Token) -> Result<(), ClientError> {
-        if let Some(username) = self.tokens_to_usernames.get(&token) {
-            match self.unconfirmed_usernames_to_tokens.remove_entry(username) {
+        match self.tokens_to_usernames.get(&token) {
+            Some(username) => match self.unconfirmed_usernames_to_tokens.remove_entry(username) {
                 Some((username, token)) => match self.unconfirmed_tokens.remove(&token) {
                     Some(unconfirmed_client) => {
                         self.confirmed_tokens
@@ -107,9 +106,18 @@ impl TokenManager {
                     ),
                 },
                 None => Err(ClientError::Unassociated),
-            }
-        } else {
-            Err(ClientError::Unassociated)
+            },
+            None => Err(ClientError::Unassociated),
+        }
+    }
+
+    pub fn get_confirmed_username_with_token(&self, token: &Token) -> Result<String, ClientError> {
+        match (
+            self.confirmed_tokens.contains_key(token),
+            self.tokens_to_usernames.get(token),
+        ) {
+            (true, Some(username)) => Ok(username.clone()),
+            _ => Err(ClientError::Unassociated),
         }
     }
 
@@ -137,6 +145,10 @@ impl TokenManager {
             (None, Some(token)) => Ok(*token),
             _ => Err(ClientError::Unassociated),
         }
+    }
+
+    pub fn is_confirmed(&self, token: &Token) -> bool {
+        self.confirmed_tokens.contains_key(token)
     }
 
     pub fn new() -> Self {
@@ -170,7 +182,7 @@ impl TokenManager {
         token
     }
 
-    pub fn recycle_by_token(&mut self, token: Token) -> Result<TcpStream, ClientError> {
+    pub fn recycle_token(&mut self, token: Token) -> Result<TcpStream, ClientError> {
         if let Some(username) = self.tokens_to_usernames.remove(&token) {
             self.unconfirmed_usernames_to_tokens.remove(&username);
             self.confirmed_usernames_to_tokens.remove(&username);
@@ -190,7 +202,7 @@ impl TokenManager {
 
     /// Remove tokens that've gone stale because the client has yet
     /// to associate a username with itself before the association timeout.
-    pub fn recycle_unassociated_tokens(&mut self) -> VecDeque<TcpStream> {
+    pub fn recycle_expired_tokens(&mut self) -> VecDeque<(Token, TcpStream)> {
         let mut tokens_to_recycle = VecDeque::new();
         for (token, unknown_client) in self
             .unconfirmed_tokens
@@ -205,15 +217,17 @@ impl TokenManager {
                 tokens_to_recycle.push_back(*token);
             }
         }
-        let mut recycled_streams = VecDeque::new();
-        while let Some(token) = tokens_to_recycle.pop_front() {
+        let mut recyclables = VecDeque::new();
+        for token in tokens_to_recycle {
             match self.unconfirmed_tokens.remove(&token) {
-                Some(unconfirmed_client) => recycled_streams.push_back(unconfirmed_client.stream),
+                Some(unconfirmed_client) => {
+                    recyclables.push_back((token, unconfirmed_client.stream))
+                }
                 None => unreachable!("An unassociated token is always unconfirmed."),
             }
             self.recycled_tokens.insert(token);
         }
-        recycled_streams
+        recyclables
     }
 }
 
@@ -234,24 +248,21 @@ pub fn run(addr: &str) -> Result<(), Error> {
     let (tx_client, rx_client): (Sender<ClientMessage>, Receiver<ClientMessage>) = channel();
     let (tx_server, rx_server): (Sender<ServerMessage>, Receiver<ServerMessage>) = channel();
 
-    // Thread is where the actual networking happens for non-blocking IO.
+    // This thread is where the actual networking happens for non-blocking IO.
     // A server is bound to the address and manages connections to clients.
     // Messages from the main thread are queued for each client/user
     // connection.
     thread::spawn(move || -> Result<(), Error> {
         let mut events = Events::with_capacity(MAX_NETWORK_EVENTS);
+        let mut messages_to_process: HashMap<Token, VecDeque<ClientMessage>> = HashMap::new();
+        let mut messages_to_write: HashMap<Token, VecDeque<ServerResponse>> = HashMap::new();
         let mut poll = Poll::new()?;
         let mut server = TcpListener::bind(addr)?;
         let mut token_manager = TokenManager::new();
-        // Each seralized message is a ServerResponse.
-        let mut token_to_serialized_messages: HashMap<Token, VecDeque<Vec<u8>>> = HashMap::new();
-        let tokens_to_remove: HashSet<Token> = HashSet::new();
+        let mut tokens_to_remove: HashSet<Token> = HashSet::new();
         poll.registry()
             .register(&mut server, SERVER, Interest::READABLE)?;
 
-        // TODO:
-        // - Need to read server messages from `rx_server` and send client messages
-        // over `tx_client`.
         loop {
             if let Err(error) = poll.poll(&mut events, Some(SERVER_POLL_TIMEOUT)) {
                 if error.kind() == io::ErrorKind::Interrupted {
@@ -281,19 +292,19 @@ pub fn run(addr: &str) -> Result<(), Error> {
                                 // The client disconnected before the server could confirm their
                                 // username even though the username was OK. A bit of an edge case,
                                 // we need to notify the main thread that they disconnected. We'll
-                                // still send out the acknowledgement that they connected as well.
+                                // still send out the acknowledgement to other clients saying that
+                                // they were able to connect briefly.
                                 if disconnected {
-                                    // TODO: Send Leave command back to the parent thread.
+                                    let msg = ClientMessage {
+                                        username: msg.username.clone(),
+                                        command: ClientCommand::Leave,
+                                    };
+                                    tx_client.send(msg)?;
                                 }
                             }
-                            let msg = ServerResponse::Ack(msg);
-                            if let Ok(serialized) = serialize(&msg) {
-                                for token in token_manager.confirmed_tokens.keys() {
-                                    token_to_serialized_messages
-                                        .entry(*token)
-                                        .or_default()
-                                        .push_back(serialized.clone());
-                                }
+                            for token in token_manager.confirmed_tokens.keys() {
+                                let msg = ServerResponse::Ack(msg.clone());
+                                messages_to_write.entry(*token).or_default().push_back(msg);
                             }
                         }
                         // A response goes to a single client. We can safely ignore cases where a
@@ -301,12 +312,7 @@ pub fn run(addr: &str) -> Result<(), Error> {
                         // is meant just for the client.
                         ServerMessage::Response { username, data } => {
                             if let Ok(token) = token_manager.get_token_with_username(&username) {
-                                if let Ok(serialized) = serialize(&*data) {
-                                    token_to_serialized_messages
-                                        .entry(token)
-                                        .or_default()
-                                        .push_back(serialized);
-                                }
+                                messages_to_write.entry(token).or_default().push_back(*data);
                             }
                         }
                         // Views go to all clients. We can safely ignore cases where a client
@@ -317,12 +323,7 @@ pub fn run(addr: &str) -> Result<(), Error> {
                                 if let Ok(token) = token_manager.get_token_with_username(&username)
                                 {
                                     let msg = ServerResponse::GameView(view);
-                                    if let Ok(serialized) = serialize(&msg) {
-                                        token_to_serialized_messages
-                                            .entry(token)
-                                            .or_default()
-                                            .push_back(serialized);
-                                    }
+                                    messages_to_write.entry(token).or_default().push_back(msg);
                                 }
                             }
                         }
@@ -332,7 +333,7 @@ pub fn run(addr: &str) -> Result<(), Error> {
                 match event.token() {
                     SERVER => loop {
                         // Received an event for the TCP server socket, which
-                        // indicates we can accept an connection.
+                        // indicates we can accept a connection.
                         let mut stream = match server.accept() {
                             Ok((stream, _)) => stream,
                             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
@@ -350,47 +351,68 @@ pub fn run(addr: &str) -> Result<(), Error> {
                         };
 
                         let token = token_manager.new_token();
-                        poll.registry()
-                            .register(&mut stream, token, Interest::READABLE)?;
+                        poll.registry().register(
+                            &mut stream,
+                            token,
+                            Interest::READABLE | Interest::WRITABLE,
+                        )?;
                         token_manager.associate_token_and_stream(token, stream);
                     },
                     token => {
                         // Maybe received an event for a TCP connection.
-                        match token_manager.get_mut_stream_with_token(&token) {
-                            Ok(stream) => {
-                                if event.is_writable() {
-                                    // // We can (maybe) write to the connection.
-                                    // match stream.write(DATA) {
-                                    //     // We want to write the entire `DATA` buffer in a single go. If we
-                                    //     // write less we'll return a short write error (same as
-                                    //     // `io::Write::write_all` does).
-                                    //     Ok(n) if n < DATA.len() => return Err(io::ErrorKind::WriteZero.into()),
-                                    //     Ok(_) => {
-                                    //         // After we've written something we'll reregister the connection
-                                    //         // to only respond to readable events.
-                                    //         registry.reregister(stream, event.token(), Interest::READABLE)?
-                                    //     }
-                                    //     // Would block "errors" are the OS's way of saying that the
-                                    //     // connection is not actually ready to perform this I/O operation.
-                                    //     Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => {}
-                                    //     // Got interrupted (how rude!), we'll try again.
-                                    //     Err(ref err) if err.kind() == io::ErrorKind::Interrupted => {
-                                    //         return handle_event(registry, stream, event)
-                                    //     }
-                                    //     // Other errors we'll consider fatal.
-                                    //     Err(err) => return Err(err),
-                                    // }
+                        if let Ok(stream) = token_manager.get_mut_stream_with_token(&token) {
+                            if event.is_writable() {
+                                if let Some(messages) = messages_to_write.get_mut(&token) {
+                                    while let Some(msg) = messages.pop_front() {
+                                        match write_prefixed::<ServerResponse, TcpStream>(
+                                            stream, &msg,
+                                        ) {
+                                            Ok(_) => {
+                                                // Client errors are strict and result in the removal of a connection.
+                                                if let ServerResponse::ClientError(_) = msg {
+                                                    tokens_to_remove.insert(token);
+                                                }
+                                            }
+                                            Err(error) => {
+                                                // The message couldn't be sent, so we need to push it back
+                                                // onto the queue so we don't accidentally forget about it.
+                                                // This is an expensive operation but it should happen infrequently.
+                                                messages.push_front(msg);
+                                                match error.kind() {
+                                                    // `write_prefixed` uses `write_all` under the hood, so we know
+                                                    // that an Eof error means the connection was dropped.
+                                                    io::ErrorKind::UnexpectedEof => {
+                                                        tokens_to_remove.insert(token);
+                                                    }
+                                                    // Would block "errors" are the OS's way of saying that the
+                                                    // connection is not actually ready to perform this I/O operation.
+                                                    io::ErrorKind::WouldBlock => {}
+                                                    // Other errors we'll consider fatal.
+                                                    _ => bail!(error),
+                                                }
+                                                break;
+                                            }
+                                        }
+                                    }
                                 }
 
                                 if event.is_readable() {
                                     // We can (maybe) read from the connection.
                                     loop {
                                         match read_prefixed::<ClientMessage, TcpStream>(stream) {
-                                            Ok(msg) => {}
+                                            Ok(msg) => {
+                                                messages_to_process
+                                                    .entry(token)
+                                                    .or_default()
+                                                    .push_back(msg);
+                                            }
                                             // `read_prefixed` uses `read_exact` under the hood, so we know
                                             // that an Eof error means the connection was dropped.
                                             Err(ref err)
-                                                if err.kind() == io::ErrorKind::UnexpectedEof => {}
+                                                if err.kind() == io::ErrorKind::UnexpectedEof =>
+                                            {
+                                                tokens_to_remove.insert(token);
+                                            }
                                             // Would block "errors" are the OS's way of saying that the
                                             // connection is not actually ready to perform this I/O operation.
                                             Err(ref err)
@@ -404,8 +426,67 @@ pub fn run(addr: &str) -> Result<(), Error> {
                                     }
                                 }
                             }
-                            // The client was recycled.
-                            Err(error) => {}
+                        }
+                        // Process all the messages received from the clients.
+                        for (token, msgs) in messages_to_process.drain() {
+                            for msg in msgs {
+                                let result = match msg.command {
+                                    ClientCommand::Connect => {
+                                        // Check if the client wasn't able to associate its token with a username
+                                        // in time, or if that username is already taken.
+                                        match token_manager.associate_token_and_username(
+                                            token,
+                                            msg.username.clone(),
+                                        ) {
+                                            Ok(_) => {
+                                                tx_client.send(msg)?;
+                                                Ok(())
+                                            }
+                                            Err(error) => Err(error),
+                                        }
+                                    }
+                                    // Check if the client is being faithful and sending messages with
+                                    // the correct username.
+                                    _ => match token_manager.get_token_with_username(&msg.username)
+                                    {
+                                        Ok(associated_token) => {
+                                            if associated_token == token {
+                                                tx_client.send(msg)?;
+                                                Ok(())
+                                            } else {
+                                                Err(ClientError::Unassociated)
+                                            }
+                                        }
+                                        Err(error) => Err(error),
+                                    },
+                                };
+                                if let Err(error) = result {
+                                    let msg = ServerResponse::ClientError(error);
+                                    messages_to_write.entry(token).or_default().push_back(msg);
+                                }
+                            }
+                        }
+
+                        // Recycle all tokens that need to be remove, deregistering their streams
+                        // with the poll.
+                        for token in tokens_to_remove.drain() {
+                            if let Ok(username) =
+                                token_manager.get_confirmed_username_with_token(&token)
+                            {
+                                let msg = ClientMessage {
+                                    username,
+                                    command: ClientCommand::Leave,
+                                };
+                                tx_client.send(msg)?;
+                            }
+                            messages_to_write.remove(&token);
+                            if let Ok(mut stream) = token_manager.recycle_token(token) {
+                                poll.registry().deregister(&mut stream)?;
+                            }
+                        }
+                        for (token, mut stream) in token_manager.recycle_expired_tokens() {
+                            messages_to_write.remove(&token);
+                            poll.registry().deregister(&mut stream)?;
                         }
                     }
                 }

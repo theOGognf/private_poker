@@ -16,13 +16,13 @@ pub enum ClientError {
     Unassociated,
 }
 
-#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum UserState {
     Play,
     Spectate,
 }
 
-#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ClientCommand {
     ChangeState(UserState),
     Connect,
@@ -32,7 +32,7 @@ pub enum ClientCommand {
     TakeAction(Action),
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ClientMessage {
     pub username: String,
     pub command: ClientCommand,
