@@ -280,11 +280,11 @@ pub fn run(addr: &str) -> Result<(), Error> {
                             // client's username has already been confirmed by the parent
                             // thread.
                             if msg.command == ClientCommand::Connect {
-                                let disconnected =
-                                    match token_manager.get_token_with_username(&msg.username) {
-                                        Ok(token) => token_manager.confirm_username(token).is_err(),
-                                        Err(_) => true,
-                                    };
+                                let disconnected = token_manager
+                                    .get_token_with_username(&msg.username)
+                                    .map_or(true, |token| {
+                                        token_manager.confirm_username(token).is_err()
+                                    });
                                 // The client disconnected before the server could confirm their
                                 // username even though the username was OK. A bit of an edge case,
                                 // we need to notify the main thread that they disconnected. We'll
