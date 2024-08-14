@@ -1,4 +1,5 @@
 use anyhow::{bail, Error};
+use bincode::serialize;
 use mio::{
     event::Event,
     net::{TcpListener, TcpStream},
@@ -6,7 +7,7 @@ use mio::{
 };
 use std::{
     cmp::max,
-    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
     io::{self},
     sync::mpsc::{channel, Receiver, Sender},
     thread,
@@ -58,7 +59,7 @@ impl UnconfirmedClient {
 ///   clients that have sent their usernames and those usernames have
 ///   been confirmed by the poker game.
 struct TokenManager {
-    confirmed_tokens: BTreeMap<Token, TcpStream>,
+    pub confirmed_tokens: BTreeMap<Token, TcpStream>,
     confirmed_usernames_to_tokens: HashMap<String, Token>,
     recycled_tokens: BTreeSet<Token>,
     tokens_to_usernames: BTreeMap<Token, String>,
@@ -239,6 +240,9 @@ pub fn run(addr: &str) -> Result<(), Error> {
         let mut poll = Poll::new()?;
         let mut server = TcpListener::bind(addr)?;
         let mut token_manager = TokenManager::new();
+        // Each seralized message is a ServerResponse.
+        let mut token_to_serialized_messages: HashMap<Token, VecDeque<Vec<u8>>> = HashMap::new();
+        let mut tokens_to_remove: HashSet<Token> = HashSet::new();
         poll.registry()
             .register(&mut server, SERVER, Interest::READABLE)?;
 
@@ -254,7 +258,52 @@ pub fn run(addr: &str) -> Result<(), Error> {
             }
 
             for event in events.iter() {
-                // Drain server messages here.
+                // Drain server messages received from the parent thread so
+                // they can be relayed to the respective clients.
+                while let Ok(msg) = rx_server.try_recv() {
+                    match msg {
+                        // Acks are effectively successful responses to client
+                        // messages and are relayed to all clients.
+                        ServerMessage::Ack(msg) => {
+                            // TODO: Need to process a CONNECT response w/ TokenManager
+                            let msg = ServerResponse::Ack(msg);
+                            if let Ok(serialized) = serialize(&msg) {
+                                for token in token_manager.confirmed_tokens.keys() {
+                                    token_to_serialized_messages
+                                        .entry(*token)
+                                        .or_default()
+                                        .push_back(serialized.clone());
+                                }
+                            }
+                        }
+                        // A response goes to a single client.
+                        ServerMessage::Response { username, data } => {
+                            if let Ok(token) = token_manager.get_token_with_username(&username) {
+                                if let Ok(serialized) = serialize(&*data) {
+                                    token_to_serialized_messages
+                                        .entry(token)
+                                        .or_default()
+                                        .push_back(serialized);
+                                }
+                            }
+                        }
+                        // Views go to all clients.
+                        ServerMessage::Views(mut views) => {
+                            for (username, view) in views.drain() {
+                                if let Ok(token) = token_manager.get_token_with_username(&username)
+                                {
+                                    let msg = ServerResponse::GameView(view);
+                                    if let Ok(serialized) = serialize(&msg) {
+                                        token_to_serialized_messages
+                                            .entry(token)
+                                            .or_default()
+                                            .push_back(serialized);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
 
                 match event.token() {
                     SERVER => loop {

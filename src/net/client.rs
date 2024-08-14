@@ -20,7 +20,7 @@ impl Client {
             command: ClientCommand::ChangeState(state),
         };
         utils::write_prefixed(&mut self.stream, &msg)?;
-        self.recv_view()
+        Client::recv_view(&mut self.stream)
     }
 
     pub fn connect(addr: &str, username: &str) -> Result<(Self, GameView), Error> {
@@ -31,19 +31,26 @@ impl Client {
             command: ClientCommand::Connect,
         };
         utils::write_prefixed(&mut stream, &msg)?;
+        // First receive the ack that the connection is OK.
         match utils::read_prefixed::<ServerResponse, TcpStream>(&mut stream) {
+            Ok(ServerResponse::Ack(_)) => {}
             Ok(ServerResponse::ClientError(error)) => bail!(error),
-            Ok(ServerResponse::GameView(view)) => Ok((
+            Ok(ServerResponse::GameView(_)) => bail!("Invalid server response."),
+            Ok(ServerResponse::TurnSignal(_)) => {
+                bail!("Invalid server response.")
+            }
+            Ok(ServerResponse::UserError(error)) => bail!(error),
+            Err(error) => bail!(error),
+        }
+        // Then receive the game view.
+        match Client::recv_view(&mut stream) {
+            Ok(view) => Ok((
                 Self {
                     username: username.to_string(),
                     stream,
                 },
                 view,
             )),
-            Ok(ServerResponse::TurnSignal(_)) => {
-                bail!("Invalid server response.")
-            }
-            Ok(ServerResponse::UserError(error)) => bail!(error),
             Err(error) => bail!(error),
         }
     }
@@ -56,8 +63,11 @@ impl Client {
         }
     }
 
-    fn recv_view(&mut self) -> Result<GameView, Error> {
-        match utils::read_prefixed::<ServerResponse, TcpStream>(&mut self.stream) {
+    fn recv_view(stream: &mut TcpStream) -> Result<GameView, Error> {
+        match utils::read_prefixed::<ServerResponse, TcpStream>(stream) {
+            Ok(ServerResponse::Ack(_)) => {
+                bail!("Invalid server response.")
+            }
             Ok(ServerResponse::ClientError(error)) => bail!(error),
             Ok(ServerResponse::GameView(view)) => Ok(view),
             Ok(ServerResponse::TurnSignal(_)) => {
@@ -74,7 +84,7 @@ impl Client {
             command: ClientCommand::ShowHand,
         };
         utils::write_prefixed(&mut self.stream, &msg)?;
-        self.recv_view()
+        Client::recv_view(&mut self.stream)
     }
 
     pub fn start_game(&mut self) -> Result<GameView, Error> {
@@ -83,7 +93,7 @@ impl Client {
             command: ClientCommand::StartGame,
         };
         utils::write_prefixed(&mut self.stream, &msg)?;
-        self.recv_view()
+        Client::recv_view(&mut self.stream)
     }
 
     pub fn take_action(&mut self, action: Action) -> Result<GameView, Error> {
@@ -92,6 +102,6 @@ impl Client {
             command: ClientCommand::TakeAction(action),
         };
         utils::write_prefixed(&mut self.stream, &msg)?;
-        self.recv_view()
+        Client::recv_view(&mut self.stream)
     }
 }

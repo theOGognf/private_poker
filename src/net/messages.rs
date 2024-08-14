@@ -40,6 +40,7 @@ pub struct ClientMessage {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum ServerResponse {
+    Ack(ClientMessage),
     ClientError(ClientError),
     GameView(GameView),
     TurnSignal(HashSet<Action>),
