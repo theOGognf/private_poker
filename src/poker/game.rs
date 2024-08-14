@@ -1477,7 +1477,7 @@ mod tests {
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         assert!(game.is_pot_empty());
-        for i in (0..3) {
+        for i in 0..3 {
             assert_eq!(game.data.players[i].user.money, STARTING_STACK);
         }
     }
@@ -1486,7 +1486,7 @@ mod tests {
     fn early_showdown_3_decreasing_all_ins() {
         let game = init_game();
         let mut game: Game<MoveButton> = game.into();
-        for i in (0..3) {
+        for i in 0..3 {
             game.data.players[i].user.money = STARTING_STACK * (3 - i as u32);
         }
         let game: Game<CollectBlinds> = game.into();
@@ -1532,7 +1532,7 @@ mod tests {
     fn early_showdown_3_increasing_all_ins() {
         let game = init_game();
         let mut game: Game<MoveButton> = game.into();
-        for i in (0..3) {
+        for i in 0..3 {
             game.data.players[i].user.money = STARTING_STACK * (i as u32 + 1);
         }
         let game: Game<CollectBlinds> = game.into();
@@ -1713,7 +1713,7 @@ mod tests {
         assert!(game.contains_player("1"));
         assert!(game.contains_player("2"));
         let game: Game<UpdateBlinds> = game.into();
-        for i in (0..2) {
+        for i in 0..2 {
             assert_eq!(
                 game.data.players[i].user.money,
                 STARTING_STACK + STARTING_STACK / 2
@@ -1746,7 +1746,7 @@ mod tests {
         assert!(game.contains_player("1"));
         assert!(game.contains_player("2"));
         let game: Game<UpdateBlinds> = game.into();
-        for i in (0..2) {
+        for i in 0..2 {
             assert_eq!(
                 game.data.players[i].user.money,
                 STARTING_STACK + STARTING_STACK / 2
