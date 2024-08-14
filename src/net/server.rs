@@ -147,10 +147,6 @@ impl TokenManager {
         }
     }
 
-    pub fn is_confirmed(&self, token: &Token) -> bool {
-        self.confirmed_tokens.contains_key(token)
-    }
-
     pub fn new() -> Self {
         Self {
             confirmed_tokens: BTreeMap::new(),
@@ -265,10 +261,10 @@ pub fn run(addr: &str) -> Result<(), Error> {
 
         loop {
             if let Err(error) = poll.poll(&mut events, Some(SERVER_POLL_TIMEOUT)) {
-                if error.kind() == io::ErrorKind::Interrupted {
-                    continue;
+                match error.kind() {
+                    io::ErrorKind::Interrupted => continue,
+                    _ => bail!(error),
                 }
-                bail!(error);
             }
 
             for event in events.iter() {
@@ -336,17 +332,17 @@ pub fn run(addr: &str) -> Result<(), Error> {
                         // indicates we can accept a connection.
                         let mut stream = match server.accept() {
                             Ok((stream, _)) => stream,
-                            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                                // If we get a `WouldBlock` error we know our
-                                // listener has no more incoming connections queued,
-                                // so we can return to polling and wait for some
-                                // more.
-                                break;
-                            }
                             Err(error) => {
-                                // If it was any other kind of error, something went
-                                // wrong and we terminate with an error.
-                                bail!(error);
+                                match error.kind() {
+                                    // If we get a `WouldBlock` error we know our
+                                    // listener has no more incoming connections queued,
+                                    // so we can return to polling and wait for some
+                                    // more.
+                                    io::ErrorKind::WouldBlock => break,
+                                    // If it was any other kind of error, something went
+                                    // wrong and we should terminate.
+                                    _ => bail!(error),
+                                }
                             }
                         };
 
@@ -376,7 +372,7 @@ pub fn run(addr: &str) -> Result<(), Error> {
                                             Err(error) => {
                                                 // The message couldn't be sent, so we need to push it back
                                                 // onto the queue so we don't accidentally forget about it.
-                                                // This is an expensive operation but it should happen infrequently.
+                                                // This is an expensive and infrequent operation.
                                                 messages.push_front(msg);
                                                 match error.kind() {
                                                     // `write_prefixed` uses `write_all` under the hood, so we know
@@ -406,22 +402,21 @@ pub fn run(addr: &str) -> Result<(), Error> {
                                                     .or_default()
                                                     .push_back(msg);
                                             }
-                                            // `read_prefixed` uses `read_exact` under the hood, so we know
-                                            // that an Eof error means the connection was dropped.
-                                            Err(ref err)
-                                                if err.kind() == io::ErrorKind::UnexpectedEof =>
-                                            {
-                                                tokens_to_remove.insert(token);
+                                            Err(error) => {
+                                                match error.kind() {
+                                                    // `read_prefixed` uses `read_exact` under the hood, so we know
+                                                    // that an Eof error means the connection was dropped.
+                                                    io::ErrorKind::UnexpectedEof => {
+                                                        tokens_to_remove.insert(token);
+                                                    }
+                                                    // Would block "errors" are the OS's way of saying that the
+                                                    // connection is not actually ready to perform this I/O operation.
+                                                    io::ErrorKind::WouldBlock => {}
+                                                    // Other errors we'll consider fatal.
+                                                    _ => bail!(error),
+                                                }
+                                                break;
                                             }
-                                            // Would block "errors" are the OS's way of saying that the
-                                            // connection is not actually ready to perform this I/O operation.
-                                            Err(ref err)
-                                                if err.kind() == io::ErrorKind::WouldBlock =>
-                                            {
-                                                break
-                                            }
-                                            // Other errors we'll consider fatal.
-                                            Err(err) => bail!(err),
                                         }
                                     }
                                 }
@@ -431,27 +426,16 @@ pub fn run(addr: &str) -> Result<(), Error> {
                         for (token, msgs) in messages_to_process.drain() {
                             for msg in msgs {
                                 let result = match msg.command {
-                                    ClientCommand::Connect => {
-                                        // Check if the client wasn't able to associate its token with a username
-                                        // in time, or if that username is already taken.
-                                        match token_manager.associate_token_and_username(
-                                            token,
-                                            msg.username.clone(),
-                                        ) {
-                                            Ok(_) => {
-                                                tx_client.send(msg)?;
-                                                Ok(())
-                                            }
-                                            Err(error) => Err(error),
-                                        }
-                                    }
+                                    // Check if the client wasn't able to associate its token with a username
+                                    // in time, or if that username is already taken.
+                                    ClientCommand::Connect => token_manager
+                                        .associate_token_and_username(token, msg.username.clone()),
                                     // Check if the client is being faithful and sending messages with
                                     // the correct username.
                                     _ => match token_manager.get_token_with_username(&msg.username)
                                     {
                                         Ok(associated_token) => {
-                                            if associated_token == token {
-                                                tx_client.send(msg)?;
+                                            if token == associated_token {
                                                 Ok(())
                                             } else {
                                                 Err(ClientError::Unassociated)
@@ -460,9 +444,12 @@ pub fn run(addr: &str) -> Result<(), Error> {
                                         Err(error) => Err(error),
                                     },
                                 };
-                                if let Err(error) = result {
-                                    let msg = ServerResponse::ClientError(error);
-                                    messages_to_write.entry(token).or_default().push_back(msg);
+                                match result {
+                                    Ok(_) => tx_client.send(msg)?,
+                                    Err(error) => {
+                                        let msg = ServerResponse::ClientError(error);
+                                        messages_to_write.entry(token).or_default().push_back(msg);
+                                    }
                                 }
                             }
                         }
