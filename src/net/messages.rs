@@ -4,7 +4,7 @@ use crate::poker::{entities::Action, game::UserError};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-#[derive(Debug, Eq, Deserialize, thiserror::Error, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, Eq, thiserror::Error, PartialEq, Serialize)]
 pub enum ClientError {
     #[error("Username already associated.")]
     AlreadyAssociated,
@@ -16,13 +16,13 @@ pub enum ClientError {
     Unassociated,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum UserState {
     Play,
     Spectate,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ClientCommand {
     ChangeState(UserState),
     Connect,

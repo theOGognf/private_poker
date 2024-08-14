@@ -93,20 +93,24 @@ impl TokenManager {
         }
     }
 
-    pub fn confirm_username(&mut self, username: String) -> Result<(), ClientError> {
-        match self.unconfirmed_usernames_to_tokens.remove(&username) {
-            Some(token) => match self.unconfirmed_tokens.remove(&token) {
-                Some(unconfirmed_client) => {
-                    self.confirmed_tokens
-                        .insert(token, unconfirmed_client.stream);
-                    self.confirmed_usernames_to_tokens.insert(username, token);
-                    Ok(())
-                }
-                None => unreachable!(
-                    "An unconfirmed username always corresponds to an unconfirmed token."
-                ),
-            },
-            None => Err(ClientError::Unassociated),
+    pub fn confirm_username(&mut self, token: Token) -> Result<(), ClientError> {
+        if let Some(username) = self.tokens_to_usernames.get(&token) {
+            match self.unconfirmed_usernames_to_tokens.remove_entry(username) {
+                Some((username, token)) => match self.unconfirmed_tokens.remove(&token) {
+                    Some(unconfirmed_client) => {
+                        self.confirmed_tokens
+                            .insert(token, unconfirmed_client.stream);
+                        self.confirmed_usernames_to_tokens.insert(username, token);
+                        Ok(())
+                    }
+                    None => unreachable!(
+                        "An unconfirmed username always corresponds to an unconfirmed token."
+                    ),
+                },
+                None => Err(ClientError::Unassociated),
+            }
+        } else {
+            Err(ClientError::Unassociated)
         }
     }
 
@@ -265,7 +269,24 @@ pub fn run(addr: &str) -> Result<(), Error> {
                         // Acks are effectively successful responses to client
                         // messages and are relayed to all clients.
                         ServerMessage::Ack(msg) => {
-                            // TODO: Need to process a CONNECT response w/ TokenManager
+                            // We only need to check this connect edge case because all other
+                            // client commands can only go through to the parent thread if the
+                            // client's username has already been confirmed by the parent
+                            // thread.
+                            if msg.command == ClientCommand::Connect {
+                                let disconnected =
+                                    match token_manager.get_token_with_username(&msg.username) {
+                                        Ok(token) => token_manager.confirm_username(token).is_err(),
+                                        Err(_) => true,
+                                    };
+                                // The client disconnected before the server could confirm their
+                                // username even though the username was OK. A bit of an edge case,
+                                // we need to notify the main thread that they disconnected. We'll
+                                // still send out the acknowledgement that they connected as well.
+                                if disconnected {
+                                    // TODO: Send Leave command back to the parent thread.
+                                }
+                            }
                             let msg = ServerResponse::Ack(msg);
                             if let Ok(serialized) = serialize(&msg) {
                                 for token in token_manager.confirmed_tokens.keys() {
@@ -276,7 +297,9 @@ pub fn run(addr: &str) -> Result<(), Error> {
                                 }
                             }
                         }
-                        // A response goes to a single client.
+                        // A response goes to a single client. We can safely ignore cases where a
+                        // client no longer exists to receive a response because the response
+                        // is meant just for the client.
                         ServerMessage::Response { username, data } => {
                             if let Ok(token) = token_manager.get_token_with_username(&username) {
                                 if let Ok(serialized) = serialize(&*data) {
@@ -287,9 +310,11 @@ pub fn run(addr: &str) -> Result<(), Error> {
                                 }
                             }
                         }
-                        // Views go to all clients.
-                        ServerMessage::Views(mut views) => {
-                            for (username, view) in views.drain() {
+                        // Views go to all clients. We can safely ignore cases where a client
+                        // no longer exists to receive a view because the view is specific
+                        // to the client.
+                        ServerMessage::Views(views) => {
+                            for (username, view) in views {
                                 if let Ok(token) = token_manager.get_token_with_username(&username)
                                 {
                                     let msg = ServerResponse::GameView(view);
