@@ -1,3 +1,4 @@
+use core::fmt;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use serde::{Deserialize, Serialize};
@@ -50,7 +51,7 @@ type UserView = User;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PlayerView {
-    name: String,
+    user: UserView,
     state: PlayerState,
     cards: Option<Vec<Card>>,
 }
@@ -75,6 +76,76 @@ pub struct GameView {
     small_blind_idx: usize,
     big_blind_idx: usize,
     next_action_idx: Option<usize>,
+}
+
+impl fmt::Display for GameView {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "Blinds:")?;
+        writeln!(f, "Small blind: ${}", self.small_blind)?;
+        writeln!(f, "Big blind: ${}", self.small_blind)?;
+
+        writeln!(f)?;
+        writeln!(f, "Spectators:")?;
+        match self.spectators.len() {
+            0 => writeln!(f, "N/A")?,
+            _ => {
+                for user in self.spectators.values() {
+                    writeln!(f, "{}", user)?;
+                }
+            }
+        };
+
+        writeln!(f)?;
+        writeln!(f, "Waitlisters:")?;
+        match self.waitlist.len() {
+            0 => writeln!(f, "N/A")?,
+            _ => {
+                for waitlister in self.waitlist.iter() {
+                    writeln!(f, "{}", waitlister)?;
+                }
+            }
+        }
+
+        writeln!(f)?;
+        writeln!(f, "Number of open seats: {}", self.open_seats.len())?;
+
+        writeln!(f)?;
+        writeln!(f, "Players:")?;
+        match self.players.len() {
+            0 => {
+                writeln!(f, "N/A")?;
+                writeln!(f)?;
+            }
+            _ => {
+                for player in self.players.iter() {
+                    write!(f, "{} | {} | ", player.user, player.state)?;
+                    match &player.cards {
+                        Some(cards) => {
+                            for card in cards.iter() {
+                                write!(f, "{} ", card)?;
+                            }
+                        }
+                        None => write!(f, "?? ?? ")?,
+                    }
+                    writeln!(f)?;
+                }
+            }
+        }
+
+        writeln!(f, "Pots:")?;
+        for pot in self.pots.iter() {
+            writeln!(f, "{}", pot.size)?;
+        }
+
+        writeln!(f)?;
+        write!(f, "Board: ")?;
+        for card in self.board.iter() {
+            write!(f, "{} ", card)?;
+        }
+
+        writeln!(f)?;
+        Ok(())
+    }
 }
 
 pub type GameViews = HashMap<String, GameView>;
@@ -243,7 +314,7 @@ impl<T> Game<T> {
                 None
             };
             let player_view = PlayerView {
-                name: player.user.name.clone(),
+                user: player.user.clone(),
                 state: player.state.clone(),
                 cards,
             };
@@ -1144,8 +1215,8 @@ impl From<Game<DistributePot>> for Game<ShowHands> {
                         cards.sort_unstable();
                         // Add ace highs to the hand for evaluation.
                         for card_idx in 0..4 {
-                            if let (1u8, suit) = cards[card_idx] {
-                                cards.push((14u8, suit));
+                            if let Card(1, suit) = cards[card_idx] {
+                                cards.push(Card(14, suit));
                             }
                         }
                         functional::eval(&cards)
@@ -1328,7 +1399,7 @@ impl From<Game<BootPlayers>> for Game<Lobby> {
 mod tests {
     use std::collections::HashSet;
 
-    use crate::poker::entities::{Action, Suit, STARTING_STACK};
+    use crate::poker::entities::{Action, Card, Suit, STARTING_STACK};
     use crate::poker::game::{
         DistributePot, DivideDonations, Lobby, RemovePlayers, TakeAction, UpdateBlinds,
         MIN_BIG_BLIND, MIN_SMALL_BLIND,
@@ -1442,16 +1513,16 @@ mod tests {
         let mut game = init_game_at_showdown_with_2_all_ins();
         // Gotta replace all the cards to make the showdown result
         // deterministic. Also test out a tricky scenario: the ace
-        // (as 1u8) counts as a high ace as well, so seat 1 wins
+        // (as 1) counts as a high ace as well, so seat 1 wins
         // the showdown with a higher flush.
         game.data.board = vec![
-            (4u8, Suit::Diamond),
-            (5u8, Suit::Diamond),
-            (6u8, Suit::Diamond),
-            (7u8, Suit::Diamond),
+            Card(4, Suit::Diamond),
+            Card(5, Suit::Diamond),
+            Card(6, Suit::Diamond),
+            Card(7, Suit::Diamond),
         ];
-        game.data.players[1].cards = vec![(1u8, Suit::Diamond), (7u8, Suit::Heart)];
-        game.data.players[2].cards = vec![(2u8, Suit::Diamond), (5u8, Suit::Heart)];
+        game.data.players[1].cards = vec![Card(1, Suit::Diamond), Card(7, Suit::Heart)];
+        game.data.players[2].cards = vec![Card(2, Suit::Diamond), Card(5, Suit::Heart)];
         let game: Game<ShowHands> = game;
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
@@ -1465,14 +1536,14 @@ mod tests {
     fn early_showdown_2_winners() {
         let mut game = init_game_at_showdown_with_2_all_ins();
         game.data.board = vec![
-            (2u8, Suit::Diamond),
-            (4u8, Suit::Diamond),
-            (5u8, Suit::Diamond),
-            (6u8, Suit::Diamond),
-            (7u8, Suit::Diamond),
+            Card(2, Suit::Diamond),
+            Card(4, Suit::Diamond),
+            Card(5, Suit::Diamond),
+            Card(6, Suit::Diamond),
+            Card(7, Suit::Diamond),
         ];
-        game.data.players[1].cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
-        game.data.players[2].cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
+        game.data.players[1].cards = vec![Card(1, Suit::Heart), Card(7, Suit::Heart)];
+        game.data.players[2].cards = vec![Card(2, Suit::Heart), Card(5, Suit::Heart)];
         let game: Game<ShowHands> = game;
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
@@ -1508,15 +1579,15 @@ mod tests {
         let game: Game<River> = game.into();
         let mut game: Game<ShowHands> = game.into();
         game.data.board = vec![
-            (1u8, Suit::Spade),
-            (4u8, Suit::Diamond),
-            (5u8, Suit::Diamond),
-            (6u8, Suit::Diamond),
-            (7u8, Suit::Diamond),
+            Card(1, Suit::Spade),
+            Card(4, Suit::Diamond),
+            Card(5, Suit::Diamond),
+            Card(6, Suit::Diamond),
+            Card(7, Suit::Diamond),
         ];
-        game.data.players[0].cards = vec![(3u8, Suit::Heart), (11u8, Suit::Diamond)];
-        game.data.players[1].cards = vec![(1u8, Suit::Heart), (10u8, Suit::Diamond)];
-        game.data.players[2].cards = vec![(2u8, Suit::Heart), (9u8, Suit::Diamond)];
+        game.data.players[0].cards = vec![Card(3, Suit::Heart), Card(1, Suit::Diamond)];
+        game.data.players[1].cards = vec![Card(1, Suit::Heart), Card(10, Suit::Diamond)];
+        game.data.players[2].cards = vec![Card(2, Suit::Heart), Card(9, Suit::Diamond)];
         let game: Game<ShowHands> = game;
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
@@ -1562,15 +1633,15 @@ mod tests {
         let game: Game<River> = game.into();
         let mut game: Game<ShowHands> = game.into();
         game.data.board = vec![
-            (1u8, Suit::Spade),
-            (4u8, Suit::Diamond),
-            (5u8, Suit::Diamond),
-            (6u8, Suit::Diamond),
-            (7u8, Suit::Diamond),
+            Card(1, Suit::Spade),
+            Card(4, Suit::Diamond),
+            Card(5, Suit::Diamond),
+            Card(6, Suit::Diamond),
+            Card(7, Suit::Diamond),
         ];
-        game.data.players[0].cards = vec![(3u8, Suit::Heart), (11u8, Suit::Diamond)];
-        game.data.players[1].cards = vec![(1u8, Suit::Heart), (10u8, Suit::Diamond)];
-        game.data.players[2].cards = vec![(2u8, Suit::Heart), (9u8, Suit::Diamond)];
+        game.data.players[0].cards = vec![Card(3, Suit::Heart), Card(1, Suit::Diamond)];
+        game.data.players[1].cards = vec![Card(1, Suit::Heart), Card(10, Suit::Diamond)];
+        game.data.players[2].cards = vec![Card(2, Suit::Heart), Card(9, Suit::Diamond)];
         let game: Game<ShowHands> = game;
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
@@ -1670,15 +1741,15 @@ mod tests {
     fn prepare_for_next_game() {
         let mut game = init_game_at_showdown_with_3_all_ins();
         game.data.board = vec![
-            (1u8, Suit::Spade),
-            (4u8, Suit::Diamond),
-            (5u8, Suit::Diamond),
-            (6u8, Suit::Diamond),
-            (7u8, Suit::Diamond),
+            Card(1, Suit::Spade),
+            Card(4, Suit::Diamond),
+            Card(5, Suit::Diamond),
+            Card(6, Suit::Diamond),
+            Card(7, Suit::Diamond),
         ];
-        game.data.players[0].cards = vec![(3u8, Suit::Heart), (8u8, Suit::Diamond)];
-        game.data.players[1].cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
-        game.data.players[2].cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
+        game.data.players[0].cards = vec![Card(3, Suit::Heart), Card(8, Suit::Diamond)];
+        game.data.players[1].cards = vec![Card(1, Suit::Heart), Card(7, Suit::Heart)];
+        game.data.players[2].cards = vec![Card(2, Suit::Heart), Card(5, Suit::Heart)];
         let game: Game<ShowHands> = game;
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
@@ -1695,14 +1766,14 @@ mod tests {
     fn remove_player() {
         let mut game = init_game_at_showdown_with_2_all_ins();
         game.data.board = vec![
-            (2u8, Suit::Diamond),
-            (4u8, Suit::Diamond),
-            (5u8, Suit::Diamond),
-            (6u8, Suit::Diamond),
-            (7u8, Suit::Diamond),
+            Card(2, Suit::Diamond),
+            Card(4, Suit::Diamond),
+            Card(5, Suit::Diamond),
+            Card(6, Suit::Diamond),
+            Card(7, Suit::Diamond),
         ];
-        game.data.players[1].cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
-        game.data.players[2].cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
+        game.data.players[1].cards = vec![Card(1, Suit::Heart), Card(7, Suit::Heart)];
+        game.data.players[2].cards = vec![Card(2, Suit::Heart), Card(5, Suit::Heart)];
         let game: Game<ShowHands> = game;
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
@@ -1728,14 +1799,14 @@ mod tests {
     fn remove_player_with_queue() {
         let mut game = init_game_at_showdown_with_2_all_ins();
         game.data.board = vec![
-            (2u8, Suit::Diamond),
-            (4u8, Suit::Diamond),
-            (5u8, Suit::Diamond),
-            (6u8, Suit::Diamond),
-            (7u8, Suit::Diamond),
+            Card(2, Suit::Diamond),
+            Card(4, Suit::Diamond),
+            Card(5, Suit::Diamond),
+            Card(6, Suit::Diamond),
+            Card(7, Suit::Diamond),
         ];
-        game.data.players[1].cards = vec![(1u8, Suit::Heart), (7u8, Suit::Heart)];
-        game.data.players[2].cards = vec![(2u8, Suit::Heart), (5u8, Suit::Heart)];
+        game.data.players[1].cards = vec![Card(1, Suit::Heart), Card(7, Suit::Heart)];
+        game.data.players[2].cards = vec![Card(2, Suit::Heart), Card(5, Suit::Heart)];
         game.remove_user("0").unwrap();
         let game: Game<ShowHands> = game;
         let game: Game<DistributePot> = game.into();

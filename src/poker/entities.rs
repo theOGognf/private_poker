@@ -31,7 +31,21 @@ impl fmt::Display for Suit {
 
 /// A card is a tuple of a uInt8 value (ace=1u8 ... ace=14u8)
 /// and a suit. A joker is depicted as 0u8.
-pub type Card = (u8, Suit);
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct Card(pub u8, pub Suit);
+
+impl fmt::Display for Card {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let value = match self.0 {
+            1 | 14 => "A",
+            11 => "J",
+            12 => "Q",
+            13 => "K",
+            v => &v.to_string(),
+        };
+        write!(f, "{} {}", value, self.1)
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Rank {
@@ -81,6 +95,12 @@ impl User {
             name,
             money: STARTING_STACK,
         }
+    }
+}
+
+impl fmt::Display for User {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}: ${}", self.name, self.money)
     }
 }
 
@@ -166,6 +186,17 @@ pub enum PlayerState {
     Fold,
     // Player shows their cards at the end of the game.
     Show,
+}
+
+impl fmt::Display for PlayerState {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            PlayerState::Wait => write!(f, "waiting"),
+            PlayerState::AllIn => write!(f, "all-in"),
+            PlayerState::Fold => write!(f, "folded"),
+            PlayerState::Show => write!(f, "showing"),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

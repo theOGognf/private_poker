@@ -35,11 +35,10 @@ impl Client {
         match utils::read_prefixed::<ServerResponse, TcpStream>(&mut stream) {
             Ok(ServerResponse::Ack(_)) => {}
             Ok(ServerResponse::ClientError(error)) => bail!(error),
-            Ok(ServerResponse::GameView(_)) => bail!("Invalid server response."),
-            Ok(ServerResponse::TurnSignal(_)) => {
-                bail!("Invalid server response.")
-            }
             Ok(ServerResponse::UserError(error)) => bail!(error),
+            Ok(response) => {
+                bail!("Invalid server response: {response}.")
+            }
             Err(error) => bail!(error),
         }
         // Then receive the game view.
@@ -65,15 +64,12 @@ impl Client {
 
     fn recv_view(stream: &mut TcpStream) -> Result<GameView, Error> {
         match utils::read_prefixed::<ServerResponse, TcpStream>(stream) {
-            Ok(ServerResponse::Ack(_)) => {
-                bail!("Invalid server response.")
-            }
             Ok(ServerResponse::ClientError(error)) => bail!(error),
             Ok(ServerResponse::GameView(view)) => Ok(view),
-            Ok(ServerResponse::TurnSignal(_)) => {
-                bail!("Invalid server response.")
-            }
             Ok(ServerResponse::UserError(error)) => bail!(error),
+            Ok(response) => {
+                bail!("Invalid server response: {response}.")
+            }
             Err(error) => bail!(error),
         }
     }

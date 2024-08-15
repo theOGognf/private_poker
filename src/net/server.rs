@@ -370,19 +370,30 @@ pub fn run(addr: &str) -> Result<(), Error> {
                                                 }
                                             }
                                             Err(error) => {
-                                                // The message couldn't be sent, so we need to push it back
-                                                // onto the queue so we don't accidentally forget about it.
-                                                // This is an expensive and infrequent operation.
-                                                messages.push_front(msg);
                                                 match error.kind() {
                                                     // `write_prefixed` uses `write_all` under the hood, so we know
-                                                    // that an Eof error means the connection was dropped.
-                                                    io::ErrorKind::UnexpectedEof => {
+                                                    // that if any of these occur, then the connection was probably
+                                                    // dropped at some point.
+                                                    io::ErrorKind::BrokenPipe
+                                                    | io::ErrorKind::ConnectionAborted
+                                                    | io::ErrorKind::ConnectionReset
+                                                    | io::ErrorKind::TimedOut
+                                                    | io::ErrorKind::UnexpectedEof => {
                                                         tokens_to_remove.insert(token);
                                                     }
                                                     // Would block "errors" are the OS's way of saying that the
                                                     // connection is not actually ready to perform this I/O operation.
-                                                    io::ErrorKind::WouldBlock => {}
+                                                    io::ErrorKind::WouldBlock => {
+                                                        // The message couldn't be sent, so we need to push it back
+                                                        // onto the queue so we don't accidentally forget about it.
+                                                        messages.push_front(msg);
+                                                    }
+                                                    // Retry writing in the case that the full message couldn't
+                                                    // be written. This should be infrequent.
+                                                    io::ErrorKind::WriteZero => {
+                                                        messages.push_front(msg);
+                                                        continue;
+                                                    }
                                                     // Other errors we'll consider fatal.
                                                     _ => bail!(error),
                                                 }
@@ -406,7 +417,11 @@ pub fn run(addr: &str) -> Result<(), Error> {
                                                 match error.kind() {
                                                     // `read_prefixed` uses `read_exact` under the hood, so we know
                                                     // that an Eof error means the connection was dropped.
-                                                    io::ErrorKind::UnexpectedEof => {
+                                                    io::ErrorKind::BrokenPipe
+                                                    | io::ErrorKind::ConnectionAborted
+                                                    | io::ErrorKind::ConnectionReset
+                                                    | io::ErrorKind::TimedOut
+                                                    | io::ErrorKind::UnexpectedEof => {
                                                         tokens_to_remove.insert(token);
                                                     }
                                                     // Would block "errors" are the OS's way of saying that the
