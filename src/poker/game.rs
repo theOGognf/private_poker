@@ -84,6 +84,7 @@ impl fmt::Display for GameView {
         writeln!(f, "Small blind: ${}", self.small_blind)?;
         writeln!(f, "Big blind: ${}", self.small_blind)?;
 
+        // Display users just spectating the game.
         writeln!(f)?;
         writeln!(f, "Spectators:")?;
         match self.spectators.len() {
@@ -95,6 +96,7 @@ impl fmt::Display for GameView {
             }
         };
 
+        // Display users in queue to play.
         writeln!(f)?;
         writeln!(f, "Waitlisters:")?;
         match self.waitlist.len() {
@@ -106,9 +108,11 @@ impl fmt::Display for GameView {
             }
         }
 
+        // Display number of open seats.
         writeln!(f)?;
         writeln!(f, "Number of open seats: {}", self.open_seats.len())?;
 
+        // Display all players.
         writeln!(f)?;
         writeln!(f, "Players:")?;
         match self.players.len() {
@@ -132,15 +136,30 @@ impl fmt::Display for GameView {
             }
         }
 
+        // Display all pots.
         writeln!(f, "Pots:")?;
-        for pot in self.pots.iter() {
-            writeln!(f, "{}", pot.size)?;
+        match self.pots.len() {
+            0 => writeln!(f, "N/A")?,
+            _ => {
+                for (mut i, pot) in self.pots.iter().enumerate() {
+                    i += 1;
+                    writeln!(f, "Pot {}: ${}", i, pot.size)?;
+                }
+            }
         }
 
+        // Display community cards (cards on the board).
         writeln!(f)?;
         write!(f, "Board: ")?;
         for card in self.board.iter() {
             write!(f, "{} ", card)?;
+        }
+
+        // Display whose turn it is if it's someone's turn.
+        if let Some(next_action_idx) = self.next_action_idx {
+            let player = &self.players[next_action_idx];
+            writeln!(f)?;
+            writeln!(f, "{}'s turn", player.user.name)?;
         }
 
         writeln!(f)?;
