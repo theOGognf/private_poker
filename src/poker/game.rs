@@ -81,7 +81,6 @@ pub struct GameView {
 impl fmt::Display for GameView {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f)?;
-        writeln!(f, "Blinds:")?;
         writeln!(f, "Small blind: ${}", self.small_blind)?;
         writeln!(f, "Big blind: ${}", self.small_blind)?;
 
