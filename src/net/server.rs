@@ -422,60 +422,68 @@ pub fn run(addr: &str) -> Result<(), Error> {
                                 }
                             }
                         }
-                        // Process all the messages received from the clients.
-                        for (token, msgs) in messages_to_process.drain() {
-                            for msg in msgs {
-                                let result = match msg.command {
-                                    // Check if the client wasn't able to associate its token with a username
-                                    // in time, or if that username is already taken.
-                                    ClientCommand::Connect => token_manager
-                                        .associate_token_and_username(token, msg.username.clone()),
-                                    // Check if the client is being faithful and sending messages with
-                                    // the correct username.
-                                    _ => match token_manager.get_token_with_username(&msg.username)
-                                    {
-                                        Ok(associated_token) => {
-                                            if token == associated_token {
-                                                Ok(())
-                                            } else {
-                                                Err(ClientError::Unassociated)
-                                            }
-                                        }
-                                        Err(error) => Err(error),
-                                    },
-                                };
-                                match result {
-                                    Ok(_) => tx_client.send(msg)?,
-                                    Err(error) => {
-                                        let msg = ServerResponse::ClientError(error);
-                                        messages_to_write.entry(token).or_default().push_back(msg);
+                    }
+                }
+
+                // Need to handle the case where there's an unresponsive or
+                // misbehaving client that doesn't let us write messages to
+                // them. If their message queue reaches a certain size, queue
+                // them for removal.
+                for (token, msgs) in messages_to_write.iter() {
+                    if msgs.len() >= MAX_NETWORK_EVENTS {
+                        tokens_to_remove.insert(*token);
+                    }
+                }
+
+                // Process all the messages received from the clients.
+                for (token, msgs) in messages_to_process.drain() {
+                    for msg in msgs {
+                        let result = match msg.command {
+                            // Check if the client wasn't able to associate its token with a username
+                            // in time, or if that username is already taken.
+                            ClientCommand::Connect => token_manager
+                                .associate_token_and_username(token, msg.username.clone()),
+                            // Check if the client is being faithful and sending messages with
+                            // the correct username.
+                            _ => match token_manager.get_token_with_username(&msg.username) {
+                                Ok(associated_token) => {
+                                    if token == associated_token {
+                                        Ok(())
+                                    } else {
+                                        Err(ClientError::Unassociated)
                                     }
                                 }
+                                Err(error) => Err(error),
+                            },
+                        };
+                        match result {
+                            Ok(_) => tx_client.send(msg)?,
+                            Err(error) => {
+                                let msg = ServerResponse::ClientError(error);
+                                messages_to_write.entry(token).or_default().push_back(msg);
                             }
-                        }
-
-                        // Recycle all tokens that need to be remove, deregistering their streams
-                        // with the poll.
-                        for token in tokens_to_remove.drain() {
-                            if let Ok(username) =
-                                token_manager.get_confirmed_username_with_token(&token)
-                            {
-                                let msg = ClientMessage {
-                                    username,
-                                    command: ClientCommand::Leave,
-                                };
-                                tx_client.send(msg)?;
-                            }
-                            messages_to_write.remove(&token);
-                            if let Ok(mut stream) = token_manager.recycle_token(token) {
-                                poll.registry().deregister(&mut stream)?;
-                            }
-                        }
-                        for (token, mut stream) in token_manager.recycle_expired_tokens() {
-                            messages_to_write.remove(&token);
-                            poll.registry().deregister(&mut stream)?;
                         }
                     }
+                }
+
+                // Recycle all tokens that need to be remove, deregistering their streams
+                // with the poll.
+                for token in tokens_to_remove.drain() {
+                    if let Ok(username) = token_manager.get_confirmed_username_with_token(&token) {
+                        let msg = ClientMessage {
+                            username,
+                            command: ClientCommand::Leave,
+                        };
+                        tx_client.send(msg)?;
+                    }
+                    messages_to_write.remove(&token);
+                    if let Ok(mut stream) = token_manager.recycle_token(token) {
+                        poll.registry().deregister(&mut stream)?;
+                    }
+                }
+                for (token, mut stream) in token_manager.recycle_expired_tokens() {
+                    messages_to_write.remove(&token);
+                    poll.registry().deregister(&mut stream)?;
                 }
             }
         }
