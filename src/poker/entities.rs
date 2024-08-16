@@ -43,7 +43,7 @@ impl fmt::Display for Card {
             13 => "K",
             v => &v.to_string(),
         };
-        write!(f, "{} {}", value, self.1)
+        write!(f, "{}{}", value, self.1)
     }
 }
 
@@ -79,23 +79,14 @@ pub type Usdf = f32;
 
 // By default, a player will be cleaned if they fold 20 rounds with the big
 // blind.
-pub const STARTING_STACK: Usd = 200;
-pub const MIN_BIG_BLIND: Usd = STARTING_STACK / 20;
-pub const MIN_SMALL_BLIND: Usd = MIN_BIG_BLIND / 2;
+pub const DEFAULT_STARTING_STACK: Usd = 200;
+pub const DEFAULT_MIN_BIG_BLIND: Usd = DEFAULT_STARTING_STACK / 20;
+pub const DEFAULT_MIN_SMALL_BLIND: Usd = DEFAULT_MIN_BIG_BLIND / 2;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct User {
     pub name: String,
     pub money: Usd,
-}
-
-impl User {
-    pub fn new(name: String) -> User {
-        User {
-            name,
-            money: STARTING_STACK,
-        }
-    }
 }
 
 impl fmt::Display for User {

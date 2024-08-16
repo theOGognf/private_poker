@@ -7,10 +7,10 @@ use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use thiserror::Error;
 
 use super::{
-    constants::{MAX_PLAYERS, MAX_POTS, MAX_USERS},
+    constants::{DEFAULT_MAX_USERS, MAX_PLAYERS, MAX_POTS},
     entities::{
         Action, Bet, BetAction, Card, Player, PlayerState, Pot, SubHand, Usd, Usdf, User,
-        MIN_BIG_BLIND, MIN_SMALL_BLIND, STARTING_STACK,
+        DEFAULT_MIN_BIG_BLIND, DEFAULT_MIN_SMALL_BLIND, DEFAULT_STARTING_STACK,
     },
     functional,
 };
@@ -45,6 +45,43 @@ pub enum UserError {
     UserNotPlaying,
     #[error("User already showing hand.")]
     UserAlreadyShowingHand,
+}
+
+#[derive(Debug)]
+pub struct GameSettings {
+    starting_stack: Usd,
+    min_big_blind: Usd,
+    min_small_blind: Usd,
+    max_players: usize,
+    max_users: usize,
+    max_pots: usize,
+}
+
+impl GameSettings {
+    pub fn default() -> Self {
+        Self {
+            starting_stack: DEFAULT_STARTING_STACK,
+            min_big_blind: DEFAULT_MIN_BIG_BLIND,
+            min_small_blind: DEFAULT_MIN_SMALL_BLIND,
+            max_players: MAX_PLAYERS,
+            max_users: DEFAULT_MAX_USERS,
+            max_pots: MAX_POTS,
+        }
+    }
+
+    pub fn new(max_players: usize, max_users: usize, starting_stack: Usd) -> Self {
+        let min_big_blind = starting_stack / 20;
+        let min_small_blind = min_big_blind / 2;
+        let max_pots = max_players / 2 + 1;
+        Self {
+            starting_stack,
+            min_big_blind,
+            min_small_blind,
+            max_players,
+            max_users,
+            max_pots,
+        }
+    }
 }
 
 type UserView = User;
@@ -216,23 +253,25 @@ pub struct GameData {
     pub big_blind_idx: usize,
     starting_action_idx: usize,
     pub next_action_idx: Option<usize>,
+    settings: GameSettings,
 }
 
 impl GameData {
     fn new() -> Self {
+        let settings = GameSettings::default();
         Self {
             deck: functional::new_deck(),
             donations: 0.0,
-            small_blind: MIN_SMALL_BLIND,
-            big_blind: MIN_BIG_BLIND,
-            spectators: HashMap::with_capacity(MAX_USERS),
-            waitlist: VecDeque::with_capacity(MAX_USERS),
-            open_seats: VecDeque::from_iter(0..MAX_PLAYERS),
-            players: Vec::with_capacity(MAX_PLAYERS),
+            small_blind: settings.min_small_blind,
+            big_blind: settings.min_big_blind,
+            spectators: HashMap::with_capacity(settings.max_users),
+            waitlist: VecDeque::with_capacity(settings.max_users),
+            open_seats: VecDeque::from_iter(0..settings.max_players),
+            players: Vec::with_capacity(settings.max_players),
             board: Vec::with_capacity(5),
             num_players_active: 0,
             num_players_called: 0,
-            pots: Vec::with_capacity(MAX_POTS),
+            pots: Vec::with_capacity(settings.max_pots),
             players_to_remove: BTreeSet::new(),
             players_to_spectate: BTreeSet::new(),
             deck_idx: 0,
@@ -240,6 +279,34 @@ impl GameData {
             big_blind_idx: 1,
             starting_action_idx: 2,
             next_action_idx: None,
+            settings,
+        }
+    }
+}
+
+impl From<GameSettings> for GameData {
+    fn from(value: GameSettings) -> Self {
+        Self {
+            deck: functional::new_deck(),
+            donations: 0.0,
+            small_blind: value.min_small_blind,
+            big_blind: value.min_big_blind,
+            spectators: HashMap::with_capacity(value.max_users),
+            waitlist: VecDeque::with_capacity(value.max_users),
+            open_seats: VecDeque::from_iter(0..value.max_players),
+            players: Vec::with_capacity(value.max_players),
+            board: Vec::with_capacity(5),
+            num_players_active: 0,
+            num_players_called: 0,
+            pots: Vec::with_capacity(value.max_pots),
+            players_to_remove: BTreeSet::new(),
+            players_to_spectate: BTreeSet::new(),
+            deck_idx: 0,
+            small_blind_idx: 0,
+            big_blind_idx: 1,
+            starting_action_idx: 2,
+            next_action_idx: None,
+            settings: value,
         }
     }
 }
@@ -325,7 +392,7 @@ pub struct Game<T> {
 /// General game methods.
 impl<T> Game<T> {
     fn as_view(&self, username: &str) -> GameView {
-        let mut players = Vec::with_capacity(MAX_PLAYERS);
+        let mut players = Vec::with_capacity(self.data.settings.max_players);
         for player in self.data.players.iter() {
             let cards = if player.user.name == username || player.state == PlayerState::Show {
                 Some(player.cards.clone())
@@ -459,7 +526,7 @@ impl<T> Game<T> {
     pub fn get_num_potential_players(&self) -> usize {
         min(
             self.data.players.len() + self.data.waitlist.len(),
-            MAX_PLAYERS,
+            self.data.settings.max_players,
         )
     }
 
@@ -502,7 +569,7 @@ impl<T> Game<T> {
     /// only the board is shown until the showdown. For players, only their
     /// hand and the board is shown until the showdown.
     pub fn get_views(&self) -> GameViews {
-        let mut views = HashMap::with_capacity(MAX_USERS);
+        let mut views = HashMap::with_capacity(self.data.settings.max_users);
         for username in self
             .data
             .spectators
@@ -565,7 +632,7 @@ impl<T> Game<T> {
 
     /// Add a new user to the game, making them a spectator.
     pub fn new_user(&mut self, username: &str) -> Result<bool, UserError> {
-        if self.get_num_users() == MAX_USERS {
+        if self.get_num_users() == self.data.settings.max_users {
             return Err(UserError::CapacityReached);
         } else if self.contains_user(username) {
             // Check if player already exists but is queued for removal.
@@ -577,9 +644,13 @@ impl<T> Game<T> {
                 return Ok(false);
             }
         }
-        self.data
-            .spectators
-            .insert(username.to_string(), User::new(username.to_string()));
+        self.data.spectators.insert(
+            username.to_string(),
+            User {
+                name: username.to_string(),
+                money: self.data.settings.starting_stack,
+            },
+        );
         Ok(true)
     }
 
@@ -767,6 +838,16 @@ impl Game<Lobby> {
 
     pub fn is_ready_to_start(&self) -> bool {
         self.state.start_game && self.get_num_potential_players() >= 2
+    }
+}
+
+impl From<GameSettings> for Game<Lobby> {
+    fn from(value: GameSettings) -> Self {
+        let data: GameData = value.into();
+        Self {
+            data,
+            state: Lobby::new(),
+        }
     }
 }
 
@@ -1222,8 +1303,8 @@ impl From<Game<ShowHands>> for Game<DistributePot> {
 impl From<Game<DistributePot>> for Game<ShowHands> {
     fn from(mut value: Game<DistributePot>) -> Self {
         if let Some(mut pot) = value.data.pots.pop() {
-            let mut seats_in_pot = Vec::with_capacity(MAX_PLAYERS);
-            let mut hands_in_pot = Vec::with_capacity(MAX_PLAYERS);
+            let mut seats_in_pot = Vec::with_capacity(value.data.settings.max_players);
+            let mut hands_in_pot = Vec::with_capacity(value.data.settings.max_players);
             for (player_idx, _) in pot.investments.iter() {
                 let player = &mut value.data.players[*player_idx];
                 if player.state != PlayerState::Fold {
@@ -1376,9 +1457,9 @@ impl From<Game<UpdateBlinds>> for Game<BootPlayers> {
             .min()
             .unwrap_or(Usd::MAX);
         if min_money < Usd::MAX {
-            let multiple = max(1, min_money / STARTING_STACK);
-            value.data.small_blind = multiple * MIN_SMALL_BLIND;
-            value.data.big_blind = multiple * MIN_BIG_BLIND;
+            let multiple = max(1, min_money / value.data.settings.starting_stack);
+            value.data.small_blind = multiple * value.data.settings.min_small_blind;
+            value.data.big_blind = multiple * value.data.settings.min_big_blind;
         }
         Self {
             data: value.data,
@@ -1418,15 +1499,15 @@ impl From<Game<BootPlayers>> for Game<Lobby> {
 mod tests {
     use std::collections::HashSet;
 
-    use crate::poker::entities::{Action, Card, Suit, STARTING_STACK};
+    use crate::poker::entities::{Action, Card, Suit, DEFAULT_STARTING_STACK};
     use crate::poker::game::{
         DistributePot, DivideDonations, Lobby, RemovePlayers, TakeAction, UpdateBlinds,
-        MIN_BIG_BLIND, MIN_SMALL_BLIND,
+        DEFAULT_MIN_BIG_BLIND, DEFAULT_MIN_SMALL_BLIND,
     };
 
     use super::{
         BootPlayers, CollectBlinds, Deal, Flop, Game, MoveButton, River, SeatPlayers, ShowHands,
-        Turn, UserError, MAX_PLAYERS, MAX_USERS,
+        Turn, UserError, DEFAULT_MAX_USERS, MAX_PLAYERS,
     };
 
     fn init_game() -> Game<SeatPlayers> {
@@ -1497,8 +1578,18 @@ mod tests {
     #[test]
     fn collect_blinds() {
         let game = init_game_at_collect_blinds();
-        for (i, blind) in [0, MIN_SMALL_BLIND, MIN_BIG_BLIND].iter().enumerate() {
-            assert_eq!(game.data.players[i].user.money, STARTING_STACK - blind);
+        for (i, blind) in [
+            0,
+            game.data.settings.min_small_blind,
+            game.data.settings.min_big_blind,
+        ]
+        .iter()
+        .enumerate()
+        {
+            assert_eq!(
+                game.data.players[i].user.money,
+                game.data.settings.starting_stack - blind
+            );
         }
     }
 
@@ -1542,11 +1633,17 @@ mod tests {
         ];
         game.data.players[1].cards = vec![Card(1, Suit::Diamond), Card(7, Suit::Heart)];
         game.data.players[2].cards = vec![Card(2, Suit::Diamond), Card(5, Suit::Heart)];
-        let game: Game<ShowHands> = game;
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         assert!(game.is_pot_empty());
-        for (i, money) in [STARTING_STACK, 2 * STARTING_STACK, 0].iter().enumerate() {
+        for (i, money) in [
+            game.data.settings.starting_stack,
+            2 * game.data.settings.starting_stack,
+            0,
+        ]
+        .iter()
+        .enumerate()
+        {
             assert_eq!(game.data.players[i].user.money, *money);
         }
     }
@@ -1563,12 +1660,14 @@ mod tests {
         ];
         game.data.players[1].cards = vec![Card(1, Suit::Heart), Card(7, Suit::Heart)];
         game.data.players[2].cards = vec![Card(2, Suit::Heart), Card(5, Suit::Heart)];
-        let game: Game<ShowHands> = game;
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         assert!(game.is_pot_empty());
         for i in 0..3 {
-            assert_eq!(game.data.players[i].user.money, STARTING_STACK);
+            assert_eq!(
+                game.data.players[i].user.money,
+                game.data.settings.starting_stack
+            );
         }
     }
 
@@ -1577,7 +1676,7 @@ mod tests {
         let game = init_game();
         let mut game: Game<MoveButton> = game.into();
         for i in 0..3 {
-            game.data.players[i].user.money = STARTING_STACK * (3 - i as u32);
+            game.data.players[i].user.money = game.data.settings.starting_stack * (3 - i as u32);
         }
         let game: Game<CollectBlinds> = game.into();
         let game: Game<Deal> = game.into();
@@ -1607,13 +1706,15 @@ mod tests {
         game.data.players[0].cards = vec![Card(3, Suit::Heart), Card(1, Suit::Diamond)];
         game.data.players[1].cards = vec![Card(1, Suit::Heart), Card(10, Suit::Diamond)];
         game.data.players[2].cards = vec![Card(2, Suit::Heart), Card(9, Suit::Diamond)];
-        let game: Game<ShowHands> = game;
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         assert!(game.is_pot_empty());
-        for (i, money) in [6 * STARTING_STACK, 0, 0].iter().enumerate() {
+        for (i, money) in [6 * game.data.settings.starting_stack, 0, 0]
+            .iter()
+            .enumerate()
+        {
             assert_eq!(game.data.players[i].user.money, *money);
         }
     }
@@ -1623,7 +1724,7 @@ mod tests {
         let game = init_game();
         let mut game: Game<MoveButton> = game.into();
         for i in 0..3 {
-            game.data.players[i].user.money = STARTING_STACK * (i as u32 + 1);
+            game.data.players[i].user.money = game.data.settings.starting_stack * (i as u32 + 1);
         }
         let game: Game<CollectBlinds> = game.into();
         let game: Game<Deal> = game.into();
@@ -1661,7 +1762,6 @@ mod tests {
         game.data.players[0].cards = vec![Card(3, Suit::Heart), Card(1, Suit::Diamond)];
         game.data.players[1].cards = vec![Card(1, Suit::Heart), Card(10, Suit::Diamond)];
         game.data.players[2].cards = vec![Card(2, Suit::Heart), Card(9, Suit::Diamond)];
-        let game: Game<ShowHands> = game;
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         let game: Game<DistributePot> = game.into();
@@ -1669,9 +1769,13 @@ mod tests {
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         assert!(game.is_pot_empty());
-        for (i, money) in [3 * STARTING_STACK, 2 * STARTING_STACK, STARTING_STACK]
-            .iter()
-            .enumerate()
+        for (i, money) in [
+            3 * game.data.settings.starting_stack,
+            2 * game.data.settings.starting_stack,
+            game.data.settings.starting_stack,
+        ]
+        .iter()
+        .enumerate()
         {
             assert_eq!(game.data.players[i].user.money, *money);
         }
@@ -1715,7 +1819,7 @@ mod tests {
         game.remove_user(username).unwrap();
         assert!(!game.contains_user(username));
 
-        for i in 0..MAX_USERS {
+        for i in 0..game.data.settings.max_users {
             game.new_user(&i.to_string()).unwrap();
         }
         assert_eq!(game.new_user(username), Err(UserError::CapacityReached));
@@ -1739,7 +1843,7 @@ mod tests {
     fn move_next_action_idx() {
         let game = Game::<Lobby>::new();
         let mut game: Game<SeatPlayers> = game.into();
-        for i in 0..MAX_USERS {
+        for i in 0..game.data.settings.max_users {
             let username = i.to_string();
             game.new_user(&username).unwrap();
             game.waitlist_user(&username).unwrap();
@@ -1769,14 +1873,13 @@ mod tests {
         game.data.players[0].cards = vec![Card(3, Suit::Heart), Card(8, Suit::Diamond)];
         game.data.players[1].cards = vec![Card(1, Suit::Heart), Card(7, Suit::Heart)];
         game.data.players[2].cards = vec![Card(2, Suit::Heart), Card(5, Suit::Heart)];
-        let game: Game<ShowHands> = game;
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         let game: Game<RemovePlayers> = game.into();
         let game: Game<DivideDonations> = game.into();
         let game: Game<UpdateBlinds> = game.into();
         let game: Game<BootPlayers> = game.into();
-        assert_eq!(game.data.big_blind, 3 * MIN_BIG_BLIND);
+        assert_eq!(game.data.big_blind, 3 * game.data.settings.min_big_blind);
         let game: Game<Lobby> = game.into();
         assert_eq!(game.get_num_players(), 1);
     }
@@ -1793,7 +1896,6 @@ mod tests {
         ];
         game.data.players[1].cards = vec![Card(1, Suit::Heart), Card(7, Suit::Heart)];
         game.data.players[2].cards = vec![Card(2, Suit::Heart), Card(5, Suit::Heart)];
-        let game: Game<ShowHands> = game;
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         let game: Game<RemovePlayers> = game.into();
@@ -1806,10 +1908,10 @@ mod tests {
         for i in 0..2 {
             assert_eq!(
                 game.data.players[i].user.money,
-                STARTING_STACK + STARTING_STACK / 2
+                game.data.settings.starting_stack + game.data.settings.starting_stack / 2
             );
         }
-        let mut expected_open_seats = Vec::from_iter(3..MAX_PLAYERS);
+        let mut expected_open_seats = Vec::from_iter(3..game.data.settings.max_players);
         expected_open_seats.push(0);
         assert_eq!(game.data.open_seats, expected_open_seats)
     }
@@ -1827,7 +1929,6 @@ mod tests {
         game.data.players[1].cards = vec![Card(1, Suit::Heart), Card(7, Suit::Heart)];
         game.data.players[2].cards = vec![Card(2, Suit::Heart), Card(5, Suit::Heart)];
         game.remove_user("0").unwrap();
-        let game: Game<ShowHands> = game;
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         let game: Game<RemovePlayers> = game.into();
@@ -1839,10 +1940,10 @@ mod tests {
         for i in 0..2 {
             assert_eq!(
                 game.data.players[i].user.money,
-                STARTING_STACK + STARTING_STACK / 2
+                game.data.settings.starting_stack + game.data.settings.starting_stack / 2
             );
         }
-        let mut expected_open_seats = Vec::from_iter(3..MAX_PLAYERS);
+        let mut expected_open_seats = Vec::from_iter(3..game.data.settings.max_players);
         expected_open_seats.push(0);
         assert_eq!(game.data.open_seats, expected_open_seats)
     }

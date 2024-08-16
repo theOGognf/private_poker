@@ -12,7 +12,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::poker::{constants::MAX_USERS, entities::Action, game::UserError, PokerState};
+use crate::poker::{
+    constants::DEFAULT_MAX_USERS,
+    entities::Action,
+    game::{GameSettings, UserError},
+    PokerState,
+};
 
 use super::{
     messages::{
@@ -23,11 +28,23 @@ use super::{
 
 pub const CLIENT_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 pub const MAX_NETWORK_EVENTS_PER_USER: usize = 6;
-pub const MAX_NETWORK_EVENTS: usize = MAX_NETWORK_EVENTS_PER_USER * MAX_USERS;
+pub const MAX_NETWORK_EVENTS: usize = MAX_NETWORK_EVENTS_PER_USER * DEFAULT_MAX_USERS;
 pub const SERVER: Token = Token(0);
 pub const SERVER_POLL_TIMEOUT: Duration = Duration::from_secs(1);
 pub const STATE_ACTION_TIMEOUT: Duration = Duration::from_secs(10);
 pub const STATE_STEP_TIMEOUT: Duration = Duration::from_secs(5);
+
+struct ServerConfig {
+    client_connect_timeout: Duration,
+    server_poll_timeout: Duration,
+    state_take_action_timeout: Duration,
+    state_step_timeout: Duration,
+}
+
+struct PokerConfig {
+    game_settings: GameSettings,
+    server_config: ServerConfig,
+}
 
 struct UnconfirmedClient {
     stream: TcpStream,
