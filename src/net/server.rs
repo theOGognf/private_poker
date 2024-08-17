@@ -13,9 +13,8 @@ use std::{
 };
 
 use crate::poker::{
-    constants::DEFAULT_MAX_USERS,
     entities::Action,
-    game::{GameSettings, UserError},
+    game::{GameConfig, UserError},
     PokerState,
 };
 
@@ -26,24 +25,55 @@ use super::{
     utils::{read_prefixed, write_prefixed},
 };
 
-pub const CLIENT_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+pub const DEFAULT_ACTION_TIMEOUT: Duration = Duration::from_secs(10);
+pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+pub const DEFAULT_POLL_TIMEOUT: Duration = Duration::from_secs(1);
+pub const DEFAULT_STEP_TIMEOUT: Duration = Duration::from_secs(5);
 pub const MAX_NETWORK_EVENTS_PER_USER: usize = 6;
-pub const MAX_NETWORK_EVENTS: usize = MAX_NETWORK_EVENTS_PER_USER * DEFAULT_MAX_USERS;
 pub const SERVER: Token = Token(0);
-pub const SERVER_POLL_TIMEOUT: Duration = Duration::from_secs(1);
-pub const STATE_ACTION_TIMEOUT: Duration = Duration::from_secs(10);
-pub const STATE_STEP_TIMEOUT: Duration = Duration::from_secs(5);
 
-struct ServerConfig {
-    client_connect_timeout: Duration,
-    server_poll_timeout: Duration,
-    state_take_action_timeout: Duration,
-    state_step_timeout: Duration,
+pub struct ServerTimeoutsConfig {
+    pub action: Duration,
+    pub connect: Duration,
+    pub poll: Duration,
+    pub step: Duration,
 }
 
-struct PokerConfig {
-    game_settings: GameSettings,
-    server_config: ServerConfig,
+impl Default for ServerTimeoutsConfig {
+    fn default() -> Self {
+        Self {
+            action: DEFAULT_ACTION_TIMEOUT,
+            connect: DEFAULT_CONNECT_TIMEOUT,
+            poll: DEFAULT_POLL_TIMEOUT,
+            step: DEFAULT_STEP_TIMEOUT,
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct PokerConfig {
+    pub game: GameConfig,
+    pub server_timeouts: ServerTimeoutsConfig,
+}
+
+impl From<GameConfig> for PokerConfig {
+    fn from(value: GameConfig) -> Self {
+        let server_config = ServerTimeoutsConfig::default();
+        Self {
+            game: value,
+            server_timeouts: server_config,
+        }
+    }
+}
+
+impl From<ServerTimeoutsConfig> for PokerConfig {
+    fn from(value: ServerTimeoutsConfig) -> Self {
+        let game_settings = GameConfig::default();
+        Self {
+            game: game_settings,
+            server_timeouts: value,
+        }
+    }
 }
 
 struct UnconfirmedClient {
@@ -77,6 +107,7 @@ struct TokenManager {
     pub confirmed_tokens: BTreeMap<Token, TcpStream>,
     confirmed_usernames_to_tokens: HashMap<String, Token>,
     recycled_tokens: BTreeSet<Token>,
+    token_association_timeout: Duration,
     tokens_to_usernames: BTreeMap<Token, String>,
     unconfirmed_tokens: BTreeMap<Token, UnconfirmedClient>,
     unconfirmed_usernames_to_tokens: HashMap<String, Token>,
@@ -164,11 +195,12 @@ impl TokenManager {
         }
     }
 
-    pub fn new() -> Self {
+    pub fn new(token_association_timeout: Duration) -> Self {
         Self {
             confirmed_tokens: BTreeMap::new(),
             confirmed_usernames_to_tokens: HashMap::new(),
             recycled_tokens: BTreeSet::new(),
+            token_association_timeout,
             tokens_to_usernames: BTreeMap::new(),
             unconfirmed_tokens: BTreeMap::new(),
             unconfirmed_usernames_to_tokens: HashMap::new(),
@@ -226,7 +258,7 @@ impl TokenManager {
             let dt = t - unknown_client.t;
             unknown_client.t = t;
             unknown_client.timeout += dt;
-            if unknown_client.timeout >= CLIENT_CONNECT_TIMEOUT {
+            if unknown_client.timeout >= self.token_association_timeout {
                 tokens_to_recycle.push_back(*token);
             }
         }
@@ -255,8 +287,9 @@ fn change_user_state(
     }
 }
 
-pub fn run(addr: &str) -> Result<(), Error> {
+pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
     let addr = addr.parse()?;
+    let max_network_events = MAX_NETWORK_EVENTS_PER_USER * config.game.max_users;
 
     let (tx_client, rx_client): (Sender<ClientMessage>, Receiver<ClientMessage>) = channel();
     let (tx_server, rx_server): (Sender<ServerMessage>, Receiver<ServerMessage>) = channel();
@@ -266,18 +299,18 @@ pub fn run(addr: &str) -> Result<(), Error> {
     // Messages from the main thread are queued for each client/user
     // connection.
     thread::spawn(move || -> Result<(), Error> {
-        let mut events = Events::with_capacity(MAX_NETWORK_EVENTS);
+        let mut events = Events::with_capacity(max_network_events);
         let mut messages_to_process: HashMap<Token, VecDeque<ClientMessage>> = HashMap::new();
         let mut messages_to_write: HashMap<Token, VecDeque<ServerResponse>> = HashMap::new();
         let mut poll = Poll::new()?;
         let mut server = TcpListener::bind(addr)?;
-        let mut token_manager = TokenManager::new();
+        let mut token_manager = TokenManager::new(config.server_timeouts.connect);
         let mut tokens_to_remove: HashSet<Token> = HashSet::new();
         poll.registry()
             .register(&mut server, SERVER, Interest::READABLE)?;
 
         loop {
-            if let Err(error) = poll.poll(&mut events, Some(SERVER_POLL_TIMEOUT)) {
+            if let Err(error) = poll.poll(&mut events, Some(config.server_timeouts.poll)) {
                 match error.kind() {
                     io::ErrorKind::Interrupted => continue,
                     _ => bail!(error),
@@ -462,7 +495,7 @@ pub fn run(addr: &str) -> Result<(), Error> {
                 // them. If their message queue reaches a certain size, queue
                 // them for removal.
                 for (token, msgs) in messages_to_write.iter() {
-                    if msgs.len() >= MAX_NETWORK_EVENTS {
+                    if msgs.len() >= max_network_events {
                         tokens_to_remove.insert(*token);
                     }
                 }
@@ -521,7 +554,7 @@ pub fn run(addr: &str) -> Result<(), Error> {
         }
     });
 
-    let mut state = PokerState::new();
+    let mut state: PokerState = config.game.into();
     loop {
         state = state.step();
 
@@ -530,7 +563,7 @@ pub fn run(addr: &str) -> Result<(), Error> {
         tx_server.send(msg)?;
 
         let mut next_action_username = state.get_next_action_username();
-        let mut timeout = STATE_STEP_TIMEOUT;
+        let mut timeout = config.server_timeouts.step;
         'command: loop {
             // Check if it's a user's turn. If so, send them a turn signal
             // and increase the timeout to give them time to make their
@@ -570,7 +603,7 @@ pub fn run(addr: &str) -> Result<(), Error> {
                     };
                     tx_server.send(msg)?;
                     next_action_username = Some(username);
-                    timeout = STATE_ACTION_TIMEOUT;
+                    timeout = config.server_timeouts.action;
                 }
                 // If it's no one's turn and there's a timeout, then we must
                 // break to update the poker state.

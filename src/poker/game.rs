@@ -48,27 +48,16 @@ pub enum UserError {
 }
 
 #[derive(Debug)]
-pub struct GameSettings {
-    starting_stack: Usd,
-    min_big_blind: Usd,
-    min_small_blind: Usd,
-    max_players: usize,
-    max_users: usize,
-    max_pots: usize,
+pub struct GameConfig {
+    pub starting_stack: Usd,
+    pub min_big_blind: Usd,
+    pub min_small_blind: Usd,
+    pub max_players: usize,
+    pub max_users: usize,
+    pub max_pots: usize,
 }
 
-impl GameSettings {
-    pub fn default() -> Self {
-        Self {
-            starting_stack: DEFAULT_STARTING_STACK,
-            min_big_blind: DEFAULT_MIN_BIG_BLIND,
-            min_small_blind: DEFAULT_MIN_SMALL_BLIND,
-            max_players: MAX_PLAYERS,
-            max_users: DEFAULT_MAX_USERS,
-            max_pots: MAX_POTS,
-        }
-    }
-
+impl GameConfig {
     pub fn new(max_players: usize, max_users: usize, starting_stack: Usd) -> Self {
         let min_big_blind = starting_stack / 20;
         let min_small_blind = min_big_blind / 2;
@@ -80,6 +69,19 @@ impl GameSettings {
             max_players,
             max_users,
             max_pots,
+        }
+    }
+}
+
+impl Default for GameConfig {
+    fn default() -> Self {
+        Self {
+            starting_stack: DEFAULT_STARTING_STACK,
+            min_big_blind: DEFAULT_MIN_BIG_BLIND,
+            min_small_blind: DEFAULT_MIN_SMALL_BLIND,
+            max_players: MAX_PLAYERS,
+            max_users: DEFAULT_MAX_USERS,
+            max_pots: MAX_POTS,
         }
     }
 }
@@ -253,12 +255,12 @@ pub struct GameData {
     pub big_blind_idx: usize,
     starting_action_idx: usize,
     pub next_action_idx: Option<usize>,
-    settings: GameSettings,
+    settings: GameConfig,
 }
 
 impl GameData {
     fn new() -> Self {
-        let settings = GameSettings::default();
+        let settings = GameConfig::default();
         Self {
             deck: functional::new_deck(),
             donations: 0.0,
@@ -284,8 +286,8 @@ impl GameData {
     }
 }
 
-impl From<GameSettings> for GameData {
-    fn from(value: GameSettings) -> Self {
+impl From<GameConfig> for GameData {
+    fn from(value: GameConfig) -> Self {
         Self {
             deck: functional::new_deck(),
             donations: 0.0,
@@ -841,8 +843,8 @@ impl Game<Lobby> {
     }
 }
 
-impl From<GameSettings> for Game<Lobby> {
-    fn from(value: GameSettings) -> Self {
+impl From<GameConfig> for Game<Lobby> {
+    fn from(value: GameConfig) -> Self {
         let data: GameData = value.into();
         Self {
             data,
@@ -1499,15 +1501,14 @@ impl From<Game<BootPlayers>> for Game<Lobby> {
 mod tests {
     use std::collections::HashSet;
 
-    use crate::poker::entities::{Action, Card, Suit, DEFAULT_STARTING_STACK};
+    use crate::poker::entities::{Action, Card, Suit};
     use crate::poker::game::{
         DistributePot, DivideDonations, Lobby, RemovePlayers, TakeAction, UpdateBlinds,
-        DEFAULT_MIN_BIG_BLIND, DEFAULT_MIN_SMALL_BLIND,
     };
 
     use super::{
         BootPlayers, CollectBlinds, Deal, Flop, Game, MoveButton, River, SeatPlayers, ShowHands,
-        Turn, UserError, DEFAULT_MAX_USERS, MAX_PLAYERS,
+        Turn, UserError,
     };
 
     fn init_game() -> Game<SeatPlayers> {

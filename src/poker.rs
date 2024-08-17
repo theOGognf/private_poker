@@ -7,9 +7,9 @@ use std::collections::HashSet;
 
 use entities::Action;
 use game::{
-    BootPlayers, CollectBlinds, Deal, DistributePot, DivideDonations, Flop, Game, GameViews, Lobby,
-    MoveButton, RemovePlayers, River, SeatPlayers, ShowHands, TakeAction, Turn, UpdateBlinds,
-    UserError,
+    BootPlayers, CollectBlinds, Deal, DistributePot, DivideDonations, Flop, Game, GameConfig,
+    GameViews, Lobby, MoveButton, RemovePlayers, River, SeatPlayers, ShowHands, TakeAction, Turn,
+    UpdateBlinds, UserError,
 };
 
 #[derive(Debug)]
@@ -240,3 +240,10 @@ macro_rules! impl_user_managers {
 }
 
 impl_user_managers!(new_user, remove_user, spectate_user, waitlist_user);
+
+impl From<GameConfig> for PokerState {
+    fn from(value: GameConfig) -> Self {
+        let game: Game<Lobby> = value.into();
+        PokerState::Lobby(game)
+    }
+}
