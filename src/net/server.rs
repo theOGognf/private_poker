@@ -14,7 +14,7 @@ use std::{
 
 use crate::poker::{
     entities::Action,
-    game::{GameConfig, UserError},
+    game::{GameSettings, UserError},
     PokerState,
 };
 
@@ -32,14 +32,14 @@ pub const DEFAULT_STEP_TIMEOUT: Duration = Duration::from_secs(5);
 pub const MAX_NETWORK_EVENTS_PER_USER: usize = 6;
 pub const SERVER: Token = Token(0);
 
-pub struct ServerTimeoutsConfig {
+pub struct ServerTimeouts {
     pub action: Duration,
     pub connect: Duration,
     pub poll: Duration,
     pub step: Duration,
 }
 
-impl Default for ServerTimeoutsConfig {
+impl Default for ServerTimeouts {
     fn default() -> Self {
         Self {
             action: DEFAULT_ACTION_TIMEOUT,
@@ -52,25 +52,25 @@ impl Default for ServerTimeoutsConfig {
 
 #[derive(Default)]
 pub struct PokerConfig {
-    pub game: GameConfig,
-    pub server_timeouts: ServerTimeoutsConfig,
+    pub game_settings: GameSettings,
+    pub server_timeouts: ServerTimeouts,
 }
 
-impl From<GameConfig> for PokerConfig {
-    fn from(value: GameConfig) -> Self {
-        let server_config = ServerTimeoutsConfig::default();
+impl From<GameSettings> for PokerConfig {
+    fn from(value: GameSettings) -> Self {
+        let server_timeouts = ServerTimeouts::default();
         Self {
-            game: value,
-            server_timeouts: server_config,
+            game_settings: value,
+            server_timeouts,
         }
     }
 }
 
-impl From<ServerTimeoutsConfig> for PokerConfig {
-    fn from(value: ServerTimeoutsConfig) -> Self {
-        let game_settings = GameConfig::default();
+impl From<ServerTimeouts> for PokerConfig {
+    fn from(value: ServerTimeouts) -> Self {
+        let game_config = GameSettings::default();
         Self {
-            game: game_settings,
+            game_settings: game_config,
             server_timeouts: value,
         }
     }
@@ -289,7 +289,7 @@ fn change_user_state(
 
 pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
     let addr = addr.parse()?;
-    let max_network_events = MAX_NETWORK_EVENTS_PER_USER * config.game.max_users;
+    let max_network_events = MAX_NETWORK_EVENTS_PER_USER * config.game_settings.max_users;
 
     let (tx_client, rx_client): (Sender<ClientMessage>, Receiver<ClientMessage>) = channel();
     let (tx_server, rx_server): (Sender<ServerMessage>, Receiver<ServerMessage>) = channel();
@@ -554,7 +554,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
         }
     });
 
-    let mut state: PokerState = config.game.into();
+    let mut state: PokerState = config.game_settings.into();
     loop {
         state = state.step();
 

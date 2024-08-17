@@ -48,7 +48,7 @@ pub enum UserError {
 }
 
 #[derive(Debug)]
-pub struct GameConfig {
+pub struct GameSettings {
     pub starting_stack: Usd,
     pub min_big_blind: Usd,
     pub min_small_blind: Usd,
@@ -57,7 +57,7 @@ pub struct GameConfig {
     pub max_pots: usize,
 }
 
-impl GameConfig {
+impl GameSettings {
     pub fn new(max_players: usize, max_users: usize, starting_stack: Usd) -> Self {
         let min_big_blind = starting_stack / 20;
         let min_small_blind = min_big_blind / 2;
@@ -73,7 +73,7 @@ impl GameConfig {
     }
 }
 
-impl Default for GameConfig {
+impl Default for GameSettings {
     fn default() -> Self {
         Self {
             starting_stack: DEFAULT_STARTING_STACK,
@@ -255,12 +255,12 @@ pub struct GameData {
     pub big_blind_idx: usize,
     starting_action_idx: usize,
     pub next_action_idx: Option<usize>,
-    settings: GameConfig,
+    settings: GameSettings,
 }
 
 impl GameData {
     fn new() -> Self {
-        let settings = GameConfig::default();
+        let settings = GameSettings::default();
         Self {
             deck: functional::new_deck(),
             donations: 0.0,
@@ -286,8 +286,8 @@ impl GameData {
     }
 }
 
-impl From<GameConfig> for GameData {
-    fn from(value: GameConfig) -> Self {
+impl From<GameSettings> for GameData {
+    fn from(value: GameSettings) -> Self {
         Self {
             deck: functional::new_deck(),
             donations: 0.0,
@@ -843,8 +843,8 @@ impl Game<Lobby> {
     }
 }
 
-impl From<GameConfig> for Game<Lobby> {
-    fn from(value: GameConfig) -> Self {
+impl From<GameSettings> for Game<Lobby> {
+    fn from(value: GameSettings) -> Self {
         let data: GameData = value.into();
         Self {
             data,
