@@ -42,6 +42,23 @@ pub enum ClientCommand {
     TakeAction(Action),
 }
 
+impl fmt::Display for ClientCommand {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self {
+            ClientCommand::ChangeState(state) => {
+                write!(f, "joined the {}s", state)
+            }
+            ClientCommand::Connect => write!(f, "connected"),
+            ClientCommand::Leave => write!(f, "left the game"),
+            ClientCommand::ShowHand => write!(f, "showed their hand"),
+            ClientCommand::StartGame => write!(f, "started the game"),
+            ClientCommand::TakeAction(action) => {
+                write!(f, "decided to {}", action)
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ClientMessage {
     pub username: String,
@@ -50,18 +67,7 @@ pub struct ClientMessage {
 
 impl fmt::Display for ClientMessage {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match &self.command {
-            ClientCommand::ChangeState(state) => {
-                write!(f, "{} joined the {}s.", self.username, state)
-            }
-            ClientCommand::Connect => write!(f, "{} connected.", self.username),
-            ClientCommand::Leave => write!(f, "{} left the game.", self.username),
-            ClientCommand::ShowHand => write!(f, "{} showed their hand.", self.username),
-            ClientCommand::StartGame => write!(f, "{} started the game.", self.username),
-            ClientCommand::TakeAction(action) => {
-                write!(f, "{} decided to {}.", self.username, action)
-            }
-        }
+        write!(f, "{} {}.", self.username, self.command)
     }
 }
 

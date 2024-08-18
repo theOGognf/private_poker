@@ -470,6 +470,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                                     io::ErrorKind::BrokenPipe
                                                     | io::ErrorKind::ConnectionAborted
                                                     | io::ErrorKind::ConnectionReset
+                                                    | io::ErrorKind::InvalidData
                                                     | io::ErrorKind::TimedOut
                                                     | io::ErrorKind::UnexpectedEof => {
                                                         tokens_to_remove.insert(token);
