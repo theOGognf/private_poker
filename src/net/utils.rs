@@ -16,10 +16,11 @@ pub fn read_prefixed<T: DeserializeOwned, R: Read>(reader: &mut R) -> io::Result
     // isn't as sketchy, but that should be pretty rare.
     let mut buf = vec![0u8; len];
     if let Err(error) = reader.read_exact(&mut buf) {
-        match error.kind() {
-            io::ErrorKind::WouldBlock => return Err(io::ErrorKind::InvalidData.into()),
-            error => return Err(error.into()),
-        }
+        let kind = match error.kind() {
+            io::ErrorKind::WouldBlock => io::ErrorKind::InvalidData,
+            error => error,
+        };
+        return Err(kind.into());
     }
 
     match deserialize(&buf) {
