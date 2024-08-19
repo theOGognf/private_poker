@@ -532,6 +532,13 @@ impl<T> Game<T> {
         )
     }
 
+    /// Return the number of pots, indicating whether to continue
+    /// showing player hands and distributing the pots, or whether
+    /// to move on to other post-game phases.
+    pub fn get_num_pots(&self) -> usize {
+        self.data.pots.len()
+    }
+
     fn get_num_users(&self) -> usize {
         self.data.spectators.len() + self.data.waitlist.len() + self.data.players.len()
     }
@@ -590,10 +597,7 @@ impl<T> Game<T> {
         self.data.num_players_active == self.data.num_players_called
     }
 
-    /// Return whether the pot is empty, signaling whether to continue
-    /// showing player hands and distributing the pots, or whether
-    /// to move on to other post-game phases.
-    pub fn is_pot_empty(&self) -> bool {
+    fn is_pot_empty(&self) -> bool {
         self.data.pots.is_empty()
     }
 
@@ -1295,46 +1299,25 @@ impl From<Game<ShowHands>> for Game<DistributePot> {
 }
 
 impl Game<DistributePot> {
-    pub fn show_hand(&mut self, username: &str) -> Result<(), UserError> {
-        match self
-            .data
-            .players
-            .iter_mut()
-            .find(|p| p.user.name == username)
-        {
-            Some(player) => {
-                if player.state != PlayerState::Show {
-                    player.state = PlayerState::Show;
-                    Ok(())
-                } else {
-                    Err(UserError::UserAlreadyShowingHand)
-                }
-            }
-            None => Err(UserError::UserNotPlaying),
-        }
-    }
-}
-
-/// Get all players in the pot that haven't folded and compare their
-/// hands to one another. Get the winning indices and distribute
-/// the pot accordingly. If there's a tie, winners are given their
-/// original investments and then split the remainder. Everyone
-/// can only lose as much as they had originally invested or as much
-/// as a winner had invested, whichever is lower. This prevents folks
-/// that went all-in, but have much more money than the winner, from
-/// losing the extra money.
-impl From<Game<DistributePot>> for Game<ShowHands> {
-    fn from(mut value: Game<DistributePot>) -> Self {
-        if let Some(mut pot) = value.data.pots.pop() {
-            let mut seats_in_pot = Vec::with_capacity(value.data.settings.max_players);
-            let mut hands_in_pot = Vec::with_capacity(value.data.settings.max_players);
+    /// Get all players in the pot that haven't folded and compare their
+    /// hands to one another. Get the winning indices and distribute
+    /// the pot accordingly. If there's a tie, winners are given their
+    /// original investments and then split the remainder. Everyone
+    /// can only lose as much as they had originally invested or as much
+    /// as a winner had invested, whichever is lower. This prevents folks
+    /// that went all-in, but have much more money than the winner, from
+    /// losing the extra money.
+    fn distribute(&mut self) {
+        if let Some(mut pot) = self.data.pots.pop() {
+            let mut seats_in_pot = Vec::with_capacity(self.data.settings.max_players);
+            let mut hands_in_pot = Vec::with_capacity(self.data.settings.max_players);
             for (player_idx, _) in pot.investments.iter() {
-                let player = &mut value.data.players[*player_idx];
+                let player = &mut self.data.players[*player_idx];
                 if player.state != PlayerState::Fold {
                     seats_in_pot.push(*player_idx);
                     let hand_eval = || {
                         let mut cards = player.cards.clone();
-                        cards.extend(value.data.board.clone());
+                        cards.extend(self.data.board.clone());
                         cards.sort_unstable();
                         // Add ace highs to the hand for evaluation.
                         for card_idx in 0..4 {
@@ -1344,7 +1327,7 @@ impl From<Game<DistributePot>> for Game<ShowHands> {
                         }
                         functional::eval(&cards)
                     };
-                    let hand = value
+                    let hand = self
                         .state
                         .hand_eval_cache
                         .entry(*player_idx)
@@ -1393,14 +1376,39 @@ impl From<Game<DistributePot>> for Game<ShowHands> {
                 distributions_per_player.insert(winner_player_idx, money + pot_split);
                 pot_remainder -= pot_split as Usdf;
             }
-            value.data.donations += pot_remainder;
+            self.data.donations += pot_remainder;
 
             // Give money back to players.
             for (player_idx, distribution) in distributions_per_player {
-                let player = &mut value.data.players[player_idx];
+                let player = &mut self.data.players[player_idx];
                 player.user.money += distribution;
             }
         }
+    }
+
+    pub fn show_hand(&mut self, username: &str) -> Result<(), UserError> {
+        match self
+            .data
+            .players
+            .iter_mut()
+            .find(|p| p.user.name == username)
+        {
+            Some(player) => {
+                if player.state != PlayerState::Show {
+                    player.state = PlayerState::Show;
+                    Ok(())
+                } else {
+                    Err(UserError::UserAlreadyShowingHand)
+                }
+            }
+            None => Err(UserError::UserNotPlaying),
+        }
+    }
+}
+
+impl From<Game<DistributePot>> for Game<ShowHands> {
+    fn from(mut value: Game<DistributePot>) -> Self {
+        value.distribute();
         Self {
             data: value.data,
             state: ShowHands {
@@ -1410,8 +1418,9 @@ impl From<Game<DistributePot>> for Game<ShowHands> {
     }
 }
 
-impl From<Game<ShowHands>> for Game<RemovePlayers> {
-    fn from(mut value: Game<ShowHands>) -> Self {
+impl From<Game<DistributePot>> for Game<RemovePlayers> {
+    fn from(mut value: Game<DistributePot>) -> Self {
+        value.distribute();
         value.data.num_players_active = 0;
         Self {
             data: value.data,
@@ -1896,7 +1905,6 @@ mod tests {
         game.data.players[1].cards = vec![Card(1, Suit::Heart), Card(7, Suit::Heart)];
         game.data.players[2].cards = vec![Card(2, Suit::Heart), Card(5, Suit::Heart)];
         let game: Game<DistributePot> = game.into();
-        let game: Game<ShowHands> = game.into();
         let game: Game<RemovePlayers> = game.into();
         let game: Game<DivideDonations> = game.into();
         let game: Game<UpdateBlinds> = game.into();
@@ -1919,7 +1927,6 @@ mod tests {
         game.data.players[1].cards = vec![Card(1, Suit::Heart), Card(7, Suit::Heart)];
         game.data.players[2].cards = vec![Card(2, Suit::Heart), Card(5, Suit::Heart)];
         let game: Game<DistributePot> = game.into();
-        let game: Game<ShowHands> = game.into();
         let game: Game<RemovePlayers> = game.into();
         let mut game: Game<DivideDonations> = game.into();
         assert_eq!(game.remove_user("0"), Ok(true));
@@ -1952,7 +1959,6 @@ mod tests {
         game.data.players[2].cards = vec![Card(2, Suit::Heart), Card(5, Suit::Heart)];
         assert_eq!(game.remove_user("0"), Ok(false));
         let game: Game<DistributePot> = game.into();
-        let game: Game<ShowHands> = game.into();
         let game: Game<RemovePlayers> = game.into();
         let game: Game<DivideDonations> = game.into();
         assert!(!game.contains_user("0"));

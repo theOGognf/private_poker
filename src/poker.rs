@@ -120,12 +120,7 @@ impl PokerState {
             PokerState::CollectBlinds(game) => PokerState::Deal(game.into()),
             PokerState::Deal(game) => PokerState::TakeAction(game.into()),
             PokerState::TakeAction(mut game) => {
-                if !game.is_ready_for_next_phase() {
-                    match game.act(Action::Fold) {
-                        Err(_) => unreachable!("Force folding is OK."),
-                        _ => PokerState::TakeAction(game),
-                    }
-                } else {
+                if game.is_ready_for_next_phase() {
                     match game.get_num_community_cards() {
                         0 => PokerState::Flop(game.into()),
                         3 => PokerState::Turn(game.into()),
@@ -134,6 +129,11 @@ impl PokerState {
                         _ => unreachable!(
                             "There can only be 0, 3, 4, or 5 community cards on the board at a time."
                         ),
+                    }
+                } else {
+                    match game.act(Action::Fold) {
+                        Err(_) => unreachable!("Force folding is OK."),
+                        _ => PokerState::TakeAction(game),
                     }
                 }
             }
@@ -158,14 +158,14 @@ impl PokerState {
                     PokerState::TakeAction(game.into())
                 }
             }
-            PokerState::ShowHands(game) => {
-                if !game.is_pot_empty() {
-                    PokerState::DistributePot(game.into())
+            PokerState::ShowHands(game) => PokerState::DistributePot(game.into()),
+            PokerState::DistributePot(game) => {
+                if game.get_num_pots() >= 2 {
+                    PokerState::ShowHands(game.into())
                 } else {
                     PokerState::RemovePlayers(game.into())
                 }
             }
-            PokerState::DistributePot(game) => PokerState::ShowHands(game.into()),
             PokerState::RemovePlayers(game) => PokerState::DivideDonations(game.into()),
             PokerState::DivideDonations(game) => PokerState::UpdateBlinds(game.into()),
             PokerState::UpdateBlinds(game) => PokerState::BootPlayers(game.into()),
@@ -254,7 +254,7 @@ impl From<GameSettings> for PokerState {
 
 #[cfg(test)]
 mod tests {
-    use crate::poker::game::UserError;
+    use crate::poker::{entities::Action, game::UserError};
 
     use super::PokerState;
 
@@ -283,7 +283,7 @@ mod tests {
     }
 
     #[test]
-    fn early_showdown_1_winner_2_folds() {
+    fn early_showdown_1_winner_2_early_folds() {
         let mut state = init_state();
         assert_eq!(state.init_start("0"), Ok(()));
         // SeatPlayers
@@ -310,7 +310,115 @@ mod tests {
         state = state.step();
         // DistributePot
         state = state.step();
+        // RemovePlayers
+        state = state.step();
+        // DivideDonations
+        state = state.step();
+        // UpdateBlinds
+        state = state.step();
+        // BootPlayers
+        state = state.step();
+        // Lobby
+        state = state.step();
+        assert_eq!(state.init_start("0"), Ok(()));
+    }
+
+    #[test]
+    fn early_showdown_1_winner_2_folds() {
+        let mut state = init_state();
+        assert_eq!(state.init_start("0"), Ok(()));
+        // SeatPlayers
+        state = state.step();
+        // MoveButton
+        state = state.step();
+        // CollectBlinds
+        state = state.step();
+        // Deal
+        state = state.step();
+        // TakeAction
+        state = state.step();
+        // All-in
+        assert_eq!(state.take_action("0", Action::AllIn), Ok(()));
+        // 1st fold
+        state = state.step();
+        // 2nd fold
+        state = state.step();
+        // Flop
+        state = state.step();
+        // Turn
+        state = state.step();
+        // River
+        state = state.step();
         // ShowHands
+        state = state.step();
+        // DistributePot
+        state = state.step();
+        // RemovePlayers
+        state = state.step();
+        // DivideDonations
+        state = state.step();
+        // UpdateBlinds
+        state = state.step();
+        // BootPlayers
+        state = state.step();
+        // Lobby
+        state = state.step();
+        assert_eq!(state.init_start("0"), Ok(()));
+    }
+
+    #[test]
+    fn early_showdown_1_winner_2_late_folds() {
+        let mut state = init_state();
+        assert_eq!(state.init_start("0"), Ok(()));
+        // SeatPlayers
+        state = state.step();
+        // MoveButton
+        state = state.step();
+        // CollectBlinds
+        state = state.step();
+        // Deal
+        state = state.step();
+        // TakeAction
+        state = state.step();
+        // Call
+        assert_eq!(state.take_action("0", Action::Call(10)), Ok(()));
+        // Check
+        assert_eq!(state.take_action("1", Action::Call(5)), Ok(()));
+        // Check
+        assert_eq!(state.take_action("2", Action::Check), Ok(()));
+        // Flop
+        state = state.step();
+        // TakeAction
+        state = state.step();
+        // Check
+        assert_eq!(state.take_action("0", Action::Check), Ok(()));
+        // Check
+        assert_eq!(state.take_action("1", Action::Check), Ok(()));
+        // Check
+        assert_eq!(state.take_action("2", Action::Check), Ok(()));
+        // Turn
+        state = state.step();
+        // TakeAction
+        state = state.step();
+        // Check
+        assert_eq!(state.take_action("0", Action::Check), Ok(()));
+        // Check
+        assert_eq!(state.take_action("1", Action::Check), Ok(()));
+        // Check
+        assert_eq!(state.take_action("2", Action::Check), Ok(()));
+        // River
+        state = state.step();
+        // TakeAction
+        state = state.step();
+        // Check
+        assert_eq!(state.take_action("0", Action::AllIn), Ok(()));
+        // Check
+        assert_eq!(state.take_action("1", Action::Fold), Ok(()));
+        // Check
+        assert_eq!(state.take_action("2", Action::Fold), Ok(()));
+        // ShowHands
+        state = state.step();
+        // DistributePot
         state = state.step();
         // RemovePlayers
         state = state.step();
