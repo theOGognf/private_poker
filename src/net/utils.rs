@@ -80,17 +80,17 @@ mod tests {
     fn write_and_read() {
         let (mut client, mut stream) = setup();
         let value = "Hello, World!".to_string();
-        write_prefixed(&mut stream, &value).unwrap();
-        assert_eq!(
-            read_prefixed::<String, TcpStream>(&mut client).unwrap(),
-            value
-        );
+        assert!(write_prefixed(&mut stream, &value).is_ok());
+        assert!(read_prefixed::<String, TcpStream>(&mut client).is_ok_and(|v| v == value));
     }
 
     #[test]
     fn write_and_read_invalid_data() {
         let (mut client, mut stream) = setup();
-        stream.write_all(&1u32.to_le_bytes()).unwrap();
+
+        // Writing a size but not having the data to follow it up
+        // results in invalid data.
+        assert!(stream.write_all(&1u32.to_le_bytes()).is_ok());
         assert_eq!(
             read_prefixed::<String, TcpStream>(&mut client).map_err(|e| e.kind()),
             Err(io::ErrorKind::InvalidData)
@@ -103,8 +103,8 @@ mod tests {
         let value = "Hello, World!".to_string();
         let buf = value.as_bytes();
         let incorrect_size = buf.len() as u32 - 2;
-        stream.write_all(&incorrect_size.to_le_bytes()).unwrap();
-        stream.write_all(buf).unwrap();
+        assert!(stream.write_all(&incorrect_size.to_le_bytes()).is_ok());
+        assert!(stream.write_all(buf).is_ok());
         assert_eq!(
             read_prefixed::<String, TcpStream>(&mut client).map_err(|e| e.kind()),
             Err(io::ErrorKind::UnexpectedEof)

@@ -207,9 +207,8 @@ impl TokenManager {
         }
     }
 
-    /// Create a new token and link it to the given stream.
     pub fn new_token(&mut self) -> Token {
-        let token = match self.recycled_tokens.pop_last() {
+        let token = match self.recycled_tokens.pop_first() {
             Some(token) => token,
             None => {
                 let newest = match (
@@ -225,24 +224,6 @@ impl TokenManager {
             }
         };
         token
-    }
-
-    pub fn recycle_token(&mut self, token: Token) -> Result<TcpStream, ClientError> {
-        if let Some(username) = self.tokens_to_usernames.remove(&token) {
-            self.unconfirmed_usernames_to_tokens.remove(&username);
-            self.confirmed_usernames_to_tokens.remove(&username);
-        }
-        let stream = match (
-            self.unconfirmed_tokens.remove(&token),
-            self.confirmed_tokens.remove(&token),
-        ) {
-            (Some(unconfirmed), None) => unconfirmed.stream,
-            (None, Some(stream)) => stream,
-            (None, None) => return Err(ClientError::DoesNotExist),
-            _ => unreachable!("A token must be either unconfirmed or confirmed."),
-        };
-        self.recycled_tokens.insert(token);
-        Ok(stream)
     }
 
     /// Remove tokens that've gone stale because the client has yet
@@ -273,6 +254,24 @@ impl TokenManager {
             self.recycled_tokens.insert(token);
         }
         recyclables
+    }
+
+    pub fn recycle_token(&mut self, token: Token) -> Result<TcpStream, ClientError> {
+        if let Some(username) = self.tokens_to_usernames.remove(&token) {
+            self.unconfirmed_usernames_to_tokens.remove(&username);
+            self.confirmed_usernames_to_tokens.remove(&username);
+        }
+        let stream = match (
+            self.unconfirmed_tokens.remove(&token),
+            self.confirmed_tokens.remove(&token),
+        ) {
+            (Some(unconfirmed), None) => unconfirmed.stream,
+            (None, Some(stream)) => stream,
+            (None, None) => return Err(ClientError::DoesNotExist),
+            _ => unreachable!("A token must be either unconfirmed or confirmed."),
+        };
+        self.recycled_tokens.insert(token);
+        Ok(stream)
     }
 }
 
@@ -657,5 +656,146 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                 timeout -= Instant::now() - start;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use mio::{
+        net::{TcpListener, TcpStream},
+        Token,
+    };
+
+    use crate::net::messages::ClientError;
+
+    use super::TokenManager;
+
+    fn get_random_open_port() -> u16 {
+        let addr = "127.0.0.1:0".parse().unwrap();
+        // Bind to port 0, which tells the OS to assign an available port
+        let listener = TcpListener::bind(addr).unwrap();
+        // Get the assigned port
+        listener.local_addr().unwrap().port()
+    }
+
+    fn get_server() -> TcpListener {
+        let port = get_random_open_port();
+        let addr = format!("127.0.0.1:{port}").parse().unwrap();
+        TcpListener::bind(addr).unwrap()
+    }
+
+    fn get_stream(listener: &TcpListener) -> TcpStream {
+        let port = listener.local_addr().unwrap().port();
+        let addr = format!("127.0.0.1:{port}").parse().unwrap();
+        TcpStream::connect(addr).unwrap();
+        let (stream, _) = listener.accept().unwrap();
+        stream
+    }
+
+    #[test]
+    fn confirm_username() {
+        let server = get_server();
+        let stream = get_stream(&server);
+        let mut token_manager = TokenManager::new(Duration::ZERO);
+
+        let token = token_manager.new_token();
+        token_manager.associate_token_and_stream(token, stream);
+
+        let username = "ognf".to_string();
+        assert_eq!(
+            token_manager.get_token_with_username(&username),
+            Err(ClientError::Unassociated)
+        );
+        assert_eq!(
+            token_manager.associate_token_and_username(token, username.clone()),
+            Ok(())
+        );
+        assert_eq!(token_manager.get_token_with_username(&username), Ok(token));
+
+        assert_eq!(token_manager.confirm_username(token), Ok(()));
+        assert_eq!(
+            token_manager.get_confirmed_username_with_token(&token),
+            Ok(username.clone())
+        );
+        assert_eq!(token_manager.get_token_with_username(&username), Ok(token));
+    }
+
+    #[test]
+    fn confirm_username_recycled_token() {
+        let server = get_server();
+        let stream = get_stream(&server);
+        let mut token_manager = TokenManager::new(Duration::ZERO);
+
+        let token = token_manager.new_token();
+        token_manager.associate_token_and_stream(token, stream);
+        token_manager.recycle_expired_tokens();
+
+        let username = "ognf".to_string();
+        assert_eq!(
+            token_manager.get_token_with_username(&username),
+            Err(ClientError::Unassociated)
+        );
+        assert_eq!(
+            token_manager.associate_token_and_username(token, username),
+            Err(ClientError::Expired)
+        );
+    }
+
+    #[test]
+    fn recycle_expired_tokens() {
+        let server = get_server();
+        let stream1 = get_stream(&server);
+        let stream2 = get_stream(&server);
+        let stream3 = get_stream(&server);
+        let stream4 = get_stream(&server);
+        let mut token_manager = TokenManager::new(Duration::ZERO);
+
+        // Create a couple of tokens and immediately recycle them.
+        let token1 = token_manager.new_token();
+        token_manager.associate_token_and_stream(token1, stream1);
+        let token2 = token_manager.new_token();
+        token_manager.associate_token_and_stream(token2, stream2);
+        token_manager.recycle_expired_tokens();
+
+        // Tokens are immediately resused.
+        let token3 = token_manager.new_token();
+        token_manager.associate_token_and_stream(token1, stream3);
+        let token4 = token_manager.new_token();
+        token_manager.associate_token_and_stream(token2, stream4);
+        assert_eq!(token1, Token(1));
+        assert_eq!(token1, token3);
+        assert_eq!(token2, Token(2));
+        assert_eq!(token2, token4);
+    }
+
+    #[test]
+    fn recycle_token() {
+        let server = get_server();
+        let stream1 = get_stream(&server);
+        let stream2 = get_stream(&server);
+        let mut token_manager = TokenManager::new(Duration::ZERO);
+
+        let token1 = token_manager.new_token();
+        token_manager.associate_token_and_stream(token1, stream1);
+        let token2 = token_manager.new_token();
+        token_manager.associate_token_and_stream(token2, stream2);
+
+        let username = "ognf".to_string();
+        assert_eq!(
+            token_manager.associate_token_and_username(token1, username.clone()),
+            Ok(())
+        );
+        assert_eq!(
+            token_manager.associate_token_and_username(token2, username.clone()),
+            Err(ClientError::AlreadyAssociated)
+        );
+        assert_eq!(token_manager.recycle_token(token1).is_ok(), true);
+        assert_eq!(
+            token_manager.associate_token_and_username(token2, username),
+            Ok(())
+        );
+        assert_eq!(token1, token_manager.new_token());
     }
 }

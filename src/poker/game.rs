@@ -1607,9 +1607,9 @@ mod tests {
     #[test]
     fn early_showdown() {
         let mut game = init_game_at_deal();
-        game.act(Action::Fold).unwrap();
-        game.act(Action::AllIn).unwrap();
-        game.act(Action::AllIn).unwrap();
+        assert_eq!(game.act(Action::Fold), Ok(()));
+        assert_eq!(game.act(Action::AllIn), Ok(()));
+        assert_eq!(game.act(Action::AllIn), Ok(()));
         let game: Game<Flop> = game.into();
         let game: Game<Turn> = game.into();
         assert_eq!(game.get_num_community_cards(), 3);
@@ -1682,17 +1682,17 @@ mod tests {
         let game: Game<CollectBlinds> = game.into();
         let game: Game<Deal> = game.into();
         let mut game: Game<TakeAction> = game.into();
-        game.act(Action::AllIn).unwrap();
+        assert_eq!(game.act(Action::AllIn), Ok(()));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([Action::AllIn, Action::Fold,]))
         );
-        game.act(Action::AllIn).unwrap();
+        assert_eq!(game.act(Action::AllIn), Ok(()));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([Action::AllIn, Action::Fold,]))
         );
-        game.act(Action::AllIn).unwrap();
+        assert_eq!(game.act(Action::AllIn), Ok(()));
         let game: Game<Flop> = game.into();
         let game: Game<Turn> = game.into();
         let game: Game<River> = game.into();
@@ -1730,7 +1730,7 @@ mod tests {
         let game: Game<CollectBlinds> = game.into();
         let game: Game<Deal> = game.into();
         let mut game: Game<TakeAction> = game.into();
-        game.act(Action::AllIn).unwrap();
+        assert_eq!(game.act(Action::AllIn), Ok(()));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([
@@ -1739,7 +1739,7 @@ mod tests {
                 Action::Fold,
             ]))
         );
-        game.act(Action::AllIn).unwrap();
+        assert_eq!(game.act(Action::AllIn), Ok(()));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([
@@ -1748,7 +1748,7 @@ mod tests {
                 Action::Fold,
             ]))
         );
-        game.act(Action::AllIn).unwrap();
+        assert_eq!(game.act(Action::AllIn), Ok(()));
         let game: Game<Flop> = game.into();
         let game: Game<Turn> = game.into();
         let game: Game<River> = game.into();
@@ -1787,18 +1787,18 @@ mod tests {
         let mut game = Game::<SeatPlayers>::new();
         let username = "ognf";
 
-        game.new_user(username).unwrap();
+        assert_eq!(game.new_user(username), Ok(true));
         assert!(game.contains_spectator(username));
 
         assert_eq!(game.new_user(username), Err(UserError::UserAlreadyExists));
 
-        game.waitlist_user(username).unwrap();
+        assert_eq!(game.waitlist_user(username), Ok(true));
         assert!(game.contains_waitlister(username));
 
-        game.spectate_user(username).unwrap();
+        assert_eq!(game.spectate_user(username), Ok(true));
         assert!(game.contains_spectator(username));
 
-        game.remove_user(username).unwrap();
+        assert_eq!(game.remove_user(username), Ok(true));
         assert!(!game.contains_user(username));
 
         assert_eq!(game.remove_user(username), Err(UserError::UserDoesNotExist));
@@ -1811,17 +1811,17 @@ mod tests {
             Err(UserError::UserDoesNotExist)
         );
 
-        game.new_user(username).unwrap();
+        assert_eq!(game.new_user(username), Ok(true));
         assert!(game.contains_spectator(username));
 
-        game.waitlist_user(username).unwrap();
+        assert_eq!(game.waitlist_user(username), Ok(true));
         assert!(game.contains_waitlister(username));
 
-        game.remove_user(username).unwrap();
+        assert_eq!(game.remove_user(username), Ok(true));
         assert!(!game.contains_user(username));
 
         for i in 0..game.data.settings.max_users {
-            game.new_user(&i.to_string()).unwrap();
+            assert_eq!(game.new_user(&i.to_string()), Ok(true));
         }
         assert_eq!(game.new_user(username), Err(UserError::CapacityReached));
     }
@@ -1846,8 +1846,8 @@ mod tests {
         let mut game: Game<SeatPlayers> = game.into();
         for i in 0..game.data.settings.max_users {
             let username = i.to_string();
-            game.new_user(&username).unwrap();
-            game.waitlist_user(&username).unwrap();
+            assert_eq!(game.new_user(&username), Ok(true));
+            assert_eq!(game.waitlist_user(&username), Ok(true));
         }
         let game: Game<MoveButton> = game.into();
         let mut game: Game<CollectBlinds> = game.into();
@@ -1901,7 +1901,7 @@ mod tests {
         let game: Game<ShowHands> = game.into();
         let game: Game<RemovePlayers> = game.into();
         let mut game: Game<DivideDonations> = game.into();
-        game.remove_user("0").unwrap();
+        assert_eq!(game.remove_user("0"), Ok(true));
         assert!(!game.contains_user("0"));
         assert!(game.contains_player("1"));
         assert!(game.contains_player("2"));
@@ -1929,7 +1929,7 @@ mod tests {
         ];
         game.data.players[1].cards = vec![Card(1, Suit::Heart), Card(7, Suit::Heart)];
         game.data.players[2].cards = vec![Card(2, Suit::Heart), Card(5, Suit::Heart)];
-        game.remove_user("0").unwrap();
+        assert_eq!(game.remove_user("0"), Ok(false));
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         let game: Game<RemovePlayers> = game.into();
@@ -1970,17 +1970,17 @@ mod tests {
                 Action::Raise(20)
             ]))
         );
-        game.act(Action::AllIn).unwrap();
+        assert_eq!(game.act(Action::AllIn), Ok(()));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([Action::AllIn, Action::Fold]))
         );
-        game.act(Action::AllIn).unwrap();
+        assert_eq!(game.act(Action::AllIn), Ok(()));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([Action::AllIn, Action::Fold]))
         );
-        game.act(Action::Fold).unwrap();
+        assert_eq!(game.act(Action::Fold), Ok(()));
         assert_eq!(game.get_next_action_options(), None);
     }
 
@@ -1996,7 +1996,7 @@ mod tests {
                 Action::Raise(20)
             ]))
         );
-        game.act(Action::Call(10)).unwrap();
+        assert_eq!(game.act(Action::Call(10)), Ok(()));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([
@@ -2006,7 +2006,7 @@ mod tests {
                 Action::Raise(15)
             ]))
         );
-        game.act(Action::Call(5)).unwrap();
+        assert_eq!(game.act(Action::Call(5)), Ok(()));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([
@@ -2016,7 +2016,7 @@ mod tests {
                 Action::Raise(20)
             ]))
         );
-        game.act(Action::Check).unwrap();
+        assert_eq!(game.act(Action::Check), Ok(()));
         assert_eq!(game.get_next_action_options(), None);
     }
 
@@ -2032,7 +2032,7 @@ mod tests {
                 Action::Raise(20)
             ]))
         );
-        game.act(Action::Fold).unwrap();
+        assert_eq!(game.act(Action::Fold), Ok(()));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([
@@ -2042,7 +2042,7 @@ mod tests {
                 Action::Raise(15)
             ]))
         );
-        game.act(Action::Fold).unwrap();
+        assert_eq!(game.act(Action::Fold), Ok(()));
         assert_eq!(game.get_next_action_options(), None);
     }
 
@@ -2058,7 +2058,7 @@ mod tests {
                 Action::Raise(20)
             ]))
         );
-        game.act(Action::Fold).unwrap();
+        assert_eq!(game.act(Action::Fold), Ok(()));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([
@@ -2069,7 +2069,7 @@ mod tests {
             ]))
         );
         // Total call is 20
-        game.act(Action::Raise(15)).unwrap();
+        assert_eq!(game.act(Action::Raise(15)), Ok(()));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([
@@ -2080,7 +2080,7 @@ mod tests {
             ]))
         );
         // Total call is 40
-        game.act(Action::Raise(30)).unwrap();
+        assert_eq!(game.act(Action::Raise(30)), Ok(()));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([
@@ -2091,7 +2091,7 @@ mod tests {
             ]))
         );
         // Total call is 80
-        game.act(Action::Raise(60)).unwrap();
+        assert_eq!(game.act(Action::Raise(60)), Ok(()));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([
@@ -2101,7 +2101,7 @@ mod tests {
                 Action::Raise(120)
             ]))
         );
-        game.act(Action::Fold).unwrap();
+        assert_eq!(game.act(Action::Fold), Ok(()));
         assert_eq!(game.get_next_action_options(), None);
     }
 }
