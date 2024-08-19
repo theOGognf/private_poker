@@ -103,18 +103,18 @@ pub struct PotView {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct GameView {
-    donations: Usdf,
-    small_blind: Usd,
-    big_blind: Usd,
-    spectators: HashMap<String, UserView>,
-    waitlist: VecDeque<UserView>,
-    open_seats: VecDeque<usize>,
-    players: Vec<PlayerView>,
-    board: Vec<Card>,
-    pots: Vec<PotView>,
-    small_blind_idx: usize,
-    big_blind_idx: usize,
-    next_action_idx: Option<usize>,
+    pub donations: Usdf,
+    pub small_blind: Usd,
+    pub big_blind: Usd,
+    pub spectators: HashMap<String, UserView>,
+    pub waitlist: VecDeque<UserView>,
+    pub open_seats: VecDeque<usize>,
+    pub players: Vec<PlayerView>,
+    pub board: Vec<Card>,
+    pub pots: Vec<PotView>,
+    pub small_blind_idx: usize,
+    pub big_blind_idx: usize,
+    pub next_action_idx: Option<usize>,
 }
 
 impl fmt::Display for GameView {
@@ -1290,6 +1290,27 @@ impl From<Game<ShowHands>> for Game<DistributePot> {
             state: DistributePot {
                 hand_eval_cache: value.state.hand_eval_cache,
             },
+        }
+    }
+}
+
+impl Game<DistributePot> {
+    pub fn show_hand(&mut self, username: &str) -> Result<(), UserError> {
+        match self
+            .data
+            .players
+            .iter_mut()
+            .find(|p| p.user.name == username)
+        {
+            Some(player) => {
+                if player.state != PlayerState::Show {
+                    player.state = PlayerState::Show;
+                    Ok(())
+                } else {
+                    Err(UserError::UserAlreadyShowingHand)
+                }
+            }
+            None => Err(UserError::UserNotPlaying),
         }
     }
 }

@@ -88,6 +88,10 @@ impl PokerState {
 
     pub fn show_hand(&mut self, username: &str) -> Result<(), UserError> {
         match self {
+            PokerState::DistributePot(ref mut game) => {
+                game.show_hand(username)?;
+                Ok(())
+            }
             PokerState::ShowHands(ref mut game) => {
                 game.show_hand(username)?;
                 Ok(())
@@ -245,5 +249,79 @@ impl From<GameSettings> for PokerState {
     fn from(value: GameSettings) -> Self {
         let game: Game<Lobby> = value.into();
         PokerState::Lobby(game)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::poker::game::UserError;
+
+    use super::PokerState;
+
+    fn init_state() -> PokerState {
+        let mut state = PokerState::new();
+        for i in 0..3 {
+            let username = i.to_string();
+            state.new_user(&username).unwrap();
+            state.waitlist_user(&username).unwrap();
+        }
+        state
+    }
+
+    #[test]
+    fn cant_start_game() {
+        let mut state = init_state();
+        assert_eq!(state.init_start("0"), Ok(()));
+        // At SeatPlayers.
+        state = state.step();
+        assert_eq!(state.init_start("0"), Err(UserError::GameAlreadyStarting));
+        assert_eq!(state.remove_user("1"), Ok(()));
+        assert_eq!(state.remove_user("2"), Ok(()));
+        // Should be back at Lobby.
+        state = state.step();
+        assert_eq!(state.init_start("0"), Err(UserError::NotEnoughPlayers));
+    }
+
+    #[test]
+    fn early_showdown_1_winner_2_folds() {
+        let mut state = init_state();
+        assert_eq!(state.init_start("0"), Ok(()));
+        // SeatPlayers
+        state = state.step();
+        // MoveButton
+        state = state.step();
+        // CollectBlinds
+        state = state.step();
+        // Deal
+        state = state.step();
+        // TakeAction
+        state = state.step();
+        // 1st fold
+        state = state.step();
+        // 2nd fold
+        state = state.step();
+        // Flop
+        state = state.step();
+        // Turn
+        state = state.step();
+        // River
+        state = state.step();
+        // ShowHands
+        state = state.step();
+        // DistributePot
+        state = state.step();
+        // ShowHands
+        state = state.step();
+        // RemovePlayers
+        state = state.step();
+        // DivideDonations
+        state = state.step();
+        // UpdateBlinds
+        state = state.step();
+        // BootPlayers
+        state = state.step();
+        // Lobby
+        state = state.step();
+        assert_eq!(state.init_start("0"), Ok(()));
     }
 }
