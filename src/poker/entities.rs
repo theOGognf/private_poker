@@ -250,21 +250,22 @@ impl Pot {
         // In this case, the call for the current pot remains unchanged, and
         // the pot is only increased by the original call. The excess
         // is used to start a new pot.
-        let mut side_pot = None;
+        let mut maybe_side_pot = None;
         match (bet.action, self.side_pot_state) {
             (BetAction::AllIn, None) => self.side_pot_state = Some(SidePotState::AllIn),
             (BetAction::AllIn, Some(SidePotState::AllIn))
             | (BetAction::Raise, Some(SidePotState::AllIn)) => {
                 if new_investment > self.call {
                     self.side_pot_state = Some(SidePotState::Raise);
-                    side_pot = Some(Pot::new());
-                    side_pot.as_mut().unwrap().bet(
+                    let mut side_pot = Pot::new();
+                    side_pot.bet(
                         player_idx,
                         &Bet {
                             action: bet.action,
                             amount: new_investment - self.call,
                         },
                     );
+                    maybe_side_pot = Some(side_pot);
                     // The call for the pot hasn't change.
                     new_call = self.call;
                     // The pot increase is just the pot's call remaining for the player.
@@ -280,7 +281,7 @@ impl Pot {
         self.call = new_call;
         self.size += pot_increase;
         *investment = new_investment;
-        side_pot
+        maybe_side_pot
     }
 
     /// Return the amount the player must bet to remain in the hand, and

@@ -709,7 +709,10 @@ macro_rules! impl_user_managers {
                 let mut user = if let Some(user) = self.data.spectators.remove(username) {
                     user
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
-                    self.data.waitlist.remove(waitlist_idx).unwrap()
+                    match self.data.waitlist.remove(waitlist_idx) {
+                        Some(user) => user,
+                        None => unreachable!("{username} is guaranteed to be at waitlist position {waitlist_idx}.")
+                    }
                 } else if let Some(player_idx) = self.data.players.iter().position(|p| p.user.name == username) {
                     self.data.players_to_spectate.remove(username);
                     let player = self.data.players.remove(player_idx);
@@ -732,7 +735,10 @@ macro_rules! impl_user_managers {
                 let user = if self.data.spectators.contains_key(username) {
                     return Ok(true);
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
-                    self.data.waitlist.remove(waitlist_idx).unwrap()
+                    match self.data.waitlist.remove(waitlist_idx) {
+                        Some(user) => user,
+                        None => unreachable!("{username} is guaranteed to be at waitlist position {waitlist_idx}.")
+                    }
                 } else if let Some(player_idx) = self.data.players.iter().position(|p| p.user.name == username) {
                     self.data.players_to_remove.remove(username);
                     let player = self.data.players.remove(player_idx);
@@ -760,7 +766,10 @@ macro_rules! impl_user_managers_with_queue {
                 let mut user = if let Some(user) = self.data.spectators.remove(username) {
                     user
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
-                    self.data.waitlist.remove(waitlist_idx).unwrap()
+                    match self.data.waitlist.remove(waitlist_idx) {
+                        Some(user) => user,
+                        None => unreachable!("{username} is guaranteed to be at waitlist position {waitlist_idx}.")
+                    }
                 } else if let Some(_) = self.data.players.iter().position(|p| p.user.name == username) {
                     // Need to remove the player from other queues just in
                     // case they changed their mind.
@@ -787,7 +796,10 @@ macro_rules! impl_user_managers_with_queue {
                 let user = if self.data.spectators.contains_key(username) {
                     return Ok(true)
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
-                    self.data.waitlist.remove(waitlist_idx).unwrap()
+                    match self.data.waitlist.remove(waitlist_idx) {
+                        Some(user) => user,
+                        None => unreachable!("{username} is guaranteed to be at waitlist position {waitlist_idx}.")
+                    }
                 } else if let Some(_) = self.data.players.iter().position(|p| p.user.name == username) {
                     // Need to remove the player from other queues just in
                     // case they changed their mind.
@@ -877,26 +889,42 @@ impl From<Game<SeatPlayers>> for Game<Lobby> {
 
 impl From<Game<SeatPlayers>> for Game<MoveButton> {
     fn from(mut value: Game<SeatPlayers>) -> Self {
-        while !value.data.waitlist.is_empty() && !value.data.open_seats.is_empty() {
-            let open_seat_idx = value.data.open_seats.pop_front().unwrap();
-            let user = value.data.waitlist.pop_front().unwrap();
-            if user.money < value.data.big_blind {
-                value.data.spectators.insert(user.name.clone(), user);
-            } else {
-                let num_players = value.get_num_players();
-                let player = Player::new(user, open_seat_idx);
-                if num_players > 0 {
-                    match (0..num_players - 1).position(|player_idx| {
-                        value.data.players[player_idx].seat_idx < open_seat_idx
-                            && value.data.players[player_idx + 1].seat_idx > open_seat_idx
-                    }) {
-                        Some(player_idx) => value.data.players.insert(player_idx + 1, player),
-                        None => value.data.players.push(player),
+        loop {
+            match (
+                value.data.open_seats.pop_front(),
+                value.data.waitlist.pop_front(),
+            ) {
+                (Some(open_seat_idx), Some(user)) => {
+                    if user.money < value.data.big_blind {
+                        value.data.spectators.insert(user.name.clone(), user);
+                    } else {
+                        let num_players = value.get_num_players();
+                        let player = Player::new(user, open_seat_idx);
+                        if num_players > 0 {
+                            match (0..num_players - 1).position(|player_idx| {
+                                value.data.players[player_idx].seat_idx < open_seat_idx
+                                    && value.data.players[player_idx + 1].seat_idx > open_seat_idx
+                            }) {
+                                Some(player_idx) => {
+                                    value.data.players.insert(player_idx + 1, player)
+                                }
+                                None => value.data.players.push(player),
+                            }
+                        } else {
+                            value.data.players.push(player);
+                        }
                     }
-                } else {
-                    value.data.players.push(player);
+                    continue;
                 }
+                (Some(open_seat_idx), None) => {
+                    value.data.open_seats.push_front(open_seat_idx);
+                }
+                (None, Some(user)) => {
+                    value.data.waitlist.push_front(user);
+                }
+                (None, None) => {}
             }
+            break;
         }
         value.data.num_players_active = value.get_num_players();
         Self {
@@ -1348,8 +1376,10 @@ impl Game<DistributePot> {
             let mut max_winner_investment = Usd::MIN;
             for winner_idx in winner_indices {
                 let winner_player_idx = seats_in_pot[winner_idx];
-                let (_, winner_investment) =
-                    pot.investments.remove_entry(&winner_player_idx).unwrap();
+                let winner_investment = match pot.investments.remove(&winner_player_idx) {
+                    Some(investment) => investment,
+                    None => unreachable!("Player {winner_player_idx} is a winner."),
+                };
                 if winner_investment > max_winner_investment {
                     max_winner_investment = winner_investment;
                 }
@@ -1432,7 +1462,9 @@ impl From<Game<DistributePot>> for Game<RemovePlayers> {
 impl From<Game<RemovePlayers>> for Game<DivideDonations> {
     fn from(mut value: Game<RemovePlayers>) -> Self {
         while let Some(username) = value.data.players_to_remove.pop_first() {
-            value.remove_user(&username).unwrap();
+            if let Err(error) = value.remove_user(&username) {
+                unreachable!("{error}: {username} can be removed.")
+            }
         }
         Self {
             data: value.data,
@@ -1518,7 +1550,9 @@ impl From<Game<BootPlayers>> for Game<Lobby> {
             }
         }
         while let Some(username) = value.data.players_to_spectate.pop_first() {
-            value.spectate_user(&username).unwrap();
+            if let Err(error) = value.spectate_user(&username) {
+                unreachable!("{error}: {username} can be moved.")
+            }
         }
         Self {
             data: value.data,
