@@ -163,7 +163,6 @@ impl fmt::Display for Bet {
 enum SidePotState {
     AllIn,
     Raise,
-    CallOrReraise,
 }
 
 /// For users that're in a pot.

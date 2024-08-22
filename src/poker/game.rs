@@ -446,7 +446,7 @@ impl<T> Game<T> {
                 .any(|u| u.name == username)
     }
 
-    fn contains_spectator(&self, username: &str) -> bool {
+    pub fn contains_spectator(&self, username: &str) -> bool {
         self.data.spectators.contains_key(username)
     }
 
@@ -597,7 +597,7 @@ impl<T> Game<T> {
         self.data.num_players_active == self.data.num_players_called
     }
 
-    fn is_pot_empty(&self) -> bool {
+    pub fn is_pot_empty(&self) -> bool {
         self.data.pots.is_empty()
     }
 
