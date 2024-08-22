@@ -31,6 +31,12 @@ pub enum PokerState {
     BootPlayers(Game<BootPlayers>),
 }
 
+impl Default for PokerState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PokerState {
     pub fn get_action_options(&self) -> Option<HashSet<Action>> {
         match self {

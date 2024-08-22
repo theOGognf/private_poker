@@ -318,6 +318,12 @@ pub struct Lobby {
     start_game: bool,
 }
 
+impl Default for Lobby {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Lobby {
     pub fn new() -> Self {
         Self { start_game: false }
@@ -355,6 +361,12 @@ pub struct ShowHands {
     /// Temporarily maps player seats to poker hand evaluations so a player's
     /// hand doesn't have to be evaluated multiple times per game.
     hand_eval_cache: HashMap<usize, Vec<SubHand>>,
+}
+
+impl Default for ShowHands {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ShowHands {

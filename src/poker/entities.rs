@@ -226,6 +226,12 @@ pub struct Pot {
     side_pot_state: Option<SidePotState>,
 }
 
+impl Default for Pot {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Pot {
     pub fn bet(&mut self, player_idx: usize, bet: &Bet) -> Option<Pot> {
         let investment = self.investments.entry(player_idx).or_default();
