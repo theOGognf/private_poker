@@ -1,6 +1,6 @@
 mod constants;
 pub mod entities;
-mod functional;
+pub mod functional;
 pub mod game;
 
 use std::collections::HashSet;

@@ -9,6 +9,8 @@ use super::entities::{Card, Rank, SubHand, Suit};
 /// # Examples
 ///
 /// ```
+/// use poker::{entities::{Card, Suit}, functional::{argmax, eval}};
+///
 /// let cards1 = [Card(4, Suit::Club), Card(11, Suit::Spade)];
 /// let cards2 = [Card(4, Suit::Club), Card(12, Suit::Spade)];
 /// let hand1 = eval(&cards1);
@@ -46,9 +48,11 @@ pub fn argmax(hands: &[Vec<SubHand>]) -> Vec<usize> {
 /// # Examples
 ///
 /// ```
+/// use poker::{entities::{Card, Rank, Suit}, functional::eval};
+///
 /// let cards = [Card(4, Suit::Club), Card(4, Suit::Heart), Card(11, Suit::Spade)];
-/// let best_subhand = eval(&cards)[0];
-/// assert_eq!(best_subhand.rank, Rank::OnePair)
+/// let subhands = eval(&cards);
+/// assert_eq!(subhands[0].rank, Rank::OnePair)
 /// ```
 pub fn eval(cards: &[Card]) -> Vec<SubHand> {
     // Mapping of suit to (sorted) cards within that suit.
@@ -328,6 +332,7 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
 /// # Examples
 ///
 /// ```
+/// use poker::functional::new_deck;
 /// use rand::thread_rng;
 /// use rand::seq::SliceRandom;
 ///
@@ -349,7 +354,8 @@ pub fn new_deck() -> [Card; 52] {
 
 #[cfg(test)]
 mod tests {
-    use super::{argmax, eval, Card, Rank, Suit};
+    use super::{argmax, eval};
+    use crate::poker::entities::{Card, Rank, Suit};
 
     struct TestHand {
         expected_rank: Rank,
