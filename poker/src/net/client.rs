@@ -1,7 +1,7 @@
 use anyhow::{bail, Error};
 use mio::net::TcpStream;
 
-use crate::poker::entities::Action;
+use crate::game::entities::Action;
 
 use super::{
     messages::{ClientCommand, ClientMessage, GameView, ServerResponse, UserState},

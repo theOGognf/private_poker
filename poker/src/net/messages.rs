@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-pub use crate::poker::game::GameView;
-use crate::poker::{entities::Action, game::UserError};
+pub use crate::game::GameView;
+use crate::game::{entities::Action, UserError};
 
 #[derive(Debug, Deserialize, Eq, thiserror::Error, PartialEq, Serialize)]
 pub enum ClientError {

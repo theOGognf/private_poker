@@ -12,11 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::poker::{
-    entities::Action,
-    game::{GameSettings, UserError},
-    PokerState,
-};
+use crate::game::{entities::Action, GameSettings, PokerState, UserError};
 
 use super::{
     messages::{

@@ -355,7 +355,7 @@ pub fn new_deck() -> [Card; 52] {
 #[cfg(test)]
 mod tests {
     use super::{argmax, eval};
-    use crate::poker::entities::{Card, Rank, Suit};
+    use crate::game::entities::{Card, Rank, Suit};
 
     struct TestHand {
         expected_rank: Rank,
