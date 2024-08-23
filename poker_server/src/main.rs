@@ -1,5 +1,6 @@
 use anyhow::Error;
 use clap::{value_parser, Arg, Command};
+use log::info;
 use poker::{
     entities::Usd,
     server::{self, PokerConfig},
@@ -24,11 +25,13 @@ fn main() -> Result<(), Error> {
         .get_matches();
 
     let address = matches.get_one::<String>("address").unwrap();
-    let buy_in = matches.get_one::<u32>("buy_in").unwrap();
+    let buy_in = matches.get_one::<Usd>("buy_in").unwrap();
 
     let game_settings = GameSettings::new(MAX_PLAYERS, DEFAULT_MAX_USERS, *buy_in);
     let config: PokerConfig = game_settings.into();
 
+    env_logger::init();
+    info!("Starting at {address}.");
     server::run(address, config)?;
 
     Ok(())

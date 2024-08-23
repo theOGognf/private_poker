@@ -1,4 +1,5 @@
 use anyhow::{bail, Error};
+use log::{error, info, warn};
 use mio::{
     net::{TcpListener, TcpStream},
     Events, Interest, Poll, Token,
@@ -297,6 +298,7 @@ fn drain_client_messages(
     // them for removal.
     for (token, msgs) in messages_to_write.iter() {
         if msgs.len() >= max_network_events {
+            error!("{token:#?} has not been receiving and will be removed.");
             tokens_to_remove.insert(*token);
         }
     }
@@ -324,8 +326,11 @@ fn drain_client_messages(
                 },
             };
             match result {
-                Ok(_) => tx_client.send(msg)?,
+                Ok(_) => {
+                    info!("{token:#?}: {msg}");
+                    tx_client.send(msg)?},
                 Err(error) => {
+                    error!("{token:#?}! {error}");
                     let msg = ServerResponse::ClientError(error);
                     messages_to_write.entry(token).or_default().push_back(msg);
                 }
@@ -336,6 +341,7 @@ fn drain_client_messages(
     // Recycle all tokens that need to be remove, deregistering their streams
     // with the poll.
     for token in tokens_to_remove.drain() {
+        warn!("{token:#?} is being removed.");
         if let Ok(username) = token_manager.get_confirmed_username_with_token(&token) {
             let msg = ClientMessage {
                 username,
@@ -349,6 +355,7 @@ fn drain_client_messages(
         }
     }
     for (token, mut stream) in token_manager.recycle_expired_tokens() {
+        warn!("{token:#?} expired.");
         messages_to_write.remove(&token);
         poll.registry().deregister(&mut stream)?;
     }
@@ -469,6 +476,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                 &poll,
             )?;
 
+            info!("Polling for network events.");
             if let Err(error) = poll.poll(&mut events, Some(config.server_timeouts.poll)) {
                 match error.kind() {
                     io::ErrorKind::Interrupted => continue,
@@ -509,6 +517,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                         poll.registry()
                             .register(&mut stream, token, Interest::READABLE)?;
                         token_manager.associate_token_and_stream(token, stream);
+                        info!("Accepted new connection with {token:#?}.");
                     },
                     token => {
                         // Maybe received an event for a TCP connection.
@@ -522,6 +531,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                             Ok(_) => {
                                                 // Client errors are strict and result in the removal of a connection.
                                                 if let ServerResponse::ClientError(_) = msg {
+                                                    error!("{token:#?}! {msg}");
                                                     tokens_to_remove.insert(token);
                                                 }
                                             }
@@ -535,6 +545,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                                     | io::ErrorKind::ConnectionReset
                                                     | io::ErrorKind::TimedOut
                                                     | io::ErrorKind::UnexpectedEof => {
+                                                        error!("{token:#?}'s connection dropped.");
                                                         tokens_to_remove.insert(token);
                                                     }
                                                     // Would block "errors" are the OS's way of saying that the
@@ -547,6 +558,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                                     // Retry writing in the case that the full message couldn't
                                                     // be written. This should be infrequent.
                                                     io::ErrorKind::WriteZero => {
+                                                        warn!("{token:#?} got a zero write and will retry.");
                                                         messages.push_front(msg);
                                                         continue;
                                                     }
@@ -585,6 +597,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                                 | io::ErrorKind::InvalidData
                                                 | io::ErrorKind::TimedOut
                                                 | io::ErrorKind::UnexpectedEof => {
+                                                    error!("{token:#?}'s connection dropped.");
                                                     tokens_to_remove.insert(token);
                                                 }
                                                 // Would block "errors" are the OS's way of saying that the
@@ -619,6 +632,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
 
     let mut state: PokerState = config.game_settings.into();
     loop {
+        info!("Updating game state.");
         state = state.step();
 
         let views = state.get_views();
@@ -643,6 +657,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                         if timeout.as_secs() == 0 && username == last_username {
                             // Ack that they will fold (the poker state will
                             // fold for them).
+                            warn!("{username} ran out of time and will be forced to fold.");
                             let command = ClientCommand::TakeAction(Action::Fold);
                             let msg = ServerMessage::Ack(ClientMessage {
                                 username: username.clone(),
@@ -652,6 +667,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
 
                             // Force spectate them so they don't disrupt
                             // future games and ack it.
+                            warn!("{username} will be forced to spectate at the end of the game.");
                             state.spectate_user(&username)?;
                             let command = ClientCommand::ChangeState(UserState::Spectate);
                             let msg = ServerMessage::Ack(ClientMessage { username, command });
@@ -660,9 +676,12 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             break 'command;
                         }
                     }
+
+                    let response = ServerResponse::TurnSignal(action_options);
+                    info!("{username}! {response}");
                     let msg = ServerMessage::Response {
                         username: username.clone(),
-                        data: Box::new(ServerResponse::TurnSignal(action_options)),
+                        data: Box::new(response),
                     };
                     tx_server.send(msg)?;
                     next_action_username = Some(username);
@@ -701,6 +720,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                     // the commanding client.
                     match result {
                         Ok(()) => {
+                            info!("Ack! {msg}");
                             let msg = ServerMessage::Ack(msg);
                             tx_server.send(msg)?;
 
@@ -708,6 +728,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             tx_server.send(msg)?;
                         }
                         Err(error) => {
+                            error!("{msg} {error}.");
                             let msg = ServerMessage::Response {
                                 username: msg.username,
                                 data: Box::new(ServerResponse::UserError(error)),
