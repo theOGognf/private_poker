@@ -1,10 +1,10 @@
 use anyhow::{bail, Error};
 use std::{net::TcpStream, thread, time::Duration};
 
-use crate::game::entities::Action;
+use crate::game::{entities::Action, UserError};
 
 use super::{
-    messages::{ClientCommand, ClientMessage, GameView, ServerResponse, UserState},
+    messages::{ClientCommand, ClientError, ClientMessage, GameView, ServerResponse, UserState},
     utils,
 };
 
@@ -17,13 +17,13 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn change_state(&mut self, state: UserState) -> Result<GameView, Error> {
+    pub fn change_state(&mut self, state: UserState) -> Result<(), Error> {
         let msg = ClientMessage {
             username: self.username.clone(),
             command: ClientCommand::ChangeState(state),
         };
         utils::write_prefixed(&mut self.stream, &msg)?;
-        Client::recv_view(&mut self.stream)
+        Ok(())
     }
 
     pub fn connect(addr: &str, username: &str) -> Result<(Self, GameView), Error> {
@@ -43,16 +43,7 @@ impl Client {
                         command: ClientCommand::Connect,
                     };
                     utils::write_prefixed(&mut stream, &msg)?;
-                    // First receive the ack that the connection is OK.
-                    match utils::read_prefixed::<ServerResponse, TcpStream>(&mut stream) {
-                        Ok(ServerResponse::Ack(_)) => {}
-                        Ok(ServerResponse::ClientError(error)) => bail!(error),
-                        Ok(ServerResponse::UserError(error)) => bail!(error),
-                        Ok(response) => {
-                            bail!("Invalid server response: {response}.")
-                        }
-                        Err(error) => bail!(error),
-                    }
+                    Client::recv_ack(&mut stream)?;
                     // Then receive the game view.
                     match Client::recv_view(&mut stream) {
                         Ok(view) => {
@@ -81,7 +72,39 @@ impl Client {
         }
     }
 
-    fn recv_view(stream: &mut TcpStream) -> Result<GameView, Error> {
+    pub fn recv_ack(stream: &mut TcpStream) -> Result<(), Error> {
+        match utils::read_prefixed::<ServerResponse, TcpStream>(stream) {
+            Ok(ServerResponse::Ack(_)) => Ok(()),
+            Ok(ServerResponse::ClientError(error)) => bail!(error),
+            Ok(ServerResponse::UserError(error)) => bail!(error),
+            Ok(response) => {
+                bail!("Invalid server response: {response}.")
+            }
+            Err(error) => bail!(error),
+        }
+    }
+
+    pub fn recv_client_error(stream: &mut TcpStream) -> Result<ClientError, Error> {
+        match utils::read_prefixed::<ServerResponse, TcpStream>(stream) {
+            Ok(ServerResponse::ClientError(error)) => Ok(error),
+            Ok(response) => {
+                bail!("Invalid server response: {response}.")
+            }
+            Err(error) => bail!(error),
+        }
+    }
+
+    pub fn recv_user_error(stream: &mut TcpStream) -> Result<UserError, Error> {
+        match utils::read_prefixed::<ServerResponse, TcpStream>(stream) {
+            Ok(ServerResponse::UserError(error)) => Ok(error),
+            Ok(response) => {
+                bail!("Invalid server response: {response}.")
+            }
+            Err(error) => bail!(error),
+        }
+    }
+
+    pub fn recv_view(stream: &mut TcpStream) -> Result<GameView, Error> {
         match utils::read_prefixed::<ServerResponse, TcpStream>(stream) {
             Ok(ServerResponse::ClientError(error)) => bail!(error),
             Ok(ServerResponse::GameView(view)) => Ok(view),
@@ -93,30 +116,30 @@ impl Client {
         }
     }
 
-    pub fn show_hand(&mut self) -> Result<GameView, Error> {
+    pub fn show_hand(&mut self) -> Result<(), Error> {
         let msg = ClientMessage {
             username: self.username.to_string(),
             command: ClientCommand::ShowHand,
         };
         utils::write_prefixed(&mut self.stream, &msg)?;
-        Client::recv_view(&mut self.stream)
+        Ok(())
     }
 
-    pub fn start_game(&mut self) -> Result<GameView, Error> {
+    pub fn start_game(&mut self) -> Result<(), Error> {
         let msg = ClientMessage {
             username: self.username.to_string(),
             command: ClientCommand::StartGame,
         };
         utils::write_prefixed(&mut self.stream, &msg)?;
-        Client::recv_view(&mut self.stream)
+        Ok(())
     }
 
-    pub fn take_action(&mut self, action: Action) -> Result<GameView, Error> {
+    pub fn take_action(&mut self, action: Action) -> Result<(), Error> {
         let msg = ClientMessage {
             username: self.username.to_string(),
             command: ClientCommand::TakeAction(action),
         };
         utils::write_prefixed(&mut self.stream, &msg)?;
-        Client::recv_view(&mut self.stream)
+        Ok(())
     }
 }
