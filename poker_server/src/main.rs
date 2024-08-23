@@ -9,12 +9,16 @@ use poker::{
 
 fn main() -> Result<(), Error> {
     let address = Arg::new("address")
-        .help("Server socket address to bind to.")
-        .default_value("127.0.0.1:6969");
+        .help("Server socket bind address.")
+        .default_value("127.0.0.1:6969")
+        .long("address")
+        .value_name("IP:PORT");
 
     let buy_in = Arg::new("buy_in")
-        .help("User starting money in USD.")
+        .help("New user starting money.")
         .default_value("200")
+        .long("buy_in")
+        .value_name("USD")
         .value_parser(value_parser!(Usd));
 
     let matches = Command::new("poker_server")
