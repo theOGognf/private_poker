@@ -6,7 +6,7 @@ use std::cmp::{max, min, Ordering};
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use thiserror::Error;
 
-mod constants;
+pub mod constants;
 pub mod entities;
 pub mod functional;
 
