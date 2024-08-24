@@ -327,10 +327,10 @@ fn drain_client_messages(
             };
             match result {
                 Ok(_) => {
-                    info!("{token:#?}: {msg}");
+                    info!("{token:#?}: {msg}.");
                     tx_client.send(msg)?},
                 Err(error) => {
-                    error!("{token:#?}! {error}");
+                    error!("{token:#?}: {error}.");
                     let msg = ServerResponse::ClientError(error);
                     messages_to_write.entry(token).or_default().push_back(msg);
                 }
@@ -531,7 +531,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                             Ok(_) => {
                                                 // Client errors are strict and result in the removal of a connection.
                                                 if let ServerResponse::ClientError(_) = msg {
-                                                    error!("{token:#?}! {msg}");
+                                                    error!("{token:#?}: {msg}.");
                                                     tokens_to_remove.insert(token);
                                                 }
                                             }
@@ -558,7 +558,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                                     // Retry writing in the case that the full message couldn't
                                                     // be written. This should be infrequent.
                                                     io::ErrorKind::WriteZero => {
-                                                        warn!("{token:#?} got a zero write and will retry.");
+                                                        warn!("{token:#?} got a zero write, but will retry.");
                                                         messages.push_front(msg);
                                                         continue;
                                                     }
@@ -678,7 +678,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                     }
 
                     let response = ServerResponse::TurnSignal(action_options);
-                    info!("{username}! {response}");
+                    info!("{username}: {response}.");
                     let msg = ServerMessage::Response {
                         username: username.clone(),
                         data: Box::new(response),
@@ -720,7 +720,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                     // the commanding client.
                     match result {
                         Ok(()) => {
-                            info!("Ack! {msg}");
+                            info!("Ack: {msg}.");
                             let msg = ServerMessage::Ack(msg);
                             tx_server.send(msg)?;
 
@@ -728,7 +728,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             tx_server.send(msg)?;
                         }
                         Err(error) => {
-                            error!("{msg} {error}.");
+                            error!("{msg}: {error}.");
                             let msg = ServerMessage::Response {
                                 username: msg.username,
                                 data: Box::new(ServerResponse::UserError(error)),

@@ -18,33 +18,33 @@ use entities::{
 
 #[derive(Debug, Deserialize, Eq, Error, PartialEq, Serialize)]
 pub enum UserError {
-    #[error("Cannot show hand now.")]
+    #[error("cannot show hand now")]
     CannotShowHand,
-    #[error("Cannot start game unless you're waitlisted or playing.")]
+    #[error("cannot start game unless you're waitlisted or playing")]
     CannotStartGame,
-    #[error("Game is full.")]
+    #[error("game is full")]
     CapacityReached,
-    #[error("Game already in progress.")]
+    #[error("game already in progress")]
     GameAlreadyInProgress,
-    #[error("Game already starting.")]
+    #[error("game already starting")]
     GameAlreadyStarting,
-    #[error("Insufficient funds to satisfy the ${big_blind} big blind.")]
+    #[error("insufficient funds to satisfy the ${big_blind} big blind")]
     InsufficientFunds { big_blind: Usd },
-    #[error("Tried an illegal {action}.")]
+    #[error("tried an illegal {action}")]
     InvalidAction { action: Action },
-    #[error("Tried an illegal {bet}.")]
+    #[error("tried an illegal {bet}")]
     InvalidBet { bet: Bet },
-    #[error("Need at least 2 players to start the game.")]
+    #[error("need at least 2 players to start the game")]
     NotEnoughPlayers,
-    #[error("Tried acting out of turn.")]
+    #[error("tried acting out of turn")]
     OutOfTurnAction,
-    #[error("User already exists.")]
+    #[error("already exists")]
     UserAlreadyExists,
-    #[error("User does not exist.")]
+    #[error("does not exist")]
     UserDoesNotExist,
-    #[error("User is not playing.")]
+    #[error("not playing")]
     UserNotPlaying,
-    #[error("User already showing hand.")]
+    #[error("already showing hand")]
     UserAlreadyShowingHand,
 }
 

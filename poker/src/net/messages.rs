@@ -7,13 +7,13 @@ use crate::game::{entities::Action, UserError};
 
 #[derive(Debug, Deserialize, Eq, thiserror::Error, PartialEq, Serialize)]
 pub enum ClientError {
-    #[error("Username already associated.")]
+    #[error("already associated")]
     AlreadyAssociated,
-    #[error("Connection does not exist.")]
+    #[error("does not exist")]
     DoesNotExist,
-    #[error("Connection expired.")]
+    #[error("expired")]
     Expired,
-    #[error("Unassociated username.")]
+    #[error("unassociated")]
     Unassociated,
 }
 
@@ -67,7 +67,7 @@ pub struct ClientMessage {
 
 impl fmt::Display for ClientMessage {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} {}.", self.username, self.command)
+        write!(f, "{} {}", self.username, self.command)
     }
 }
 
@@ -87,15 +87,15 @@ impl fmt::Display for ServerResponse {
             ServerResponse::ClientError(error) => write!(f, "{}", error),
             ServerResponse::GameView(view) => write!(f, "{}", view),
             ServerResponse::TurnSignal(action_options) => {
-                write!(f, "It's your turn! You can ")?;
+                write!(f, "can ")?;
                 let num_options = action_options.len();
                 for (i, action) in action_options.iter().enumerate() {
                     match i {
-                        0 if num_options == 1 => write!(f, "{}.", action)?,
+                        0 if num_options == 1 => write!(f, "{}", action)?,
                         0 if num_options == 2 => write!(f, "{} ", action)?,
                         0 if num_options >= 3 => write!(f, "{}, ", action)?,
                         i if i == num_options - 1 && num_options != 1 => {
-                            write!(f, "or {}.", action)?
+                            write!(f, "or {}", action)?
                         }
                         _ => write!(f, "{}, ", action)?,
                     }
