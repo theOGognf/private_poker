@@ -1,5 +1,5 @@
 [package]
-name = "poker_client"
+name = "pp_client"
 version = "0.1.0"
 edition = "2021"
 

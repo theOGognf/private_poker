@@ -13,7 +13,7 @@ pub mod functional;
 use constants::{DEFAULT_MAX_USERS, MAX_PLAYERS, MAX_POTS};
 use entities::{
     Action, Bet, BetAction, Card, Player, PlayerState, Pot, SubHand, Usd, Usdf, User,
-    DEFAULT_MIN_BIG_BLIND, DEFAULT_MIN_SMALL_BLIND, DEFAULT_BUY_IN,
+    DEFAULT_BUY_IN, DEFAULT_MIN_BIG_BLIND, DEFAULT_MIN_SMALL_BLIND,
 };
 
 #[derive(Debug, Deserialize, Eq, Error, PartialEq, Serialize)]
@@ -1957,13 +1957,9 @@ mod game_tests {
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         assert!(game.is_pot_empty());
-        for (i, money) in [
-            game.data.settings.buy_in,
-            2 * game.data.settings.buy_in,
-            0,
-        ]
-        .iter()
-        .enumerate()
+        for (i, money) in [game.data.settings.buy_in, 2 * game.data.settings.buy_in, 0]
+            .iter()
+            .enumerate()
         {
             assert_eq!(game.data.players[i].user.money, *money);
         }
@@ -1985,10 +1981,7 @@ mod game_tests {
         let game: Game<ShowHands> = game.into();
         assert!(game.is_pot_empty());
         for i in 0..3 {
-            assert_eq!(
-                game.data.players[i].user.money,
-                game.data.settings.buy_in
-            );
+            assert_eq!(game.data.players[i].user.money, game.data.settings.buy_in);
         }
     }
 
@@ -2032,10 +2025,7 @@ mod game_tests {
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         assert!(game.is_pot_empty());
-        for (i, money) in [6 * game.data.settings.buy_in, 0, 0]
-            .iter()
-            .enumerate()
-        {
+        for (i, money) in [6 * game.data.settings.buy_in, 0, 0].iter().enumerate() {
             assert_eq!(game.data.players[i].user.money, *money);
         }
     }

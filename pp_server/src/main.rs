@@ -1,7 +1,7 @@
 use anyhow::Error;
 use clap::{value_parser, Arg, Command};
 use log::info;
-use poker::{
+use private_poker::{
     entities::Usd,
     server::{self, PokerConfig},
     GameSettings, DEFAULT_MAX_USERS, MAX_PLAYERS,
@@ -21,7 +21,7 @@ fn main() -> Result<(), Error> {
         .value_name("USD")
         .value_parser(value_parser!(Usd));
 
-    let matches = Command::new("poker_server")
+    let matches = Command::new("pp_server")
         .about("Host a centralized poker server over TCP.")
         .version("0.0.1")
         .arg(address)

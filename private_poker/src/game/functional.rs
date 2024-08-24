@@ -9,7 +9,7 @@ use super::entities::{Card, Rank, SubHand, Suit};
 /// # Examples
 ///
 /// ```
-/// use poker::{entities::{Card, Suit}, functional::{argmax, eval}};
+/// use private_poker::{entities::{Card, Suit}, functional::{argmax, eval}};
 ///
 /// let cards1 = [Card(4, Suit::Club), Card(11, Suit::Spade)];
 /// let cards2 = [Card(4, Suit::Club), Card(12, Suit::Spade)];
@@ -48,7 +48,7 @@ pub fn argmax(hands: &[Vec<SubHand>]) -> Vec<usize> {
 /// # Examples
 ///
 /// ```
-/// use poker::{entities::{Card, Rank, Suit}, functional::eval};
+/// use private_poker::{entities::{Card, Rank, Suit}, functional::eval};
 ///
 /// let cards = [Card(4, Suit::Club), Card(4, Suit::Heart), Card(11, Suit::Spade)];
 /// let subhands = eval(&cards);
@@ -332,7 +332,7 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
 /// # Examples
 ///
 /// ```
-/// use poker::functional::new_deck;
+/// use private_poker::functional::new_deck;
 /// use rand::thread_rng;
 /// use rand::seq::SliceRandom;
 ///

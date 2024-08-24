@@ -328,7 +328,8 @@ fn drain_client_messages(
             match result {
                 Ok(_) => {
                     info!("{token:#?}: {msg}.");
-                    tx_client.send(msg)?},
+                    tx_client.send(msg)?
+                }
                 Err(error) => {
                     error!("{token:#?}: {error}.");
                     let msg = ServerResponse::ClientError(error);

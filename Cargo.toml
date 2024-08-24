@@ -1,7 +1,7 @@
 [workspace]
 members = [
-    "poker",
-    "poker_client",
-    "poker_server",
+    "pp_client",
+    "pp_server",
+    "private_poker",
 ]
 resolver = "2"

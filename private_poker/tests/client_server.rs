@@ -2,7 +2,7 @@ use mio::net::TcpListener;
 
 use std::{thread, time::Duration};
 
-use poker::{
+use private_poker::{
     messages,
     server::{self, PokerConfig, ServerTimeouts},
     Client, UserError,
