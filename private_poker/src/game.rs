@@ -734,7 +734,9 @@ macro_rules! impl_user_managers {
                 } else {
                     return Err(UserError::UserDoesNotExist);
                 };
-                self.data.donations += user.money as Usdf;
+                if let Some(winnings) = user.money.checked_sub(self.data.settings.buy_in) {
+                    self.data.donations += winnings as Usdf;
+                }
                 user.money = 0;
                 Ok(true)
             }
@@ -795,7 +797,9 @@ macro_rules! impl_user_managers_with_queue {
                 } else {
                     return Err(UserError::UserDoesNotExist);
                 };
-                self.data.donations += user.money as Usdf;
+                if let Some(winnings) = user.money.checked_sub(self.data.settings.buy_in) {
+                    self.data.donations += winnings as Usdf;
+                }
                 user.money = 0;
                 Ok(true)
             }
@@ -2215,10 +2219,7 @@ mod game_tests {
         assert!(game.contains_player("2"));
         let game: Game<UpdateBlinds> = game.into();
         for i in 0..2 {
-            assert_eq!(
-                game.data.players[i].user.money,
-                game.data.settings.buy_in + game.data.settings.buy_in / 2
-            );
+            assert_eq!(game.data.players[i].user.money, game.data.settings.buy_in);
         }
         let mut expected_open_seats = Vec::from_iter(3..game.data.settings.max_players);
         expected_open_seats.push(0);
@@ -2246,10 +2247,7 @@ mod game_tests {
         assert!(game.contains_player("2"));
         let game: Game<UpdateBlinds> = game.into();
         for i in 0..2 {
-            assert_eq!(
-                game.data.players[i].user.money,
-                game.data.settings.buy_in + game.data.settings.buy_in / 2
-            );
+            assert_eq!(game.data.players[i].user.money, game.data.settings.buy_in);
         }
         let mut expected_open_seats = Vec::from_iter(3..game.data.settings.max_players);
         expected_open_seats.push(0);
