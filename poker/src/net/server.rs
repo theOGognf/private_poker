@@ -1,5 +1,5 @@
 use anyhow::{bail, Error};
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use mio::{
     net::{TcpListener, TcpStream},
     Events, Interest, Poll, Token,
@@ -476,7 +476,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                 &poll,
             )?;
 
-            info!("Polling for network events.");
+            debug!("Polling for network events.");
             if let Err(error) = poll.poll(&mut events, Some(config.server_timeouts.poll)) {
                 match error.kind() {
                     io::ErrorKind::Interrupted => continue,
@@ -632,7 +632,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
 
     let mut state: PokerState = config.game_settings.into();
     loop {
-        info!("Updating game state.");
+        debug!("Updating game state.");
         state = state.step();
 
         let views = state.get_views();
@@ -678,7 +678,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                     }
 
                     let response = ServerResponse::TurnSignal(action_options);
-                    info!("{username}: {response}.");
+                    info!("{username} {response}.");
                     let msg = ServerMessage::Response {
                         username: username.clone(),
                         data: Box::new(response),

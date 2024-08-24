@@ -8,10 +8,10 @@ use poker::{
 };
 
 fn main() -> Result<(), Error> {
-    let address = Arg::new("address")
+    let address = Arg::new("bind")
         .help("Server socket bind address.")
         .default_value("127.0.0.1:6969")
-        .long("address")
+        .long("bind")
         .value_name("IP:PORT");
 
     let buy_in = Arg::new("buy_in")
@@ -28,13 +28,13 @@ fn main() -> Result<(), Error> {
         .arg(buy_in)
         .get_matches();
 
-    let address = matches.get_one::<String>("address").unwrap();
+    let address = matches.get_one::<String>("bind").unwrap();
     let buy_in = matches.get_one::<Usd>("buy_in").unwrap();
 
     let game_settings = GameSettings::new(MAX_PLAYERS, DEFAULT_MAX_USERS, *buy_in);
     let config: PokerConfig = game_settings.into();
 
-    env_logger::init();
+    env_logger::builder().format_target(false).init();
     info!("Starting at {address}.");
     server::run(address, config)?;
 

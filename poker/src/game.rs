@@ -13,7 +13,7 @@ pub mod functional;
 use constants::{DEFAULT_MAX_USERS, MAX_PLAYERS, MAX_POTS};
 use entities::{
     Action, Bet, BetAction, Card, Player, PlayerState, Pot, SubHand, Usd, Usdf, User,
-    DEFAULT_MIN_BIG_BLIND, DEFAULT_MIN_SMALL_BLIND, DEFAULT_STARTING_STACK,
+    DEFAULT_MIN_BIG_BLIND, DEFAULT_MIN_SMALL_BLIND, DEFAULT_BUY_IN,
 };
 
 #[derive(Debug, Deserialize, Eq, Error, PartialEq, Serialize)]
@@ -50,7 +50,7 @@ pub enum UserError {
 
 #[derive(Debug)]
 pub struct GameSettings {
-    pub starting_stack: Usd,
+    pub buy_in: Usd,
     pub min_big_blind: Usd,
     pub min_small_blind: Usd,
     pub max_players: usize,
@@ -59,12 +59,12 @@ pub struct GameSettings {
 }
 
 impl GameSettings {
-    pub fn new(max_players: usize, max_users: usize, starting_stack: Usd) -> Self {
-        let min_big_blind = starting_stack / 20;
+    pub fn new(max_players: usize, max_users: usize, buy_in: Usd) -> Self {
+        let min_big_blind = buy_in / 20;
         let min_small_blind = min_big_blind / 2;
         let max_pots = max_players / 2 + 1;
         Self {
-            starting_stack,
+            buy_in,
             min_big_blind,
             min_small_blind,
             max_players,
@@ -77,7 +77,7 @@ impl GameSettings {
 impl Default for GameSettings {
     fn default() -> Self {
         Self {
-            starting_stack: DEFAULT_STARTING_STACK,
+            buy_in: DEFAULT_BUY_IN,
             min_big_blind: DEFAULT_MIN_BIG_BLIND,
             min_small_blind: DEFAULT_MIN_SMALL_BLIND,
             max_players: MAX_PLAYERS,
@@ -667,7 +667,7 @@ impl<T> Game<T> {
             username.to_string(),
             User {
                 name: username.to_string(),
-                money: self.data.settings.starting_stack,
+                money: self.data.settings.buy_in,
             },
         );
         Ok(true)
@@ -1534,7 +1534,7 @@ impl From<Game<UpdateBlinds>> for Game<BootPlayers> {
             .min()
             .unwrap_or(Usd::MAX);
         if min_money < Usd::MAX {
-            let multiple = max(1, min_money / value.data.settings.starting_stack);
+            let multiple = max(1, min_money / value.data.settings.buy_in);
             value.data.small_blind = multiple * value.data.settings.min_small_blind;
             value.data.big_blind = multiple * value.data.settings.min_big_blind;
         }
@@ -1909,7 +1909,7 @@ mod game_tests {
         {
             assert_eq!(
                 game.data.players[i].user.money,
-                game.data.settings.starting_stack - blind
+                game.data.settings.buy_in - blind
             );
         }
     }
@@ -1958,8 +1958,8 @@ mod game_tests {
         let game: Game<ShowHands> = game.into();
         assert!(game.is_pot_empty());
         for (i, money) in [
-            game.data.settings.starting_stack,
-            2 * game.data.settings.starting_stack,
+            game.data.settings.buy_in,
+            2 * game.data.settings.buy_in,
             0,
         ]
         .iter()
@@ -1987,7 +1987,7 @@ mod game_tests {
         for i in 0..3 {
             assert_eq!(
                 game.data.players[i].user.money,
-                game.data.settings.starting_stack
+                game.data.settings.buy_in
             );
         }
     }
@@ -1997,7 +1997,7 @@ mod game_tests {
         let game = init_game();
         let mut game: Game<MoveButton> = game.into();
         for i in 0..3 {
-            game.data.players[i].user.money = game.data.settings.starting_stack * (3 - i as u32);
+            game.data.players[i].user.money = game.data.settings.buy_in * (3 - i as u32);
         }
         let game: Game<CollectBlinds> = game.into();
         let game: Game<Deal> = game.into();
@@ -2032,7 +2032,7 @@ mod game_tests {
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
         assert!(game.is_pot_empty());
-        for (i, money) in [6 * game.data.settings.starting_stack, 0, 0]
+        for (i, money) in [6 * game.data.settings.buy_in, 0, 0]
             .iter()
             .enumerate()
         {
@@ -2045,7 +2045,7 @@ mod game_tests {
         let game = init_game();
         let mut game: Game<MoveButton> = game.into();
         for i in 0..3 {
-            game.data.players[i].user.money = game.data.settings.starting_stack * (i as u32 + 1);
+            game.data.players[i].user.money = game.data.settings.buy_in * (i as u32 + 1);
         }
         let game: Game<CollectBlinds> = game.into();
         let game: Game<Deal> = game.into();
@@ -2091,9 +2091,9 @@ mod game_tests {
         let game: Game<ShowHands> = game.into();
         assert!(game.is_pot_empty());
         for (i, money) in [
-            3 * game.data.settings.starting_stack,
-            2 * game.data.settings.starting_stack,
-            game.data.settings.starting_stack,
+            3 * game.data.settings.buy_in,
+            2 * game.data.settings.buy_in,
+            game.data.settings.buy_in,
         ]
         .iter()
         .enumerate()
@@ -2227,7 +2227,7 @@ mod game_tests {
         for i in 0..2 {
             assert_eq!(
                 game.data.players[i].user.money,
-                game.data.settings.starting_stack + game.data.settings.starting_stack / 2
+                game.data.settings.buy_in + game.data.settings.buy_in / 2
             );
         }
         let mut expected_open_seats = Vec::from_iter(3..game.data.settings.max_players);
@@ -2258,7 +2258,7 @@ mod game_tests {
         for i in 0..2 {
             assert_eq!(
                 game.data.players[i].user.money,
-                game.data.settings.starting_stack + game.data.settings.starting_stack / 2
+                game.data.settings.buy_in + game.data.settings.buy_in / 2
             );
         }
         let mut expected_open_seats = Vec::from_iter(3..game.data.settings.max_players);

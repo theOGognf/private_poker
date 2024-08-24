@@ -79,8 +79,8 @@ pub type Usdf = f32;
 
 // By default, a player will be cleaned if they fold 20 rounds with the big
 // blind.
-pub const DEFAULT_STARTING_STACK: Usd = 200;
-pub const DEFAULT_MIN_BIG_BLIND: Usd = DEFAULT_STARTING_STACK / 20;
+pub const DEFAULT_BUY_IN: Usd = 200;
+pub const DEFAULT_MIN_BIG_BLIND: Usd = DEFAULT_BUY_IN / 20;
 pub const DEFAULT_MIN_SMALL_BLIND: Usd = DEFAULT_MIN_BIG_BLIND / 2;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
