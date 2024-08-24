@@ -633,7 +633,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
 
     let mut state: PokerState = config.game_settings.into();
     loop {
-        debug!("Updating game state.");
+        info!("Updating game state.");
         state = state.step();
 
         let views = state.get_views();
