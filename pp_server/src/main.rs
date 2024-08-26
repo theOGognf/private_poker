@@ -28,8 +28,12 @@ fn main() -> Result<(), Error> {
         .arg(buy_in)
         .get_matches();
 
-    let address = matches.get_one::<String>("bind").unwrap();
-    let buy_in = matches.get_one::<Usd>("buy_in").unwrap();
+    let address = matches
+        .get_one::<String>("bind")
+        .expect("Server address is an invalid string.");
+    let buy_in = matches
+        .get_one::<Usd>("buy_in")
+        .expect("Buy-in is an invalid integer.");
 
     let game_settings = GameSettings::new(MAX_PLAYERS, DEFAULT_MAX_USERS, *buy_in);
     let config: PokerConfig = game_settings.into();
