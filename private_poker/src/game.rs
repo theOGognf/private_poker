@@ -683,6 +683,21 @@ impl<T> Game<T> {
         self.get_next_action_options()
     }
 
+    fn redistribute_user_money(&mut self, money: &mut Usd) {
+        match (*money).cmp(&self.data.settings.buy_in) {
+            Ordering::Greater => {
+                let excess = *money - self.data.settings.buy_in;
+                self.data.donations += excess as Usdf;
+            }
+            Ordering::Less => {
+                let remainder = self.data.settings.buy_in - *money;
+                self.data.donations -= remainder as Usdf;
+            }
+            _ => {}
+        }
+        *money = 0;
+    }
+
     /// Add a user to the waitlist, putting them in queue to play. The queue
     /// is eventually drained until the table is full and there are no more
     /// seats available for play.
@@ -731,10 +746,7 @@ macro_rules! impl_user_managers {
                 } else {
                     return Err(UserError::UserDoesNotExist);
                 };
-                if let Some(winnings) = user.money.checked_sub(self.data.settings.buy_in) {
-                    self.data.donations += winnings as Usdf;
-                }
-                user.money = 0;
+                self.redistribute_user_money(&mut user.money);
                 Ok(true)
             }
 
@@ -788,10 +800,7 @@ macro_rules! impl_user_managers_with_queue {
                 } else {
                     return Err(UserError::UserDoesNotExist);
                 };
-                if let Some(winnings) = user.money.checked_sub(self.data.settings.buy_in) {
-                    self.data.donations += winnings as Usdf;
-                }
-                user.money = 0;
+                self.redistribute_user_money(&mut user.money);
                 Ok(true)
             }
 
@@ -1483,7 +1492,7 @@ impl From<Game<RemovePlayers>> for Game<DivideDonations> {
 impl From<Game<DivideDonations>> for Game<UpdateBlinds> {
     fn from(mut value: Game<DivideDonations>) -> Self {
         let num_users = value.get_num_users();
-        if num_users > 0 {
+        if num_users > 0 && value.data.donations > 0 as Usdf {
             let donation_per_user = value.data.donations as Usd / num_users as Usd;
             for user in value
                 .data
