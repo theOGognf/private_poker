@@ -29,10 +29,13 @@ impl fmt::Display for Suit {
     }
 }
 
+/// Placeholder for card values.
+pub type Value = u8;
+
 /// A card is a tuple of a uInt8 value (ace=1u8 ... ace=14u8)
 /// and a suit. A joker is depicted as 0u8.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-pub struct Card(pub u8, pub Suit);
+pub struct Card(pub Value, pub Suit);
 
 impl fmt::Display for Card {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -63,7 +66,7 @@ pub enum Rank {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct SubHand {
     pub rank: Rank,
-    pub cards: Vec<u8>,
+    pub values: Vec<Value>,
 }
 
 /// Type alias for whole dollars. All bets and player stacks are represented

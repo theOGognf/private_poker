@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 
-use super::entities::{Card, Rank, SubHand, Suit};
+use super::entities::{Card, Rank, SubHand, Suit, Value};
 
 /// Get the indices corresponding to the winning hands from an array
 /// of hands that were each created from `eval`.
@@ -20,7 +20,7 @@ use super::entities::{Card, Rank, SubHand, Suit};
 pub fn argmax(hands: &[Vec<SubHand>]) -> Vec<usize> {
     let mut max = vec![SubHand {
         rank: Rank::HighCard,
-        cards: vec![0],
+        values: vec![0],
     }];
     let mut argmaxes: Vec<usize> = Vec::new();
     for (i, hand) in hands.iter().enumerate() {
@@ -57,18 +57,18 @@ pub fn argmax(hands: &[Vec<SubHand>]) -> Vec<usize> {
 pub fn eval(cards: &[Card]) -> Vec<SubHand> {
     // Mapping of suit to (sorted) cards within that suit.
     // Used for tracking whether there's a flush or straight flush.
-    let mut values_per_suit: HashMap<Suit, Vec<u8>> = HashMap::new();
+    let mut values_per_suit: HashMap<Suit, Vec<Value>> = HashMap::new();
 
     // Used for tracking whether there's a straight.
-    let mut straight_count: u8 = 0;
-    let mut straight_prev_value: u8 = 0;
+    let mut straight_count: usize = 0;
+    let mut straight_prev_value: Value = 0;
 
     // Mapping of rank to each subhand for that rank. Helps track
     // the highest subhand in each rank.
     let mut subhands_per_rank: BTreeMap<Rank, BTreeSet<SubHand>> = BTreeMap::new();
     // Count number of times a card value appears. Helps track one pair,
     // two pair, etc.
-    let mut value_counts: HashMap<u8, u8> = HashMap::new();
+    let mut value_counts: HashMap<Value, usize> = HashMap::new();
 
     // Loop through cards in hand assuming the hand is sorted
     // and that each ace appears in the hand twice (at the low
@@ -109,12 +109,12 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
             if is_straight_flush {
                 hands.push(SubHand {
                     rank: Rank::StraightFlush,
-                    cards: Vec::from(maybe_straight_flush_cards),
+                    values: Vec::from(maybe_straight_flush_cards),
                 })
             } else {
                 hands.push(SubHand {
                     rank: Rank::Flush,
-                    cards: Vec::from(maybe_straight_flush_cards),
+                    values: Vec::from(maybe_straight_flush_cards),
                 })
             }
         }
@@ -134,7 +134,7 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
         if straight_count >= 5 {
             let straight_subhand = SubHand {
                 rank: Rank::Straight,
-                cards: (*value - 4..*value).rev().collect(),
+                values: (*value - 4..*value).rev().collect(),
             };
             // We don't need to push the straight into the heap if something
             // better was already found.
@@ -157,7 +157,7 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
             1 => {
                 let high_card_subhand = SubHand {
                     rank: Rank::HighCard,
-                    cards: vec![*value],
+                    values: vec![*value],
                 };
                 subhands_per_rank
                     .entry(Rank::HighCard)
@@ -168,7 +168,7 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
             2 => {
                 let one_pair_subhand = SubHand {
                     rank: Rank::OnePair,
-                    cards: vec![*value; 2],
+                    values: vec![*value; 2],
                 };
                 let one_pairs = subhands_per_rank.entry(Rank::OnePair).or_default();
                 one_pairs.insert(one_pair_subhand);
@@ -177,10 +177,10 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                 // make a two pair.
                 if let Some(next_best_one_pair) = one_pairs.iter().nth_back(1) {
                     let mut two_pair_cards = vec![*value; 2];
-                    two_pair_cards.extend(next_best_one_pair.cards.clone());
+                    two_pair_cards.extend(next_best_one_pair.values.clone());
                     let two_pair_subhand = SubHand {
                         rank: Rank::TwoPair,
-                        cards: two_pair_cards,
+                        values: two_pair_cards,
                     };
                     subhands_per_rank
                         .entry(Rank::TwoPair)
@@ -192,11 +192,11 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                 // and three of a kind make a full house.
                 if let Some(three_of_a_kinds) = subhands_per_rank.get(&Rank::ThreeOfAKind) {
                     if let Some(best_three_of_a_kind) = three_of_a_kinds.iter().next() {
-                        let mut full_house_cards = best_three_of_a_kind.cards.clone();
+                        let mut full_house_cards = best_three_of_a_kind.values.clone();
                         full_house_cards.extend(vec![*value; 2]);
                         let full_house_subhand = SubHand {
                             rank: Rank::FullHouse,
-                            cards: full_house_cards,
+                            values: full_house_cards,
                         };
 
                         subhands_per_rank
@@ -210,11 +210,11 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
             3 => {
                 let one_pair_subhand = SubHand {
                     rank: Rank::OnePair,
-                    cards: vec![*value; 2],
+                    values: vec![*value; 2],
                 };
                 let three_of_a_kind_subhand = SubHand {
                     rank: Rank::ThreeOfAKind,
-                    cards: vec![*value; 3],
+                    values: vec![*value; 3],
                 };
                 subhands_per_rank
                     .get_mut(&Rank::OnePair)
@@ -229,10 +229,10 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                 if let Some(one_pairs) = subhands_per_rank.get(&Rank::OnePair) {
                     if let Some(best_one_pair) = one_pairs.iter().next_back() {
                         let mut full_house_cards = vec![*value; 3];
-                        full_house_cards.extend(best_one_pair.cards.clone());
+                        full_house_cards.extend(best_one_pair.values.clone());
                         let full_house_subhand = SubHand {
                             rank: Rank::FullHouse,
-                            cards: full_house_cards,
+                            values: full_house_cards,
                         };
                         subhands_per_rank
                             .entry(Rank::FullHouse)
@@ -246,10 +246,10 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                 if let Some(three_of_a_kinds) = subhands_per_rank.get(&Rank::ThreeOfAKind) {
                     if let Some(next_best_three_of_a_kind) = three_of_a_kinds.iter().nth_back(1) {
                         let mut full_house_cards = vec![*value; 3];
-                        full_house_cards.extend(vec![next_best_three_of_a_kind.cards[0]; 2]);
+                        full_house_cards.extend(vec![next_best_three_of_a_kind.values[0]; 2]);
                         let full_house_subhand = SubHand {
                             rank: Rank::FullHouse,
-                            cards: full_house_cards,
+                            values: full_house_cards,
                         };
                         subhands_per_rank
                             .entry(Rank::FullHouse)
@@ -262,11 +262,11 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
             4 => {
                 let three_of_a_kind_subhand = SubHand {
                     rank: Rank::ThreeOfAKind,
-                    cards: vec![*value; 3],
+                    values: vec![*value; 3],
                 };
                 let four_of_a_kind_subhand = SubHand {
                     rank: Rank::FourOfAKind,
-                    cards: vec![*value; 4],
+                    values: vec![*value; 4],
                 };
                 subhands_per_rank
                     .get_mut(&Rank::ThreeOfAKind)
@@ -306,15 +306,15 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
     // Now convert the binary heap to a vector containing the best
     // hand. Do this by popping from the binary heap until we get
     // the 5 best cards in our hand to construct the best hand.
-    let mut cards_in_hand: HashSet<u8> = HashSet::with_capacity(5);
+    let mut cards_in_hand: HashSet<Value> = HashSet::with_capacity(5);
     let mut num_cards: usize = 0;
     let mut hand: Vec<SubHand> = Vec::with_capacity(5);
     while let Some(subhand) = hands.pop() {
         if hand.is_empty()
-            || (subhand.rank == Rank::HighCard && !cards_in_hand.contains(&subhand.cards[0]))
+            || (subhand.rank == Rank::HighCard && !cards_in_hand.contains(&subhand.values[0]))
         {
-            num_cards += subhand.cards.len();
-            cards_in_hand.extend(subhand.cards.clone());
+            num_cards += subhand.values.len();
+            cards_in_hand.extend(subhand.values.clone());
             hand.push(subhand);
         }
         if let Some(best_subhand) = hand.first() {
