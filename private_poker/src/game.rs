@@ -684,17 +684,7 @@ impl<T> Game<T> {
     }
 
     fn redistribute_user_money(&mut self, money: &mut Usd) {
-        match (*money).cmp(&self.data.settings.buy_in) {
-            Ordering::Greater => {
-                let excess = *money - self.data.settings.buy_in;
-                self.data.donations += excess as Usdf;
-            }
-            Ordering::Less => {
-                let remainder = self.data.settings.buy_in - *money;
-                self.data.donations -= remainder as Usdf;
-            }
-            _ => {}
-        }
+        self.data.donations += (*money as Usdf) - (self.data.settings.buy_in as Usdf);
         *money = 0;
     }
 
