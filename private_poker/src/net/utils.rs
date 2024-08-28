@@ -4,7 +4,7 @@ use std::io::{self, Read, Write};
 
 pub fn read_prefixed<T: DeserializeOwned, R: Read>(reader: &mut R) -> io::Result<T> {
     // Read the size as a u32
-    let mut len_bytes = [0u8; 4];
+    let mut len_bytes = [0; 4];
     reader.read_exact(&mut len_bytes)?;
     let len = u32::from_le_bytes(len_bytes) as usize;
 
@@ -14,7 +14,7 @@ pub fn read_prefixed<T: DeserializeOwned, R: Read>(reader: &mut R) -> io::Result
     // the readers determine how to handle such senders. It is
     // possible for the would block error to be something that
     // isn't as sketchy, but that should be pretty rare.
-    let mut buf = vec![0u8; len];
+    let mut buf = vec![0; len];
     if let Err(error) = reader.read_exact(&mut buf) {
         let kind = match error.kind() {
             io::ErrorKind::WouldBlock => io::ErrorKind::InvalidData,
@@ -35,13 +35,12 @@ pub fn read_prefixed<T: DeserializeOwned, R: Read>(reader: &mut R) -> io::Result
 pub fn write_prefixed<T: Serialize, W: Write>(writer: &mut W, value: &T) -> io::Result<()> {
     match serialize(&value) {
         Ok(serialized) => {
-            // Write the size of the serialized data as a u32
+            // Write the size of the serialized data and the serialized data
+            // all in one chunk to prevent read-side EOF race conditions.
             let size = serialized.len() as u32;
-            writer.write_all(&size.to_le_bytes())?;
-
-            // Write the serialized data
-            writer.write_all(&serialized)?;
-
+            let mut buf = Vec::from_iter(size.to_le_bytes());
+            buf.extend(serialized);
+            writer.write_all(&buf)?;
             Ok(())
         }
         Err(error) => match *error {

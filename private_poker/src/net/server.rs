@@ -2,7 +2,7 @@ use anyhow::{bail, Error};
 use log::{debug, error, info, warn};
 use mio::{
     net::{TcpListener, TcpStream},
-    Events, Interest, Poll, Token,
+    Events, Interest, Poll, Token, Waker,
 };
 use std::{
     cmp::max,
@@ -28,6 +28,7 @@ pub const DEFAULT_POLL_TIMEOUT: Duration = Duration::from_secs(1);
 pub const DEFAULT_STEP_TIMEOUT: Duration = Duration::from_secs(5);
 pub const MAX_NETWORK_EVENTS_PER_USER: usize = 6;
 pub const SERVER: Token = Token(0);
+pub const WAKER: Token = Token(1);
 
 pub struct ServerTimeouts {
     pub action: Duration,
@@ -215,7 +216,7 @@ impl TokenManager {
                     (Some((unconfirmed, _)), Some((confirmed, _))) => max(unconfirmed, confirmed),
                     (Some((unconfirmed, _)), None) => unconfirmed,
                     (None, Some((verified, _))) => verified,
-                    (None, None) => &SERVER,
+                    (None, None) => &WAKER,
                 };
                 Token(newest.0 + 1)
             }
@@ -283,166 +284,15 @@ fn change_user_state(
     }
 }
 
-fn drain_client_messages(
-    messages_to_write: &mut HashMap<Token, VecDeque<ServerResponse>>,
-    max_network_events: usize,
-    tokens_to_remove: &mut HashSet<Token>,
-    messages_to_process: &mut HashMap<Token, VecDeque<ClientMessage>>,
-    token_manager: &mut TokenManager,
-    tx_client: &Sender<ClientMessage>,
-    poll: &Poll,
-) -> Result<(), Error> {
-    // Need to handle the case where there's an unresponsive or
-    // misbehaving client that doesn't let us write messages to
-    // them. If their message queue reaches a certain size, queue
-    // them for removal.
-    for (token, msgs) in messages_to_write.iter() {
-        if msgs.len() >= max_network_events {
-            error!("{token:#?} has not been receiving and will be removed.");
-            tokens_to_remove.insert(*token);
-        }
-    }
-
-    // Process all the messages received from the clients.
-    for (token, msgs) in messages_to_process.drain() {
-        for msg in msgs {
-            let result = match msg.command {
-                // Check if the client wasn't able to associate its token with a username
-                // in time, or if that username is already taken.
-                ClientCommand::Connect => {
-                    token_manager.associate_token_and_username(token, msg.username.clone())
-                }
-                // Check if the client is being faithful and sending messages with
-                // the correct username.
-                _ => match token_manager.get_token_with_username(&msg.username) {
-                    Ok(associated_token) => {
-                        if token == associated_token {
-                            Ok(())
-                        } else {
-                            Err(ClientError::Unassociated)
-                        }
-                    }
-                    Err(error) => Err(error),
-                },
-            };
-            match result {
-                Ok(_) => {
-                    info!("{token:#?}: {msg}.");
-                    tx_client.send(msg)?
-                }
-                Err(error) => {
-                    error!("{token:#?}: {error}.");
-                    let msg = ServerResponse::ClientError(error);
-                    messages_to_write.entry(token).or_default().push_back(msg);
-                }
-            }
-        }
-    }
-
-    // Recycle all tokens that need to be remove, deregistering their streams
-    // with the poll.
-    for token in tokens_to_remove.drain() {
-        warn!("{token:#?} is being removed.");
-        if let Ok(username) = token_manager.get_confirmed_username_with_token(&token) {
-            let msg = ClientMessage {
-                username,
-                command: ClientCommand::Leave,
-            };
-            tx_client.send(msg)?;
-        }
-        messages_to_write.remove(&token);
-        if let Ok(mut stream) = token_manager.recycle_token(token) {
-            poll.registry().deregister(&mut stream)?;
-        }
-    }
-    for (token, mut stream) in token_manager.recycle_expired_tokens() {
-        warn!("{token:#?} expired.");
-        messages_to_write.remove(&token);
-        poll.registry().deregister(&mut stream)?;
-    }
-    Ok(())
-}
-
-fn drain_server_messages(
-    rx_server: &Receiver<ServerMessage>,
-    token_manager: &mut TokenManager,
-    tx_client: &Sender<ClientMessage>,
-    messages_to_write: &mut HashMap<Token, VecDeque<ServerResponse>>,
-    poll: &Poll,
-) -> Result<(), Error> {
-    let mut tokens_to_reregister: VecDeque<Token> = VecDeque::new();
-    // Drain server messages received from the parent thread so
-    // they can be relayed to the respective clients.
-    while let Ok(msg) = rx_server.try_recv() {
-        match msg {
-            // Acks are effectively successful responses to client
-            // messages and are relayed to all clients.
-            ServerMessage::Ack(msg) => {
-                // We only need to check this connect edge case because all other
-                // client commands can only go through to the parent thread if the
-                // client's username has already been confirmed by the parent
-                // thread.
-                if msg.command == ClientCommand::Connect {
-                    let disconnected = token_manager
-                        .get_token_with_username(&msg.username)
-                        .map_or(true, |token| token_manager.confirm_username(token).is_err());
-                    // The client disconnected before the server could confirm their
-                    // username even though the username was OK. A bit of an edge case,
-                    // we need to notify the main thread that they disconnected. We'll
-                    // still send out the acknowledgement to other clients saying that
-                    // they were able to connect briefly.
-                    if disconnected {
-                        let msg = ClientMessage {
-                            username: msg.username.clone(),
-                            command: ClientCommand::Leave,
-                        };
-                        tx_client.send(msg)?;
-                    }
-                }
-                for token in token_manager.confirmed_tokens.keys() {
-                    let msg = ServerResponse::Ack(msg.clone());
-                    messages_to_write.entry(*token).or_default().push_back(msg);
-                    tokens_to_reregister.push_back(*token);
-                }
-            }
-            // A response goes to a single client. We can safely ignore cases where a
-            // client no longer exists to receive a response because the response
-            // is meant just for the client.
-            ServerMessage::Response { username, data } => {
-                if let Ok(token) = token_manager.get_token_with_username(&username) {
-                    messages_to_write.entry(token).or_default().push_back(*data);
-                    tokens_to_reregister.push_back(token);
-                }
-            }
-            // Views go to all clients. We can safely ignore cases where a client
-            // no longer exists to receive a view because the view is specific
-            // to the client.
-            ServerMessage::Views(views) => {
-                for (username, view) in views {
-                    if let Ok(token) = token_manager.get_token_with_username(&username) {
-                        let msg = ServerResponse::GameView(view);
-                        messages_to_write.entry(token).or_default().push_back(msg);
-                        tokens_to_reregister.push_back(token);
-                    }
-                }
-            }
-        }
-    }
-    for token in tokens_to_reregister {
-        if let Ok(stream) = token_manager.get_mut_stream_with_token(&token) {
-            poll.registry()
-                .reregister(stream, token, Interest::READABLE | Interest::WRITABLE)?;
-        }
-    }
-    Ok(())
-}
-
 pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
     let addr = addr.parse()?;
     let max_network_events = MAX_NETWORK_EVENTS_PER_USER * config.game_settings.max_users;
 
     let (tx_client, rx_client): (Sender<ClientMessage>, Receiver<ClientMessage>) = channel();
     let (tx_server, rx_server): (Sender<ServerMessage>, Receiver<ServerMessage>) = channel();
+
+    let mut poll = Poll::new()?;
+    let waker = Waker::new(poll.registry(), WAKER)?;
 
     // This thread is where the actual networking happens for non-blocking IO.
     // A server is bound to the address and manages connections to clients.
@@ -452,31 +302,14 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
         let mut events = Events::with_capacity(max_network_events);
         let mut messages_to_process: HashMap<Token, VecDeque<ClientMessage>> = HashMap::new();
         let mut messages_to_write: HashMap<Token, VecDeque<ServerResponse>> = HashMap::new();
-        let mut poll = Poll::new()?;
         let mut server = TcpListener::bind(addr)?;
         let mut token_manager = TokenManager::new(config.server_timeouts.connect);
         let mut tokens_to_remove: HashSet<Token> = HashSet::new();
+        let mut tokens_to_reregister: HashSet<Token> = HashSet::new();
         poll.registry()
             .register(&mut server, SERVER, Interest::READABLE)?;
 
         loop {
-            drain_server_messages(
-                &rx_server,
-                &mut token_manager,
-                &tx_client,
-                &mut messages_to_write,
-                &poll,
-            )?;
-            drain_client_messages(
-                &mut messages_to_write,
-                max_network_events,
-                &mut tokens_to_remove,
-                &mut messages_to_process,
-                &mut token_manager,
-                &tx_client,
-                &poll,
-            )?;
-
             debug!("Polling for network events.");
             if let Err(error) = poll.poll(&mut events, Some(config.server_timeouts.poll)) {
                 match error.kind() {
@@ -486,14 +319,6 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
             }
 
             for event in events.iter() {
-                drain_server_messages(
-                    &rx_server,
-                    &mut token_manager,
-                    &tx_client,
-                    &mut messages_to_write,
-                    &poll,
-                )?;
-
                 match event.token() {
                     SERVER => loop {
                         // Received an event for the TCP server socket, which
@@ -520,6 +345,86 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                         token_manager.associate_token_and_stream(token, stream);
                         info!("Accepted new connection with {token:#?}.");
                     },
+                    WAKER => {
+                        // Drain server messages received from the parent thread so
+                        // they can be relayed to the respective clients.
+                        while let Ok(msg) = rx_server.try_recv() {
+                            match msg {
+                                // Acks are effectively successful responses to client
+                                // messages and are relayed to all clients.
+                                ServerMessage::Ack(msg) => {
+                                    // We only need to check this connect edge case because all other
+                                    // client commands can only go through to the parent thread if the
+                                    // client's username has already been confirmed by the parent
+                                    // thread.
+                                    if msg.command == ClientCommand::Connect {
+                                        let disconnected = token_manager
+                                            .get_token_with_username(&msg.username)
+                                            .map_or(true, |token| {
+                                                token_manager.confirm_username(token).is_err()
+                                            });
+                                        // The client disconnected before the server could confirm their
+                                        // username even though the username was OK. A bit of an edge case,
+                                        // we need to notify the main thread that they disconnected. We'll
+                                        // still send out the acknowledgement to other clients saying that
+                                        // they were able to connect briefly.
+                                        if disconnected {
+                                            let msg = ClientMessage {
+                                                username: msg.username.clone(),
+                                                command: ClientCommand::Leave,
+                                            };
+                                            tx_client.send(msg)?;
+                                        }
+                                    }
+                                    for token in token_manager.confirmed_tokens.keys() {
+                                        let msg = ServerResponse::Ack(msg.clone());
+                                        messages_to_write.entry(*token).or_default().push_back(msg);
+                                        tokens_to_reregister.insert(*token);
+                                    }
+                                }
+                                // A response goes to a single client. We can safely ignore cases where a
+                                // client no longer exists to receive a response because the response
+                                // is meant just for the client.
+                                ServerMessage::Response { username, data } => {
+                                    if let Ok(token) =
+                                        token_manager.get_token_with_username(&username)
+                                    {
+                                        messages_to_write
+                                            .entry(token)
+                                            .or_default()
+                                            .push_back(*data);
+                                        tokens_to_reregister.insert(token);
+                                    }
+                                }
+                                // Views go to all clients. We can safely ignore cases where a client
+                                // no longer exists to receive a view because the view is specific
+                                // to the client.
+                                ServerMessage::Views(views) => {
+                                    for (username, view) in views {
+                                        if let Ok(token) =
+                                            token_manager.get_token_with_username(&username)
+                                        {
+                                            let msg = ServerResponse::GameView(view);
+                                            messages_to_write
+                                                .entry(token)
+                                                .or_default()
+                                                .push_back(msg);
+                                            tokens_to_reregister.insert(token);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        for token in tokens_to_reregister.drain() {
+                            if let Ok(stream) = token_manager.get_mut_stream_with_token(&token) {
+                                poll.registry().reregister(
+                                    stream,
+                                    token,
+                                    Interest::READABLE | Interest::WRITABLE,
+                                )?;
+                            }
+                        }
+                    }
                     token => {
                         // Maybe received an event for a TCP connection.
                         if let Ok(stream) = token_manager.get_mut_stream_with_token(&token) {
@@ -618,15 +523,73 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                     }
                 }
 
-                drain_client_messages(
-                    &mut messages_to_write,
-                    max_network_events,
-                    &mut tokens_to_remove,
-                    &mut messages_to_process,
-                    &mut token_manager,
-                    &tx_client,
-                    &poll,
-                )?;
+                // Need to handle the case where there's an unresponsive or
+                // misbehaving client that doesn't let us write messages to
+                // them. If their message queue reaches a certain size, queue
+                // them for removal.
+                for (token, msgs) in messages_to_write.iter() {
+                    if msgs.len() >= max_network_events {
+                        error!("{token:#?} has not been receiving and will be removed.");
+                        tokens_to_remove.insert(*token);
+                    }
+                }
+
+                // Process all the messages received from the clients.
+                for (token, msgs) in messages_to_process.drain() {
+                    for msg in msgs {
+                        let result = match msg.command {
+                            // Check if the client wasn't able to associate its token with a username
+                            // in time, or if that username is already taken.
+                            ClientCommand::Connect => token_manager
+                                .associate_token_and_username(token, msg.username.clone()),
+                            // Check if the client is being faithful and sending messages with
+                            // the correct username.
+                            _ => match token_manager.get_token_with_username(&msg.username) {
+                                Ok(associated_token) => {
+                                    if token == associated_token {
+                                        Ok(())
+                                    } else {
+                                        Err(ClientError::Unassociated)
+                                    }
+                                }
+                                Err(error) => Err(error),
+                            },
+                        };
+                        match result {
+                            Ok(_) => {
+                                info!("{token:#?}: {msg}.");
+                                tx_client.send(msg)?
+                            }
+                            Err(error) => {
+                                error!("{token:#?}: {error}.");
+                                let msg = ServerResponse::ClientError(error);
+                                messages_to_write.entry(token).or_default().push_back(msg);
+                            }
+                        }
+                    }
+                }
+
+                // Recycle all tokens that need to be remove, deregistering their streams
+                // with the poll.
+                for token in tokens_to_remove.drain() {
+                    warn!("{token:#?} is being removed.");
+                    if let Ok(username) = token_manager.get_confirmed_username_with_token(&token) {
+                        let msg = ClientMessage {
+                            username,
+                            command: ClientCommand::Leave,
+                        };
+                        tx_client.send(msg)?;
+                    }
+                    messages_to_write.remove(&token);
+                    if let Ok(mut stream) = token_manager.recycle_token(token) {
+                        poll.registry().deregister(&mut stream)?;
+                    }
+                }
+                for (token, mut stream) in token_manager.recycle_expired_tokens() {
+                    warn!("{token:#?} expired.");
+                    messages_to_write.remove(&token);
+                    poll.registry().deregister(&mut stream)?;
+                }
             }
         }
     });
@@ -665,6 +628,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                 command,
                             });
                             tx_server.send(msg)?;
+                            waker.wake()?;
 
                             // Force spectate them so they don't disrupt
                             // future games and ack it.
@@ -673,6 +637,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             let command = ClientCommand::ChangeState(UserState::Spectate);
                             let msg = ServerMessage::Ack(ClientMessage { username, command });
                             tx_server.send(msg)?;
+                            waker.wake()?;
 
                             break 'command;
                         }
@@ -685,6 +650,8 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                         data: Box::new(response),
                     };
                     tx_server.send(msg)?;
+                    waker.wake()?;
+
                     next_action_username = Some(username);
                     timeout = config.server_timeouts.action;
                 }
@@ -724,9 +691,11 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             info!("Ack: {msg}.");
                             let msg = ServerMessage::Ack(msg);
                             tx_server.send(msg)?;
+                            waker.wake()?;
 
                             let msg = ServerMessage::Views(state.get_views());
                             tx_server.send(msg)?;
+                            waker.wake()?;
                         }
                         Err(error) => {
                             error!("{msg}: {error}.");
@@ -735,6 +704,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                 data: Box::new(ServerResponse::UserError(error)),
                             };
                             tx_server.send(msg)?;
+                            waker.wake()?;
                         }
                     }
                 }
@@ -852,9 +822,9 @@ mod tests {
         token_manager.associate_token_and_stream(token1, stream3);
         let token4 = token_manager.new_token();
         token_manager.associate_token_and_stream(token2, stream4);
-        assert_eq!(token1, Token(1));
+        assert_eq!(token1, Token(2));
         assert_eq!(token1, token3);
-        assert_eq!(token2, Token(2));
+        assert_eq!(token2, Token(3));
         assert_eq!(token2, token4);
     }
 
