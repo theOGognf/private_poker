@@ -425,7 +425,9 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             }
                         }
                     }
-                    token => {
+                    // Only care about events associated with clients that are
+                    // still valid.
+                    token if !tokens_to_remove.contains(&token) => {
                         // Maybe received an event for a TCP connection.
                         if let Ok(stream) = token_manager.get_mut_stream_with_token(&token) {
                             if event.is_writable() {
@@ -448,6 +450,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                                 if let ServerResponse::ClientError(_) = msg {
                                                     error!("{token:#?}: {msg}.");
                                                     tokens_to_remove.insert(token);
+                                                    break;
                                                 }
                                             }
                                             Err(error) => {
@@ -534,6 +537,9 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             }
                         }
                     }
+                    // The client is already queued for removal and so this event
+                    // will be ignored.
+                    _ => {}
                 }
             }
 
