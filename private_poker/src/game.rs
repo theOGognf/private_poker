@@ -823,11 +823,6 @@ macro_rules! impl_user_managers_with_queue {
 impl_user_managers!(
     Game<Lobby>,
     Game<SeatPlayers>,
-    // There's an edge case where a player can queue for removal
-    // when the game is in the `RemovePlayers` state, but before
-    // the transition to the `DivideDonations` state. That's why
-    // the `RemovePlayers` state manages users with the queue-driven
-    // methods.
     Game<RemovePlayers>,
     Game<DivideDonations>,
     Game<UpdateBlinds>,

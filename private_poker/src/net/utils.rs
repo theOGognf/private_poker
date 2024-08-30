@@ -38,7 +38,7 @@ pub fn write_prefixed<T: Serialize, W: Write>(writer: &mut W, value: &T) -> io::
             // Write the size of the serialized data and the serialized data
             // all in one chunk to prevent read-side EOF race conditions.
             let size = serialized.len() as u32;
-            let mut buf = Vec::from_iter(size.to_le_bytes());
+            let mut buf = Vec::from(size.to_le_bytes());
             buf.extend(serialized);
             writer.write_all(&buf)?;
             Ok(())

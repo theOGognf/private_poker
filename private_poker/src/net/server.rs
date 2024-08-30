@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::game::{entities::Action, GameSettings, PokerState, UserError};
+use crate::game::{entities::Action, GameSettings, PokerState};
 
 use super::{
     messages::{
@@ -112,12 +112,24 @@ struct TokenManager {
 }
 
 impl TokenManager {
+    /// Associate a token with a TCP stream. Since tokens are usually registered
+    /// with a poll, the typical workflow is:
+    ///
+    /// 1. Create a new token.
+    /// 2. Register the token and stream with the poll.
+    /// 3. Associate the token and stream with the token manager.
+    ///
+    /// This transfers ownership of the stream to the token manager, allowing
+    /// deallocation of the stream wheenver the token is recycled.
     pub fn associate_token_and_stream(&mut self, token: Token, stream: TcpStream) {
         let unconfirmed_client = UnconfirmedClient::new(stream);
         self.unconfirmed_tokens.insert(token, unconfirmed_client);
     }
 
-    /// Associate a token with a username.
+    /// Associate a token with a username. This should be called in response
+    /// to a client declaring a username. This will catch cases where the username
+    /// is already taken, and cases where the client took too long to declare
+    /// a username after its connection has already been accepted by the server.
     pub fn associate_token_and_username(
         &mut self,
         token: Token,
@@ -137,6 +149,9 @@ impl TokenManager {
         }
     }
 
+    /// Confirm a token's declared username. This acknowledges that the poker
+    /// game accepted their username and relieves the token from potential
+    /// expiration.
     pub fn confirm_username(&mut self, token: Token) -> Result<(), ClientError> {
         match self.tokens_to_usernames.get(&token) {
             Some(username) => match self.unconfirmed_usernames_to_tokens.remove_entry(username) {
@@ -205,6 +220,7 @@ impl TokenManager {
         }
     }
 
+    /// Create a new token.
     pub fn new_token(&mut self) -> Token {
         let token = match self.recycled_tokens.pop_first() {
             Some(token) => token,
@@ -224,7 +240,7 @@ impl TokenManager {
         token
     }
 
-    /// Remove tokens that've gone stale because the client has yet
+    /// Recycle tokens that've gone stale because the client has yet
     /// to associate a username with itself before the association timeout.
     pub fn recycle_expired_tokens(&mut self) -> VecDeque<(Token, TcpStream)> {
         let mut tokens_to_recycle = VecDeque::new();
@@ -254,6 +270,8 @@ impl TokenManager {
         recyclables
     }
 
+    /// Manually recycle an individual token. Should be used when a client is dropped,
+    /// unfaithful, or when a user leaves the game.
     pub fn recycle_token(&mut self, token: Token) -> Result<TcpStream, ClientError> {
         if let Some(username) = self.tokens_to_usernames.remove(&token) {
             self.unconfirmed_usernames_to_tokens.remove(&username);
@@ -273,17 +291,9 @@ impl TokenManager {
     }
 }
 
-fn change_user_state(
-    poker_state: &mut PokerState,
-    username: &str,
-    user_state: &UserState,
-) -> Result<(), UserError> {
-    match user_state {
-        UserState::Play => poker_state.waitlist_user(username),
-        UserState::Spectate => poker_state.spectate_user(username),
-    }
-}
-
+/// Run the poker server in two separate threads. The parent thread manages
+/// the poker game state while the child thread manages non-blocking networking
+/// IO.
 pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
     let addr = addr.parse()?;
     let max_network_events = MAX_NETWORK_EVENTS_PER_USER * config.game_settings.max_users;
@@ -582,7 +592,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                 }
             }
 
-            // Recycle all tokens that need to be remove, deregistering their streams
+            // Recycle all tokens that need to be removed, deregistering their streams
             // with the poll.
             for token in tokens_to_remove.drain() {
                 warn!("{token:#?} is being removed.");
@@ -629,7 +639,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                     // was a timeout.
                     if let Some(last_username) = next_action_username {
                         // If there's a timeout, then that means the user didn't
-                        // make a decision, and they have to fold.
+                        // make a decision in time, and they have to fold.
                         if timeout.as_secs() == 0 && username == last_username {
                             // Ack that they will fold (the poker state will
                             // fold for them).
@@ -676,13 +686,16 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                 }
             }
 
+            // Use the timeout duration to process events from the server's
+            // IO thread.
             while timeout.as_secs() > 0 {
                 let start = Instant::now();
                 if let Ok(msg) = rx_client.recv_timeout(timeout) {
                     let result = match msg.command {
-                        ClientCommand::ChangeState(ref new_user_state) => {
-                            change_user_state(&mut state, &msg.username, new_user_state)
-                        }
+                        ClientCommand::ChangeState(ref new_user_state) => match new_user_state {
+                            UserState::Play => state.waitlist_user(&msg.username),
+                            UserState::Spectate => state.spectate_user(&msg.username),
+                        },
                         ClientCommand::Connect => state.new_user(&msg.username),
                         ClientCommand::Leave => state.remove_user(&msg.username),
                         ClientCommand::ShowHand => state.show_hand(&msg.username),
