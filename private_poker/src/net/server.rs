@@ -733,10 +733,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                         }
                     }
                 }
-                timeout = match timeout.checked_sub(Instant::now() - start) {
-                    Some(duration) => duration,
-                    None => Duration::ZERO,
-                };
+                timeout = timeout.saturating_sub(Instant::now() - start);
             }
         }
     }
