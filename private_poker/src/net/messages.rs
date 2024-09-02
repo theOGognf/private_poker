@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::fmt;
+use std::{
+    collections::{HashMap, HashSet},
+    fmt,
+};
 
 pub use crate::game::GameView;
 use crate::game::{entities::Action, UserError};

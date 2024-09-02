@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use ratatui::{
     self,
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
@@ -11,13 +12,10 @@ use ratatui::{
     },
     DefaultTerminal, Frame,
 };
-
-use chrono::{DateTime, Utc};
 use std::{collections::VecDeque, fmt, io};
 
 pub const MAX_LOG_RECORDS: usize = 1024;
 
-#[derive(Default)]
 struct LogHandle {
     records: VecDeque<Record>,
     list_state: ListState,

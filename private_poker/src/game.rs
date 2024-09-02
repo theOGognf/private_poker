@@ -1,9 +1,11 @@
-use core::fmt;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use serde::{Deserialize, Serialize};
-use std::cmp::{max, min, Ordering};
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::{
+    cmp::{max, min, Ordering},
+    collections::{BTreeSet, HashMap, HashSet, VecDeque},
+    fmt,
+};
 use thiserror::Error;
 
 pub mod constants;

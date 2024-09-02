@@ -1,5 +1,7 @@
-use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet},
+};
 
 use super::entities::{Card, Rank, SubHand, Suit, Value};
 
