@@ -23,14 +23,20 @@ struct LogHandle {
 }
 
 impl LogHandle {
-    pub fn jump_to_bottom(&mut self) {
-        self.list_state.scroll_up_by(MAX_LOG_RECORDS as u16);
-        self.scroll_state.last();
+    pub fn clear(&mut self) {
+        self.jump_to_last();
+        self.scroll_state = self.scroll_state.content_length(0);
+        self.records.clear();
     }
 
-    pub fn jump_to_top(&mut self) {
+    pub fn jump_to_first(&mut self) {
         self.list_state.scroll_down_by(MAX_LOG_RECORDS as u16);
         self.scroll_state.first();
+    }
+
+    pub fn jump_to_last(&mut self) {
+        self.list_state.scroll_up_by(MAX_LOG_RECORDS as u16);
+        self.scroll_state.last();
     }
 
     pub fn move_down(&mut self) {
@@ -87,7 +93,7 @@ impl UserInput {
             // Put all characters together except the selected one.
             // By leaving the selected one out, it is forgotten and therefore deleted.
             self.value = before_char_to_delete.chain(after_char_to_delete).collect();
-            self.move_cursor_left();
+            self.move_left();
         }
     }
 
@@ -126,23 +132,23 @@ impl UserInput {
     pub fn input(&mut self, new_char: char) {
         let idx = self.byte_idx();
         self.value.insert(idx, new_char);
-        self.move_cursor_right();
+        self.move_right();
     }
 
-    pub fn jump_to_beginning(&mut self) {
+    pub fn jump_to_first(&mut self) {
         self.char_idx = 0;
     }
 
-    pub fn jump_to_end(&mut self) {
+    pub fn jump_to_last(&mut self) {
         self.char_idx = self.value.len();
     }
 
-    pub fn move_cursor_left(&mut self) {
+    pub fn move_left(&mut self) {
         let cursor_moved_left = self.char_idx.saturating_sub(1);
         self.char_idx = self.clamp_cursor(cursor_moved_left);
     }
 
-    pub fn move_cursor_right(&mut self) {
+    pub fn move_right(&mut self) {
         let cursor_moved_right = self.char_idx.saturating_add(1);
         self.char_idx = self.clamp_cursor(cursor_moved_right);
     }
@@ -187,7 +193,7 @@ impl fmt::Display for Record {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            " [{} {}]: {}",
+            "  [{} {}]: {}",
             self.datetime.format("%Y-%m-%d %H:%M:%S"),
             self.source,
             self.content
@@ -243,27 +249,29 @@ impl App {
                     match modifiers {
                         KeyModifiers::CONTROL => match code {
                             KeyCode::Char('c') => return Ok(()),
-                            KeyCode::Home => self.log_handle.jump_to_top(),
-                            KeyCode::End => self.log_handle.jump_to_bottom(),
+                            KeyCode::Home => self.log_handle.jump_to_first(),
+                            KeyCode::End => self.log_handle.jump_to_last(),
                             _ => {}
                         },
                         KeyModifiers::NONE => match code {
                             KeyCode::Enter => {
                                 let content = self.user_input.submit();
-                                if content == "exit" {
-                                    return Ok(());
+                                self.log_handle.push(RecordSource::USER, content.clone());
+                                match content.as_str() {
+                                    "clear" => self.log_handle.clear(),
+                                    "exit" => return Ok(()),
+                                    _ => {}
                                 }
-                                self.log_handle.push(RecordSource::USER, content);
                             }
                             KeyCode::Char(to_insert) => self.user_input.input(to_insert),
                             KeyCode::Backspace => self.user_input.backspace(),
                             KeyCode::Delete => self.user_input.delete(),
-                            KeyCode::Left => self.user_input.move_cursor_left(),
-                            KeyCode::Right => self.user_input.move_cursor_right(),
+                            KeyCode::Left => self.user_input.move_left(),
+                            KeyCode::Right => self.user_input.move_right(),
                             KeyCode::Up => self.log_handle.move_up(),
                             KeyCode::Down => self.log_handle.move_down(),
-                            KeyCode::Home => self.user_input.jump_to_beginning(),
-                            KeyCode::End => self.user_input.jump_to_end(),
+                            KeyCode::Home => self.user_input.jump_to_first(),
+                            KeyCode::End => self.user_input.jump_to_last(),
                             _ => {}
                         },
                         _ => {}
