@@ -25,7 +25,7 @@ fn one_user_connects_to_lobby() {
     // Connect, make sure we're spectating.
     let addr = format!("127.0.0.1:{port}");
     let username = "ognf";
-    let (mut client, view) = Client::connect(&addr, username).unwrap();
+    let (mut client, view) = Client::connect(username, &addr).unwrap();
     assert_eq!(view.spectators.len(), 1);
     assert_eq!(view.waitlist.len(), 0);
     assert!(view.spectators.contains_key(&client.username));
@@ -77,5 +77,5 @@ fn one_user_fails_to_connect_to_lobby() {
     // Try to connect, but we won't be fast enough.
     let addr = format!("127.0.0.1:{port}");
     let username = "ognf";
-    assert!(Client::connect(&addr, username).is_err());
+    assert!(Client::connect(username, &addr).is_err());
 }

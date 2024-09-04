@@ -8,7 +8,7 @@ use private_poker::{
 };
 
 fn main() -> Result<(), Error> {
-    let address = Arg::new("bind")
+    let addr = Arg::new("bind")
         .help("Server socket bind address.")
         .default_value("127.0.0.1:6969")
         .long("bind")
@@ -24,11 +24,11 @@ fn main() -> Result<(), Error> {
     let matches = Command::new("pp_server")
         .about("Host a centralized poker server over TCP.")
         .version("0.0.1")
-        .arg(address)
+        .arg(addr)
         .arg(buy_in)
         .get_matches();
 
-    let address = matches
+    let addr = matches
         .get_one::<String>("bind")
         .expect("Server address is an invalid string.");
     let buy_in = matches
@@ -39,8 +39,8 @@ fn main() -> Result<(), Error> {
     let config: PokerConfig = game_settings.into();
 
     env_logger::builder().format_target(false).init();
-    info!("Starting at {address}.");
-    server::run(address, config)?;
+    info!("Starting at {addr}.");
+    server::run(addr, config)?;
 
     Ok(())
 }

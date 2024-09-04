@@ -26,7 +26,7 @@ impl Client {
         Ok(())
     }
 
-    pub fn connect(addr: &str, username: &str) -> Result<(Self, GameView), Error> {
+    pub fn connect(username: &str, addr: &str) -> Result<(Self, GameView), Error> {
         let addr = addr.parse()?;
         let mut connect_timeouts = vec![
             Duration::from_secs(1),
