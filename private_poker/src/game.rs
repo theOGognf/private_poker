@@ -133,7 +133,7 @@ impl fmt::Display for GameView {
             0 => writeln!(f, "N/A")?,
             _ => {
                 for user in self.spectators.values() {
-                    writeln!(f, "{}", user)?;
+                    writeln!(f, "{user}")?;
                 }
             }
         };
@@ -145,7 +145,7 @@ impl fmt::Display for GameView {
             0 => writeln!(f, "N/A")?,
             _ => {
                 for waitlister in self.waitlist.iter() {
-                    writeln!(f, "{}", waitlister)?;
+                    writeln!(f, "{waitlister}")?;
                 }
             }
         }
@@ -168,7 +168,7 @@ impl fmt::Display for GameView {
                     match &player.cards {
                         Some(cards) => {
                             for card in cards.iter() {
-                                write!(f, "{} ", card)?;
+                                write!(f, "{card} ")?;
                             }
                         }
                         None => write!(f, "?? ?? ")?,
@@ -194,7 +194,7 @@ impl fmt::Display for GameView {
         writeln!(f)?;
         write!(f, "Board: ")?;
         for card in self.board.iter() {
-            write!(f, "{} ", card)?;
+            write!(f, "{card} ")?;
         }
 
         // Display whose turn it is if it's someone's turn.

@@ -48,14 +48,14 @@ impl fmt::Display for ClientCommand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self {
             ClientCommand::ChangeState(state) => {
-                write!(f, "joined the {}s", state)
+                write!(f, "joined the {state}s")
             }
             ClientCommand::Connect => write!(f, "connected"),
             ClientCommand::Leave => write!(f, "left the game"),
             ClientCommand::ShowHand => write!(f, "showed their hand"),
             ClientCommand::StartGame => write!(f, "started the game"),
             ClientCommand::TakeAction(action) => {
-                write!(f, "decided to {}", action)
+                write!(f, "decided to {action}")
             }
         }
     }
@@ -85,26 +85,24 @@ pub enum ServerResponse {
 impl fmt::Display for ServerResponse {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self {
-            ServerResponse::Ack(msg) => write!(f, "{}", msg),
-            ServerResponse::ClientError(error) => write!(f, "{}", error),
-            ServerResponse::GameView(view) => write!(f, "{}", view),
+            ServerResponse::Ack(msg) => write!(f, "{msg}"),
+            ServerResponse::ClientError(error) => write!(f, "{error}"),
+            ServerResponse::GameView(view) => write!(f, "{view}"),
             ServerResponse::TurnSignal(action_options) => {
                 write!(f, "can ")?;
                 let num_options = action_options.len();
                 for (i, action) in action_options.iter().enumerate() {
                     match i {
-                        0 if num_options == 1 => write!(f, "{}", action)?,
-                        0 if num_options == 2 => write!(f, "{} ", action)?,
-                        0 if num_options >= 3 => write!(f, "{}, ", action)?,
-                        i if i == num_options - 1 && num_options != 1 => {
-                            write!(f, "or {}", action)?
-                        }
-                        _ => write!(f, "{}, ", action)?,
+                        0 if num_options == 1 => write!(f, "{action}")?,
+                        0 if num_options == 2 => write!(f, "{action} ")?,
+                        0 if num_options >= 3 => write!(f, "{action}, ")?,
+                        i if i == num_options - 1 && num_options != 1 => write!(f, "or {action}")?,
+                        _ => write!(f, "{action}, ")?,
                     }
                 }
                 Ok(())
             }
-            ServerResponse::UserError(error) => write!(f, "{}", error),
+            ServerResponse::UserError(error) => write!(f, "{error}"),
         }
     }
 }

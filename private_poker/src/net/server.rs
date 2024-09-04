@@ -30,6 +30,11 @@ pub const MAX_NETWORK_EVENTS_PER_USER: usize = 6;
 pub const SERVER: Token = Token(0);
 pub const WAKER: Token = Token(1);
 
+fn token_to_string(token: &Token) -> String {
+    let id = token.0;
+    format!("Token({id})")
+}
+
 pub struct ServerTimeouts {
     pub action: Duration,
     pub connect: Duration,
@@ -353,7 +358,8 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                         poll.registry()
                             .register(&mut stream, token, Interest::READABLE)?;
                         token_manager.associate_token_and_stream(token, stream);
-                        info!("Accepted new connection with {token:#?}.");
+                        let token_string = token_to_string(&token);
+                        info!("Accepted new connection with {token_string}.");
                     },
                     WAKER => {
                         // Drain server messages received from the parent thread so
@@ -447,7 +453,8 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                     // them. If their message queue reaches a certain size, queue
                                     // them for removal.
                                     if messages.len() >= max_network_events {
-                                        error!("{token:#?} has not been receiving and will be removed.");
+                                        let token_string = token_to_string(&token);
+                                        error!("{token_string} has not been receiving and will be removed.");
                                         tokens_to_remove.insert(token);
                                         continue;
                                     }
@@ -458,7 +465,8 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                             Ok(_) => {
                                                 // Client errors are strict and result in the removal of a connection.
                                                 if let ServerResponse::ClientError(_) = msg {
-                                                    error!("{token:#?}: {msg}.");
+                                                    let token_string = token_to_string(&token);
+                                                    error!("{token_string}: {msg}.");
                                                     tokens_to_remove.insert(token);
                                                     break;
                                                 }
@@ -473,7 +481,10 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                                     | io::ErrorKind::ConnectionReset
                                                     | io::ErrorKind::TimedOut
                                                     | io::ErrorKind::UnexpectedEof => {
-                                                        error!("{token:#?}'s connection dropped.");
+                                                        let token_string = token_to_string(&token);
+                                                        error!(
+                                                            "{token_string} connection dropped."
+                                                        );
                                                         tokens_to_remove.insert(token);
                                                     }
                                                     // Would block "errors" are the OS's way of saying that the
@@ -486,7 +497,8 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                                     // Retry writing in the case that the full message couldn't
                                                     // be written. This should be infrequent.
                                                     io::ErrorKind::WriteZero => {
-                                                        warn!("{token:#?} got a zero write, but will retry.");
+                                                        let token_string = token_to_string(&token);
+                                                        warn!("{token_string} got a zero write, but will retry.");
                                                         messages.push_front(msg);
                                                         continue;
                                                     }
@@ -514,7 +526,8 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                                 messages_to_process.entry(token).or_default();
                                             messages.push_back(msg);
                                             if messages.len() >= MAX_NETWORK_EVENTS_PER_USER {
-                                                error!("{token:#?} has been spamming and will be removed.");
+                                                let token_string = token_to_string(&token);
+                                                error!("{token_string} has been spamming and will be removed.");
                                                 tokens_to_remove.insert(token);
                                                 break;
                                             }
@@ -529,7 +542,8 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                                 | io::ErrorKind::InvalidData
                                                 | io::ErrorKind::TimedOut
                                                 | io::ErrorKind::UnexpectedEof => {
-                                                    error!("{token:#?}'s connection dropped.");
+                                                    let token_string = token_to_string(&token);
+                                                    error!("{token_string}'s connection dropped.");
                                                     tokens_to_remove.insert(token);
                                                 }
                                                 // Would block "errors" are the OS's way of saying that the
@@ -578,13 +592,14 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             Err(error) => Err(error),
                         },
                     };
+                    let token_string = token_to_string(&token);
                     match result {
                         Ok(_) => {
-                            info!("{token:#?}: {msg}.");
+                            info!("{token_string}: {msg}.");
                             tx_client.send(msg)?
                         }
                         Err(error) => {
-                            error!("{token:#?}: {error}.");
+                            error!("{token_string}: {error}.");
                             let msg = ServerResponse::ClientError(error);
                             messages_to_write.entry(token).or_default().push_back(msg);
                         }
@@ -595,7 +610,8 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
             // Recycle all tokens that need to be removed, deregistering their streams
             // with the poll.
             for token in tokens_to_remove.drain() {
-                warn!("{token:#?} is being removed.");
+                let token_string = token_to_string(&token);
+                warn!("{token_string} is being removed.");
                 if let Ok(username) = token_manager.get_confirmed_username_with_token(&token) {
                     let msg = ClientMessage {
                         username,
@@ -609,7 +625,8 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                 }
             }
             for (token, mut stream) in token_manager.recycle_expired_tokens() {
-                warn!("{token:#?} expired.");
+                let token_string = token_to_string(&token);
+                warn!("{token_string} expired.");
                 messages_to_write.remove(&token);
                 poll.registry().deregister(&mut stream)?;
             }

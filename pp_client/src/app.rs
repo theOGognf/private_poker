@@ -34,7 +34,7 @@ impl fmt::Display for RecordSource {
             RecordSource::System => "SYSTEM",
             RecordSource::User => "USER",
         };
-        write!(f, "{:6}", value)
+        write!(f, "{value:6}")
     }
 }
 
@@ -245,7 +245,7 @@ impl App {
         mut terminal: DefaultTerminal,
     ) -> Result<(), Error> {
         thread::spawn(move || -> Result<(), Error> {
-            let _ = client.recv()?;
+            loop {}
             Ok(())
         });
 
@@ -259,10 +259,7 @@ impl App {
                 ..
             }) = event::read()?
             {
-                let mut log_handle = self
-                    .log_handle
-                    .lock()
-                    .expect("Race condition when locking log handle.");
+                let mut log_handle = self.log_handle.lock().expect("Locking on key event.");
                 if kind == KeyEventKind::Press {
                     match modifiers {
                         KeyModifiers::CONTROL => match code {
@@ -308,10 +305,7 @@ impl App {
         let [log_area, user_input_area, help_area] = vertical.areas(frame.area());
 
         // Render log window.
-        let mut log_handle = self
-            .log_handle
-            .lock()
-            .expect("Race condition when locking log handle.");
+        let mut log_handle = self.log_handle.lock().expect("Locking on render.");
         let log_records: VecDeque<ListItem> = log_handle
             .records
             .iter()
