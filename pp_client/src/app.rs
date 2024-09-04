@@ -307,39 +307,6 @@ impl App {
         ]);
         let [log_area, user_input_area, help_area] = vertical.areas(frame.area());
 
-        // Render user input help message.
-        let (help_message, help_style) = (
-            vec![
-                "Press ".into(),
-                "Enter".bold(),
-                " to record a command, enter ".into(),
-                "help".bold(),
-                " to view commands,".into(),
-                " or press ".into(),
-                "CTRL+C".bold(),
-                " to exit.".into(),
-            ],
-            Style::default(),
-        );
-        let help_message = Text::from(Line::from(help_message)).patch_style(help_style);
-        let help_message = Paragraph::new(help_message);
-        frame.render_widget(help_message, help_area);
-
-        // Render user input area.
-        let username = self.username.clone();
-        let addr = self.addr.clone();
-        let user_input = Paragraph::new(self.user_input.value.as_str())
-            .style(Style::default())
-            .block(Block::bordered().title(format!("{username}@{addr}")));
-        frame.render_widget(user_input, user_input_area);
-        frame.set_cursor_position(Position::new(
-            // Draw the cursor at the current position in the input field.
-            // This position is can be controlled via the left and right arrow key
-            user_input_area.x + self.user_input.char_idx as u16 + 1,
-            // Move one line down, from the border to the input line
-            user_input_area.y + 1,
-        ));
-
         // Render log window.
         let mut log_handle = self
             .log_handle
@@ -370,5 +337,38 @@ impl App {
             }),
             &mut log_handle.scroll_state,
         );
+
+        // Render user input area.
+        let username = self.username.clone();
+        let addr = self.addr.clone();
+        let user_input = Paragraph::new(self.user_input.value.as_str())
+            .style(Style::default())
+            .block(Block::bordered().title(format!("{username}@{addr}")));
+        frame.render_widget(user_input, user_input_area);
+        frame.set_cursor_position(Position::new(
+            // Draw the cursor at the current position in the input field.
+            // This position is can be controlled via the left and right arrow key
+            user_input_area.x + self.user_input.char_idx as u16 + 1,
+            // Move one line down, from the border to the input line
+            user_input_area.y + 1,
+        ));
+
+        // Render user input help message.
+        let (help_message, help_style) = (
+            vec![
+                "Press ".into(),
+                "Enter".bold(),
+                " to record a command, enter ".into(),
+                "help".bold(),
+                " to view commands,".into(),
+                " or press ".into(),
+                "CTRL+C".bold(),
+                " to exit.".into(),
+            ],
+            Style::default(),
+        );
+        let help_message = Text::from(Line::from(help_message)).patch_style(help_style);
+        let help_message = Paragraph::new(help_message);
+        frame.render_widget(help_message, help_area);
     }
 }
