@@ -66,6 +66,7 @@ impl Client {
 
     pub fn recv(&mut self) -> Result<ServerResponse, Error> {
         match utils::read_prefixed::<ServerResponse, TcpStream>(&mut self.stream) {
+            Ok(ServerResponse::ClientError(error)) => bail!(error),
             Ok(ServerResponse::UserError(error)) => bail!(error),
             Ok(msg) => Ok(msg),
             Err(error) => bail!(error),
