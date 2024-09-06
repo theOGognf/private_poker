@@ -225,7 +225,12 @@ impl UserInput {
     }
 }
 
-enum ViewRequest {}
+enum ViewRequest {
+    Board,
+    Pots,
+    Players,
+    Turn,
+}
 
 enum WorkerMessage {
     Client(ViewRequest),
@@ -254,7 +259,7 @@ impl App {
 
     pub fn run(
         mut self,
-        mut stream: TcpStream,
+        stream: TcpStream,
         view: GameView,
         mut terminal: DefaultTerminal,
     ) -> Result<(), Error> {
@@ -287,6 +292,8 @@ impl App {
 
                 for event in events.iter() {
                     match event.token() {
+                        SERVER => {}
+                        WAKER => {}
                         _ => {}
                     }
                 }
@@ -296,10 +303,35 @@ impl App {
         // This thread helps manage the log handle, writing updates from the
         // server to it. This helps prevent some kind of receiver call or loop
         // within the main (UI) thread.
-        // let log_handle = self.log_handle.clone();
-        // thread::spawn(move || -> Result<(), Error> {
-
-        // });
+        let log_handle = self.log_handle.clone();
+        thread::spawn(move || -> Result<(), Error> {
+            let mut view = view;
+            loop {
+                let msg = rx_worker.recv()?;
+                match msg {
+                    WorkerMessage::Client(view_request) => {
+                        let repr = match view_request {
+                            ViewRequest::Board => view.board_as_string(),
+                            ViewRequest::Players => view.players_as_string(),
+                            ViewRequest::Pots => view.pot_as_string(),
+                            ViewRequest::Turn => view.turn_as_string(),
+                        };
+                        let mut log_handle = log_handle.lock().expect("Locking on view request.");
+                        log_handle.push(RecordSource::System, repr);
+                    }
+                    WorkerMessage::Server(server_response) => {
+                        match *server_response {
+                            ServerResponse::GameView(new_view) => view = new_view,
+                            other => {
+                                let repr = other.to_string();
+                                let mut log_handle = log_handle.lock().expect("Locking on server response.");
+                                log_handle.push(RecordSource::System, repr)
+                            }
+                        }
+                    }
+                }
+            }
+        });
 
         loop {
             terminal.draw(|frame| self.draw(frame))?;
@@ -327,6 +359,10 @@ impl App {
                                 match content.as_str() {
                                     "clear" => log_handle.clear(),
                                     "exit" => return Ok(()),
+                                    "view players" => {
+                                        let msg = WorkerMessage::Client(ViewRequest::Players);
+                                        tx_worker.send(msg)?;
+                                    }
                                     _ => {}
                                 }
                             }

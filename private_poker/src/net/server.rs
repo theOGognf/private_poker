@@ -454,7 +454,9 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                     // them for removal.
                                     if messages.len() >= max_network_events {
                                         let repr = token_to_string(&token);
-                                        error!("{repr} has not been receiving and will be removed.");
+                                        error!(
+                                            "{repr} has not been receiving and will be removed."
+                                        );
                                         tokens_to_remove.insert(token);
                                         continue;
                                     }
@@ -482,9 +484,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                                     | io::ErrorKind::TimedOut
                                                     | io::ErrorKind::UnexpectedEof => {
                                                         let repr = token_to_string(&token);
-                                                        error!(
-                                                            "{repr} connection dropped."
-                                                        );
+                                                        error!("{repr} connection dropped.");
                                                         tokens_to_remove.insert(token);
                                                     }
                                                     // Would block "errors" are the OS's way of saying that the
@@ -527,7 +527,9 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                             messages.push_back(msg);
                                             if messages.len() >= MAX_NETWORK_EVENTS_PER_USER {
                                                 let repr = token_to_string(&token);
-                                                error!("{repr} has been spamming and will be removed.");
+                                                error!(
+                                                    "{repr} has been spamming and will be removed."
+                                                );
                                                 tokens_to_remove.insert(token);
                                                 break;
                                             }

@@ -98,10 +98,31 @@ pub struct PlayerView {
     cards: Option<Vec<Card>>,
 }
 
+impl fmt::Display for PlayerView {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut repr = vec![format!("{} | {} |", self.user, self.state)];
+        match &self.cards {
+            Some(cards) => {
+                for card in cards.iter() {
+                    repr.push(card.to_string());
+                }
+            }
+            None => repr.push("?? ??".to_string()),
+        }
+        write!(f, "{}", repr.join(" "))
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PotView {
     call: Usd,
     size: Usd,
+}
+
+impl fmt::Display for PotView {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "${}", self.size)
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -156,56 +177,75 @@ impl fmt::Display for GameView {
 
         // Display all players.
         writeln!(f)?;
-        writeln!(f, "Players:")?;
-        match self.players.len() {
-            0 => {
-                writeln!(f, "N/A")?;
-                writeln!(f)?;
-            }
-            _ => {
-                for player in self.players.iter() {
-                    write!(f, "{} | {} | ", player.user, player.state)?;
-                    match &player.cards {
-                        Some(cards) => {
-                            for card in cards.iter() {
-                                write!(f, "{card} ")?;
-                            }
-                        }
-                        None => write!(f, "?? ?? ")?,
-                    }
-                    writeln!(f)?;
-                }
-            }
-        }
+        let players = self.players_as_string();
+        writeln!(f, "{players}")?;
 
         // Display all pots.
-        writeln!(f, "Pots:")?;
-        match self.pots.len() {
-            0 => writeln!(f, "N/A")?,
-            _ => {
-                for (mut i, pot) in self.pots.iter().enumerate() {
-                    i += 1;
-                    writeln!(f, "Pot {}: ${}", i, pot.size)?;
-                }
-            }
-        }
+        writeln!(f)?;
+        let pots = self.pot_as_string();
+        writeln!(f, "{pots}")?;
 
         // Display community cards (cards on the board).
         writeln!(f)?;
-        write!(f, "Board: ")?;
-        for card in self.board.iter() {
-            write!(f, "{card} ")?;
-        }
+        let board = self.board_as_string();
+        writeln!(f, "{board}")?;
 
-        // Display whose turn it is if it's someone's turn.
-        if let Some(next_action_idx) = self.next_action_idx {
-            let player = &self.players[next_action_idx];
-            writeln!(f)?;
-            writeln!(f, "{}'s turn", player.user.name)?;
-        }
+        // Display whose turn it is.
+        writeln!(f)?;
+        let turn = self.turn_as_string();
+        writeln!(f, "{turn}")?;
 
         writeln!(f)?;
         Ok(())
+    }
+}
+
+impl GameView {
+    pub fn board_as_string(&self) -> String {
+        let mut repr = vec!["Board:".to_string()];
+        for card in self.board.iter() {
+            repr.push(card.to_string())
+        }
+        repr.join(" ")
+    }
+
+    pub fn pot_as_string(&self) -> String {
+        let mut repr = vec!["Pots:".to_string()];
+        match self.pots.len() {
+            0 => repr.push("N/A".to_string()),
+            _ => {
+                for (mut i, pot) in self.pots.iter().enumerate() {
+                    i += 1;
+                    repr.push(format!("Pot #{}: {}", i, pot.to_string()));
+                }
+            }
+        }
+        repr.join("\n")
+    }
+
+    pub fn players_as_string(&self) -> String {
+        let mut repr = vec!["Players:".to_string()];
+        match self.players.len() {
+            0 => {
+                repr.push("N/A".to_string());
+            }
+            _ => {
+                for player in self.players.iter() {
+                    repr.push(player.to_string())
+                }
+            }
+        }
+        repr.join("\n")
+    }
+
+    pub fn turn_as_string(&self) -> String {
+        match self.next_action_idx {
+            Some(player_idx) => {
+                let username = &self.players[player_idx].user.name;
+                format!("{username}'s turn")
+            }
+            None => format!("end of betting round"),
+        }
     }
 }
 
@@ -1614,7 +1654,7 @@ impl fmt::Display for PokerState {
             PokerState::TakeAction(ref game) => match game.get_next_action_username() {
                 Some(username) => format!("{username}'s turn"),
                 None => "ending betting round".to_string(),
-            }
+            },
             PokerState::Flop(ref game) => {
                 let num_players_active = game.data.num_players_active;
                 format!("doing the flop with {num_players_active} player(s) remaining")
