@@ -13,6 +13,7 @@ pub const WRITE_TIMEOUT: Duration = Duration::from_secs(1);
 
 pub struct Client {
     pub username: String,
+    pub addr: String,
     pub stream: TcpStream,
 }
 
@@ -50,6 +51,7 @@ impl Client {
                             return Ok((
                                 Self {
                                     username: username.to_string(),
+                                    addr: addr.to_string(),
                                     stream,
                                 },
                                 view,

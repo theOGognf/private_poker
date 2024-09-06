@@ -1,6 +1,14 @@
-use anyhow::Error;
+use anyhow::{bail, Error};
 use chrono::{DateTime, Utc};
-use private_poker::{game::GameView, Client};
+use log::debug;
+use mio::{Events, Interest, Poll, Waker};
+use private_poker::{
+    game::GameView,
+    net::{
+        messages::{ClientMessage, ServerResponse},
+        server::{DEFAULT_POLL_TIMEOUT, SERVER, WAKER},
+    },
+};
 use ratatui::{
     self,
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
@@ -16,44 +24,28 @@ use ratatui::{
 };
 use std::{
     collections::VecDeque,
-    fmt,
-    sync::{Arc, Mutex},
+    io,
+    net::TcpStream,
+    sync::{
+        mpsc::{channel, Receiver, Sender},
+        Arc, Mutex,
+    },
     thread,
 };
 
 pub const MAX_LOG_RECORDS: usize = 1024;
 
+#[derive(Clone)]
 enum RecordSource {
     System,
     User,
 }
 
-impl fmt::Display for RecordSource {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let value = match self {
-            RecordSource::System => "SYSTEM",
-            RecordSource::User => "USER",
-        };
-        write!(f, "{value:6}")
-    }
-}
-
+#[derive(Clone)]
 struct Record {
     datetime: DateTime<Utc>,
     source: RecordSource,
     content: String,
-}
-
-impl fmt::Display for Record {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "  [{} {}]: {}",
-            self.datetime.format("%Y-%m-%d %H:%M:%S"),
-            self.source,
-            self.content
-        )
-    }
 }
 
 impl Record {
@@ -63,6 +55,21 @@ impl Record {
             source,
             content,
         }
+    }
+}
+
+impl From<Record> for Vec<Span<'_>> {
+    fn from(val: Record) -> Self {
+        let source = match val.source {
+            RecordSource::System => format!("{:6}", "SYSTEM").yellow(),
+            RecordSource::User => format!("{:6}", "USER").light_green(),
+        };
+
+        vec![
+            format!("  [{} ", val.datetime.format("%Y-%m-%d %H:%M:%S")).into(),
+            source,
+            format!("]: {}", val.content).into(),
+        ]
     }
 }
 
@@ -218,6 +225,13 @@ impl UserInput {
     }
 }
 
+enum ViewRequest {}
+
+enum WorkerMessage {
+    Client(ViewRequest),
+    Server(Box<ServerResponse>),
+}
+
 /// App holds the state of the application
 pub struct App {
     username: String,
@@ -240,14 +254,52 @@ impl App {
 
     pub fn run(
         mut self,
-        mut client: Client,
+        mut stream: TcpStream,
         view: GameView,
         mut terminal: DefaultTerminal,
     ) -> Result<(), Error> {
+        let (tx_client, rx_client): (Sender<ClientMessage>, Receiver<ClientMessage>) = channel();
+        let (tx_worker, rx_worker): (Sender<WorkerMessage>, Receiver<WorkerMessage>) = channel();
+
+        let mut poll = Poll::new()?;
+        let waker = Waker::new(poll.registry(), WAKER)?;
+
+        // This thread is where the actual client-server networking happens for
+        // non-blocking IO. Some non-blocking IO between client threads is also
+        // managed by this thread. The UI thread sends client command messages
+        // to this thread; those messages are eventually written to the server.
         thread::spawn(move || -> Result<(), Error> {
-            loop {}
-            Ok(())
+            let mut events = Events::with_capacity(64);
+            let mut messages_to_write: VecDeque<ClientMessage> = VecDeque::new();
+            stream.set_nonblocking(true)?;
+            let mut stream = mio::net::TcpStream::from_std(stream);
+            poll.registry()
+                .register(&mut stream, SERVER, Interest::READABLE)?;
+
+            debug!("Polling for network events.");
+            loop {
+                if let Err(error) = poll.poll(&mut events, Some(DEFAULT_POLL_TIMEOUT)) {
+                    match error.kind() {
+                        io::ErrorKind::Interrupted => continue,
+                        _ => bail!(error),
+                    }
+                }
+
+                for event in events.iter() {
+                    match event.token() {
+                        _ => {}
+                    }
+                }
+            }
         });
+
+        // This thread helps manage the log handle, writing updates from the
+        // server to it. This helps prevent some kind of receiver call or loop
+        // within the main (UI) thread.
+        // let log_handle = self.log_handle.clone();
+        // thread::spawn(move || -> Result<(), Error> {
+
+        // });
 
         loop {
             terminal.draw(|frame| self.draw(frame))?;
@@ -310,7 +362,8 @@ impl App {
             .records
             .iter()
             .map(|r| {
-                let content = Line::from(Span::raw(r.to_string()));
+                let message: Vec<Span<'_>> = (*r).clone().into();
+                let content = Line::from(message);
                 ListItem::new(content)
             })
             .collect();
@@ -337,7 +390,7 @@ impl App {
         let addr = self.addr.clone();
         let user_input = Paragraph::new(self.user_input.value.as_str())
             .style(Style::default())
-            .block(Block::bordered().title(format!("{username}@{addr}")));
+            .block(Block::bordered().title(format!("{username}@{addr}").light_green()));
         frame.render_widget(user_input, user_input_area);
         frame.set_cursor_position(Position::new(
             // Draw the cursor at the current position in the input field.

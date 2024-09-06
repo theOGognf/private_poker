@@ -1310,8 +1310,9 @@ impl From<Game<ShowHands>> for Game<DistributePot> {
         if let Some(pot) = value.data.pots.last() {
             for (player_idx, _) in pot.investments.iter() {
                 let player = &mut value.data.players[*player_idx];
-                if player.state != PlayerState::Show {
-                    player.state = PlayerState::Show;
+                match player.state {
+                    PlayerState::AllIn | PlayerState::Wait => player.state = PlayerState::Show,
+                    _ => {}
                 }
             }
         }
@@ -1581,6 +1582,65 @@ pub enum PokerState {
 impl Default for PokerState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl fmt::Display for PokerState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let rep = match &self {
+            PokerState::Lobby(ref game) => {
+                let num_users = game.get_num_users();
+                let num_potential_players = game.get_num_potential_players();
+                let big_blind = game.data.big_blind;
+                format!("in lobby with {num_users} user(s), {num_potential_players} potential player(s), and a ${big_blind} big blind")
+            }
+            PokerState::SeatPlayers(ref game) => {
+                let num_potential_players = game.get_num_potential_players();
+                format!("seating {num_potential_players} players")
+            }
+            PokerState::MoveButton(ref game) => {
+                let num_players = game.get_num_players();
+                format!("moving button with {num_players} players")
+            }
+            PokerState::CollectBlinds(ref game) => {
+                let big_blind_username = &game.data.players[game.data.big_blind_idx].user.name;
+                let small_blind_username = &game.data.players[game.data.small_blind_idx].user.name;
+                format!("collecting big blind from {big_blind_username} and small blind from {small_blind_username}")
+            }
+            PokerState::Deal(ref game) => {
+                let num_cards = 2 * game.get_num_players();
+                format!("dealing {num_cards} cards")
+            }
+            PokerState::TakeAction(ref game) => match game.get_next_action_username() {
+                Some(username) => format!("{username}'s turn"),
+                None => "ending betting round".to_string(),
+            },
+            PokerState::Flop(ref game) => {
+                let num_players_active = game.data.num_players_active;
+                format!("doing the flop with {num_players_active} player(s) remaining")
+            }
+            PokerState::Turn(ref game) => {
+                let num_players_active = game.data.num_players_active;
+                format!("doing the turn with {num_players_active} player(s) remaining")
+            }
+            PokerState::River(ref game) => {
+                let num_players_active = game.data.num_players_active;
+                format!("doing the river with {num_players_active} player(s) remaining")
+            }
+            PokerState::ShowHands(ref game) => {
+                let num_pots = game.get_num_pots();
+                format!("showing hands for pot #{num_pots}")
+            }
+            PokerState::DistributePot(ref game) => {
+                let num_pots = game.get_num_pots();
+                format!("distributing pot #{num_pots}")
+            }
+            PokerState::RemovePlayers(_) => "removing players".to_string(),
+            PokerState::DivideDonations(_) => "dividing donations".to_string(),
+            PokerState::UpdateBlinds(_) => "updating blinds".to_string(),
+            PokerState::BootPlayers(_) => "booting players".to_string(),
+        };
+        write!(f, "{rep}")
     }
 }
 

@@ -7,7 +7,7 @@ use mio::{
 use std::{
     cmp::max,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
-    io::{self},
+    io,
     sync::mpsc::{channel, Receiver, Sender},
     thread,
     time::{Duration, Instant},
@@ -635,8 +635,9 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
 
     let mut state: PokerState = config.game_settings.into();
     loop {
-        info!("Updating game state.");
         state = state.step();
+        let rep = state.to_string();
+        info!("Game state: {rep}");
 
         let views = state.get_views();
         let msg = ServerMessage::Views(views);
