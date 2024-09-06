@@ -1587,7 +1587,7 @@ impl Default for PokerState {
 
 impl fmt::Display for PokerState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let rep = match &self {
+        let repr = match &self {
             PokerState::Lobby(ref game) => {
                 let num_users = game.get_num_users();
                 let num_potential_players = game.get_num_potential_players();
@@ -1614,7 +1614,7 @@ impl fmt::Display for PokerState {
             PokerState::TakeAction(ref game) => match game.get_next_action_username() {
                 Some(username) => format!("{username}'s turn"),
                 None => "ending betting round".to_string(),
-            },
+            }
             PokerState::Flop(ref game) => {
                 let num_players_active = game.data.num_players_active;
                 format!("doing the flop with {num_players_active} player(s) remaining")
@@ -1640,7 +1640,7 @@ impl fmt::Display for PokerState {
             PokerState::UpdateBlinds(_) => "updating blinds".to_string(),
             PokerState::BootPlayers(_) => "booting players".to_string(),
         };
-        write!(f, "{rep}")
+        write!(f, "{repr}")
     }
 }
 
