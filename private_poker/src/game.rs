@@ -452,6 +452,23 @@ pub struct Game<T> {
 
 /// General game methods.
 impl<T> Game<T> {
+    pub fn action_options_to_string(action_options: &HashSet<Action>) -> String {
+        let mut repr = vec![];
+        repr.push("can ".to_string());
+        let num_options = action_options.len();
+        for (i, action) in action_options.iter().enumerate() {
+            let sub_repr = match i {
+                0 if num_options == 1 => format!("{action}"),
+                0 if num_options == 2 => format!("{action} "),
+                0 if num_options >= 3 => format!("{action}, "),
+                i if i == num_options - 1 && num_options != 1 => format!("or {action}"),
+                _ => format!("{action}, "),
+            };
+            repr.push(sub_repr);
+        }
+        repr.join("")
+    }
+
     fn as_view(&self, username: &str) -> GameView {
         let mut players = Vec::with_capacity(self.data.settings.max_players);
         for player in self.data.players.iter() {
@@ -1636,16 +1653,13 @@ impl fmt::Display for PokerState {
                 let num_users = game.get_num_users();
                 let num_potential_players = game.get_num_potential_players();
                 let big_blind = game.data.big_blind;
-                format!("in lobby with {num_users} user(s), {num_potential_players} potential player(s), and a ${big_blind} big blind")
+                format!("lobby has {num_users} user(s), {num_potential_players} potential player(s), and a ${big_blind} big blind")
             }
             PokerState::SeatPlayers(ref game) => {
                 let num_potential_players = game.get_num_potential_players();
-                format!("seating {num_potential_players} players")
+                format!("seating {num_potential_players} players and starting the game")
             }
-            PokerState::MoveButton(ref game) => {
-                let num_players = game.get_num_players();
-                format!("moving button with {num_players} players")
-            }
+            PokerState::MoveButton(_) => "moving button".to_string(),
             PokerState::CollectBlinds(ref game) => {
                 let big_blind = game.data.big_blind;
                 let big_blind_username = &game.data.players[game.data.big_blind_idx].user.name;
@@ -1657,22 +1671,16 @@ impl fmt::Display for PokerState {
                 let num_cards = 2 * game.get_num_players();
                 format!("dealing {num_cards} cards")
             }
-            PokerState::TakeAction(ref game) => match game.get_next_action_username() {
-                Some(username) => format!("{username}'s turn"),
-                None => "ending betting round".to_string(),
-            },
-            PokerState::Flop(ref game) => {
-                let num_players_active = game.data.num_players_active;
-                format!("doing the flop with {num_players_active} player(s) remaining")
+            PokerState::TakeAction(ref game) => {
+                if game.is_ready_for_next_phase() {
+                    "end of betting round".to_string()
+                } else {
+                    "betting round transition".to_string()
+                }
             }
-            PokerState::Turn(ref game) => {
-                let num_players_active = game.data.num_players_active;
-                format!("doing the turn with {num_players_active} player(s) remaining")
-            }
-            PokerState::River(ref game) => {
-                let num_players_active = game.data.num_players_active;
-                format!("doing the river with {num_players_active} player(s) remaining")
-            }
+            PokerState::Flop(_) => "the flop".to_string(),
+            PokerState::Turn(_) => "the turn".to_string(),
+            PokerState::River(_) => "the river".to_string(),
             PokerState::ShowHands(ref game) => {
                 let num_pots = game.get_num_pots();
                 format!("showing hands for pot #{num_pots}")
@@ -1681,10 +1689,14 @@ impl fmt::Display for PokerState {
                 let num_pots = game.get_num_pots();
                 format!("distributing pot #{num_pots}")
             }
-            PokerState::RemovePlayers(_) => "removing players".to_string(),
+            PokerState::RemovePlayers(_) => {
+                "removing players that joined spectators or left".to_string()
+            }
             PokerState::DivideDonations(_) => "dividing donations".to_string(),
             PokerState::UpdateBlinds(_) => "updating blinds".to_string(),
-            PokerState::BootPlayers(_) => "booting players".to_string(),
+            PokerState::BootPlayers(_) => {
+                "booting players that can't afford the big blind".to_string()
+            }
         };
         write!(f, "{repr}")
     }

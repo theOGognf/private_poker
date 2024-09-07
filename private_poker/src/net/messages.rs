@@ -5,7 +5,7 @@ use std::{
 };
 
 pub use crate::game::GameView;
-use crate::game::{entities::Action, UserError};
+use crate::game::{entities::Action, Game, TakeAction, UserError};
 
 #[derive(Debug, Deserialize, Eq, thiserror::Error, PartialEq, Serialize)]
 pub enum ClientError {
@@ -89,18 +89,8 @@ impl fmt::Display for ServerResponse {
             ServerResponse::ClientError(error) => write!(f, "{error}"),
             ServerResponse::GameView(view) => write!(f, "{view}"),
             ServerResponse::TurnSignal(action_options) => {
-                write!(f, "can ")?;
-                let num_options = action_options.len();
-                for (i, action) in action_options.iter().enumerate() {
-                    match i {
-                        0 if num_options == 1 => write!(f, "{action}")?,
-                        0 if num_options == 2 => write!(f, "{action} ")?,
-                        0 if num_options >= 3 => write!(f, "{action}, ")?,
-                        i if i == num_options - 1 && num_options != 1 => write!(f, "or {action}")?,
-                        _ => write!(f, "{action}, ")?,
-                    }
-                }
-                Ok(())
+                let repr = Game::<TakeAction>::action_options_to_string(action_options);
+                write!(f, "{repr}")
             }
             ServerResponse::UserError(error) => write!(f, "{error}"),
         }

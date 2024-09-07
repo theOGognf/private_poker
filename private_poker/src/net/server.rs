@@ -359,7 +359,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             .register(&mut stream, token, Interest::READABLE)?;
                         token_manager.associate_token_and_stream(token, stream);
                         let repr = token_to_string(&token);
-                        info!("accepted new connection with {repr}");
+                        debug!("accepted new connection with {repr}");
                     },
                     WAKER => {
                         // Drain server messages received from the parent thread so
@@ -468,7 +468,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                                 // Client errors are strict and result in the removal of a connection.
                                                 if let ServerResponse::ClientError(_) = msg {
                                                     let repr = token_to_string(&token);
-                                                    error!("{repr}: {msg}");
+                                                    debug!("{repr}: {msg}");
                                                     tokens_to_remove.insert(token);
                                                     break;
                                                 }
@@ -484,7 +484,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                                     | io::ErrorKind::TimedOut
                                                     | io::ErrorKind::UnexpectedEof => {
                                                         let repr = token_to_string(&token);
-                                                        error!("{repr} connection dropped");
+                                                        debug!("{repr} connection dropped");
                                                         tokens_to_remove.insert(token);
                                                     }
                                                     // Would block "errors" are the OS's way of saying that the
@@ -498,7 +498,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                                     // be written. This should be infrequent.
                                                     io::ErrorKind::WriteZero => {
                                                         let repr = token_to_string(&token);
-                                                        warn!("{repr} got a zero write, but will retry");
+                                                        debug!("{repr} got a zero write, but will retry");
                                                         messages.push_front(msg);
                                                         continue;
                                                     }
@@ -545,7 +545,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                                 | io::ErrorKind::TimedOut
                                                 | io::ErrorKind::UnexpectedEof => {
                                                     let repr = token_to_string(&token);
-                                                    error!("{repr}'s connection dropped");
+                                                    debug!("{repr}'s connection dropped");
                                                     tokens_to_remove.insert(token);
                                                 }
                                                 // Would block "errors" are the OS's way of saying that the
@@ -597,11 +597,11 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                     let repr = token_to_string(&token);
                     match result {
                         Ok(_) => {
-                            info!("{repr}: {msg}");
+                            debug!("{repr}: {msg}");
                             tx_client.send(msg)?
                         }
                         Err(error) => {
-                            error!("{repr}: {error}");
+                            debug!("{repr}: {error}");
                             let msg = ServerResponse::ClientError(error);
                             messages_to_write.entry(token).or_default().push_back(msg);
                         }
@@ -613,7 +613,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
             // with the poll.
             for token in tokens_to_remove.drain() {
                 let repr = token_to_string(&token);
-                warn!("{repr} is being removed");
+                debug!("{repr} is being removed");
                 if let Ok(username) = token_manager.get_confirmed_username_with_token(&token) {
                     let msg = ClientMessage {
                         username,
@@ -628,7 +628,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
             }
             for (token, mut stream) in token_manager.recycle_expired_tokens() {
                 let repr = token_to_string(&token);
-                warn!("{repr} expired");
+                debug!("{repr} expired");
                 messages_to_write.remove(&token);
                 poll.registry().deregister(&mut stream)?;
             }
@@ -658,10 +658,10 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                     // Check if the username from the last turn is the same as the
                     // username from this turn. If so, we need to check if there
                     // was a timeout.
-                    if let Some(last_username) = next_action_username {
+                    let send_turn_signal = if let Some(ref last_username) = next_action_username {
                         // If there's a timeout, then that means the user didn't
                         // make a decision in time, and they have to fold.
-                        if timeout.as_secs() == 0 && username == last_username {
+                        if timeout.as_secs() == 0 && &username == last_username {
                             // Ack that they will fold (the poker state will
                             // fold for them).
                             warn!("{username} ran out of time and will be forced to fold");
@@ -683,20 +683,26 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             waker.wake()?;
 
                             break 'command;
+                        } else {
+                            true
                         }
-                    }
-
-                    let response = ServerResponse::TurnSignal(action_options);
-                    info!("{username} {response}");
-                    let msg = ServerMessage::Response {
-                        username: username.clone(),
-                        data: Box::new(response),
+                    } else {
+                        false
                     };
-                    tx_server.send(msg)?;
-                    waker.wake()?;
 
-                    next_action_username = Some(username);
-                    timeout = config.server_timeouts.action;
+                    if send_turn_signal {
+                        let response = ServerResponse::TurnSignal(action_options);
+                        info!("{username} {response}");
+                        let msg = ServerMessage::Response {
+                            username: username.clone(),
+                            data: Box::new(response),
+                        };
+                        tx_server.send(msg)?;
+                        waker.wake()?;
+
+                        next_action_username = Some(username);
+                        timeout = config.server_timeouts.action;
+                    }
                 }
                 // If it's no one's turn and there's a timeout, then we must
                 // break to update the poker state.
