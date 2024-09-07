@@ -144,12 +144,12 @@ pub struct GameView {
 impl fmt::Display for GameView {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "blinds: {}/{}", self.big_blind, self.small_blind)?;
-        write!(f, "\n")?;
+        writeln!(f)?;
 
         // Display users just spectating the game.
-        write!(f, "\n")?;
+        writeln!(f)?;
         write!(f, "spectators:")?;
-        write!(f, "\n")?;
+        writeln!(f)?;
         match self.spectators.len() {
             0 => write!(f, "n/a")?,
             _ => {
@@ -158,12 +158,12 @@ impl fmt::Display for GameView {
                 }
             }
         };
-        write!(f, "\n")?;
+        writeln!(f)?;
 
         // Display users in queue to play.
-        write!(f, "\n")?;
+        writeln!(f)?;
         write!(f, "waitlisters:")?;
-        write!(f, "\n")?;
+        writeln!(f)?;
         match self.waitlist.len() {
             0 => write!(f, "n/a")?,
             _ => {
@@ -172,38 +172,38 @@ impl fmt::Display for GameView {
                 }
             }
         }
-        write!(f, "\n")?;
+        writeln!(f)?;
 
         // Display number of open seats.
-        write!(f, "\n")?;
+        writeln!(f)?;
         write!(f, "open seats:")?;
-        write!(f, "\n")?;
+        writeln!(f)?;
         write!(f, "{}", self.open_seats.len())?;
-        write!(f, "\n")?;
+        writeln!(f)?;
 
         // Display all players.
-        write!(f, "\n")?;
+        writeln!(f)?;
         write!(f, "players:")?;
-        write!(f, "\n")?;
+        writeln!(f)?;
         let players = self.players_to_string();
         write!(f, "{players}")?;
-        write!(f, "\n")?;
+        writeln!(f)?;
 
         // Display all pots.
-        write!(f, "\n")?;
+        writeln!(f)?;
         write!(f, "pots:")?;
-        write!(f, "\n")?;
+        writeln!(f)?;
         let pots = self.pots_to_string();
         write!(f, "{pots}")?;
-        write!(f, "\n")?;
+        writeln!(f)?;
 
         // Display community cards (cards on the board).
-        write!(f, "\n")?;
+        writeln!(f)?;
         write!(f, "board:")?;
-        write!(f, "\n")?;
+        writeln!(f)?;
         let board = self.board_to_string();
         write!(f, "{board}")?;
-        write!(f, "\n")?;
+        writeln!(f)?;
 
         Ok(())
     }
