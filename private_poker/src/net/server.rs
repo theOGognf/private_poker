@@ -22,17 +22,17 @@ use super::{
     utils::{read_prefixed, write_prefixed},
 };
 
-pub const DEFAULT_ACTION_TIMEOUT: Duration = Duration::from_secs(10);
+pub const DEFAULT_ACTION_TIMEOUT: Duration = Duration::from_secs(15);
 pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 pub const DEFAULT_POLL_TIMEOUT: Duration = Duration::from_secs(1);
-pub const DEFAULT_STEP_TIMEOUT: Duration = Duration::from_secs(5);
+pub const DEFAULT_STEP_TIMEOUT: Duration = Duration::from_secs(3);
 pub const MAX_NETWORK_EVENTS_PER_USER: usize = 6;
 pub const SERVER: Token = Token(0);
 pub const WAKER: Token = Token(1);
 
 fn token_to_string(token: &Token) -> String {
     let id = token.0;
-    format!("Token({id})")
+    format!("token({id})")
 }
 
 pub struct ServerTimeouts {
@@ -168,7 +168,7 @@ impl TokenManager {
                         Ok(())
                     }
                     None => unreachable!(
-                        "An unconfirmed username always corresponds to an unconfirmed token."
+                        "an unconfirmed username always corresponds to an unconfirmed token"
                     ),
                 },
                 None => Err(ClientError::Unassociated),
@@ -198,7 +198,7 @@ impl TokenManager {
             (Some(unconfirmed_client), None) => Ok(&mut unconfirmed_client.stream),
             (None, Some(stream)) => Ok(stream),
             (None, None) => Err(ClientError::DoesNotExist),
-            _ => unreachable!("A token must be either unconfirmed or confirmed."),
+            _ => unreachable!("a token must be either unconfirmed or confirmed"),
         }
     }
 
@@ -268,7 +268,7 @@ impl TokenManager {
                 Some(unconfirmed_client) => {
                     recyclables.push_back((token, unconfirmed_client.stream))
                 }
-                None => unreachable!("An unassociated token is always unconfirmed."),
+                None => unreachable!("an unassociated token is always unconfirmed"),
             }
             self.recycled_tokens.insert(token);
         }
@@ -289,7 +289,7 @@ impl TokenManager {
             (Some(unconfirmed), None) => unconfirmed.stream,
             (None, Some(stream)) => stream,
             (None, None) => return Err(ClientError::DoesNotExist),
-            _ => unreachable!("A token must be either unconfirmed or confirmed."),
+            _ => unreachable!("a token must be either unconfirmed or confirmed"),
         };
         self.recycled_tokens.insert(token);
         Ok(stream)
@@ -325,7 +325,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
             .register(&mut server, SERVER, Interest::READABLE)?;
 
         loop {
-            debug!("Polling for network events");
+            debug!("polling for network events");
             if let Err(error) = poll.poll(&mut events, Some(config.server_timeouts.poll)) {
                 match error.kind() {
                     io::ErrorKind::Interrupted => continue,
@@ -359,7 +359,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             .register(&mut stream, token, Interest::READABLE)?;
                         token_manager.associate_token_and_stream(token, stream);
                         let repr = token_to_string(&token);
-                        info!("Accepted new connection with {repr}");
+                        info!("accepted new connection with {repr}");
                     },
                     WAKER => {
                         // Drain server messages received from the parent thread so
@@ -637,13 +637,14 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
 
     let mut state: PokerState = config.game_settings.into();
     loop {
-        state = state.step();
         let repr = state.to_string();
-        info!("Game state: {repr}");
+        info!("{repr}");
+        state = state.step();
 
         let views = state.get_views();
         let msg = ServerMessage::Views(views);
         tx_server.send(msg)?;
+        waker.wake()?;
 
         let mut next_action_username = state.get_next_action_username();
         let mut timeout = config.server_timeouts.step;
@@ -733,7 +734,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                     // the commanding client.
                     match result {
                         Ok(()) => {
-                            info!("Ack: {msg}");
+                            info!("ack: {msg}");
                             let msg = ServerMessage::Ack(msg);
                             tx_server.send(msg)?;
                             waker.wake()?;

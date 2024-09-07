@@ -283,7 +283,7 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                 break;
             }
 
-            _ => unreachable!("Cheater!"),
+            _ => unreachable!("cheater"),
         }
     }
 

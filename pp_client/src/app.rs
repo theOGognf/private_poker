@@ -1,12 +1,14 @@
 use anyhow::{bail, Error};
 use chrono::{DateTime, Utc};
-use log::debug;
 use mio::{Events, Interest, Poll, Waker};
 use private_poker::{
+    entities::Action,
     game::GameView,
+    messages::UserState,
     net::{
-        messages::{ClientMessage, ServerResponse},
+        messages::{ClientCommand, ClientMessage, ServerResponse},
         server::{DEFAULT_POLL_TIMEOUT, SERVER, WAKER},
+        utils::{read_prefixed, write_prefixed},
     },
 };
 use ratatui::{
@@ -35,7 +37,7 @@ pub const MAX_LOG_RECORDS: usize = 1024;
 pub const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
 #[derive(Clone)]
-enum RecordSource {
+enum RecordKind {
     Error,
     System,
     User,
@@ -44,15 +46,15 @@ enum RecordSource {
 #[derive(Clone)]
 struct Record {
     datetime: DateTime<Utc>,
-    source: RecordSource,
+    kind: RecordKind,
     content: String,
 }
 
 impl Record {
-    fn new(source: RecordSource, content: String) -> Self {
+    fn new(kind: RecordKind, content: String) -> Self {
         Self {
             datetime: Utc::now(),
-            source,
+            kind,
             content,
         }
     }
@@ -60,15 +62,15 @@ impl Record {
 
 impl From<Record> for ListItem<'_> {
     fn from(val: Record) -> Self {
-        let source = match val.source {
-            RecordSource::Error => format!("{:6}", "ERROR").light_red(),
-            RecordSource::System => format!("{:6}", "SYSTEM").light_yellow(),
-            RecordSource::User => format!("{:6}", "USER").light_green(),
+        let kind = match val.kind {
+            RecordKind::Error => format!("{:6}", "ERROR").light_red(),
+            RecordKind::System => format!("{:6}", "SYSTEM").light_yellow(),
+            RecordKind::User => format!("{:6}", "USER").light_green(),
         };
 
         let msg = vec![
             format!("[{} ", val.datetime.format("%Y-%m-%d %H:%M:%S")).into(),
-            source,
+            kind,
             format!("]: {}", val.content).into(),
         ];
 
@@ -251,7 +253,7 @@ impl App {
     pub fn run(
         mut self,
         stream: TcpStream,
-        view: GameView,
+        mut view: GameView,
         mut terminal: DefaultTerminal,
     ) -> Result<(), Error> {
         let (tx_client, rx_client): (Sender<ClientMessage>, Receiver<ClientMessage>) = channel();
@@ -272,7 +274,6 @@ impl App {
             poll.registry()
                 .register(&mut stream, SERVER, Interest::READABLE)?;
 
-            debug!("Polling for network events");
             loop {
                 if let Err(error) = poll.poll(&mut events, Some(DEFAULT_POLL_TIMEOUT)) {
                     match error.kind() {
@@ -283,8 +284,97 @@ impl App {
 
                 for event in events.iter() {
                     match event.token() {
-                        SERVER => {}
-                        WAKER => {}
+                        SERVER => {
+                            if event.is_writable() && !messages_to_write.is_empty() {
+                                while let Some(msg) = messages_to_write.pop_front() {
+                                    if let Err(error) =
+                                        write_prefixed::<ClientMessage, mio::net::TcpStream>(
+                                            &mut stream,
+                                            &msg,
+                                        )
+                                    {
+                                        match error.kind() {
+                                            // `write_prefixed` uses `write_all` under the hood, so we know
+                                            // that if any of these occur, then the connection was probably
+                                            // dropped at some point.
+                                            io::ErrorKind::BrokenPipe
+                                            | io::ErrorKind::ConnectionAborted
+                                            | io::ErrorKind::ConnectionReset
+                                            | io::ErrorKind::TimedOut
+                                            | io::ErrorKind::UnexpectedEof => {
+                                                bail!("Connection dropped");
+                                            }
+                                            // Would block "errors" are the OS's way of saying that the
+                                            // connection is not actually ready to perform this I/O operation.
+                                            io::ErrorKind::WouldBlock => {
+                                                // The message couldn't be sent, so we need to push it back
+                                                // onto the queue so we don't accidentally forget about it.
+                                                messages_to_write.push_front(msg);
+                                            }
+                                            // Retry writing in the case that the full message couldn't
+                                            // be written. This should be infrequent.
+                                            io::ErrorKind::WriteZero => {
+                                                messages_to_write.push_front(msg);
+                                                continue;
+                                            }
+                                            // Other errors we'll consider fatal.
+                                            _ => bail!(error),
+                                        }
+                                        poll.registry().reregister(
+                                            &mut stream,
+                                            SERVER,
+                                            Interest::READABLE,
+                                        )?;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if event.is_readable() {
+                                // We can (maybe) read from the connection.
+                                loop {
+                                    match read_prefixed::<ServerResponse, mio::net::TcpStream>(
+                                        &mut stream,
+                                    ) {
+                                        Ok(msg) => {
+                                            tx_server.send(msg)?;
+                                        }
+                                        Err(error) => {
+                                            match error.kind() {
+                                                // `read_prefixed` uses `read_exact` under the hood, so we know
+                                                // that an Eof error means the connection was dropped.
+                                                io::ErrorKind::BrokenPipe
+                                                | io::ErrorKind::ConnectionAborted
+                                                | io::ErrorKind::ConnectionReset
+                                                | io::ErrorKind::InvalidData
+                                                | io::ErrorKind::TimedOut
+                                                | io::ErrorKind::UnexpectedEof => {
+                                                    bail!("Connection dropped");
+                                                }
+                                                // Would block "errors" are the OS's way of saying that the
+                                                // connection is not actually ready to perform this I/O operation.
+                                                io::ErrorKind::WouldBlock => {}
+                                                // Other errors we'll consider fatal.
+                                                _ => {
+                                                    bail!(error)
+                                                }
+                                            }
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        WAKER => {
+                            while let Ok(msg) = rx_client.try_recv() {
+                                messages_to_write.push_back(msg);
+                                poll.registry().reregister(
+                                    &mut stream,
+                                    SERVER,
+                                    Interest::READABLE | Interest::WRITABLE,
+                                )?;
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -312,18 +402,68 @@ impl App {
                             KeyModifiers::NONE => match code {
                                 KeyCode::Enter => {
                                     let cmd = self.user_input.submit();
-                                    let record = Record::new(RecordSource::User, cmd.clone());
+                                    let record = Record::new(RecordKind::User, cmd.clone());
                                     self.log_handle.push(record.into());
                                     match cmd.as_str() {
+                                        // "call" => {
+                                        //     let msg = ClientMessage {
+                                        //         username: self.username.to_string(),
+                                        //         command: ClientCommand::TakeAction(Action::Call(())),
+                                        //     };
+                                        // }
                                         "clear" => self.log_handle.clear(),
                                         "exit" => return Ok(()),
+                                        "fold" => {
+                                            let msg = ClientMessage {
+                                                username: self.username.to_string(),
+                                                command: ClientCommand::TakeAction(Action::Fold),
+                                            };
+                                            tx_client.send(msg)?;
+                                            waker.wake()?;
+                                        }
+                                        "play" => {
+                                            let msg = ClientMessage {
+                                                username: self.username.clone(),
+                                                command: ClientCommand::ChangeState(
+                                                    UserState::Play,
+                                                ),
+                                            };
+                                            tx_client.send(msg)?;
+                                            waker.wake()?;
+                                        }
+                                        "show hand" => {
+                                            let msg = ClientMessage {
+                                                username: self.username.to_string(),
+                                                command: ClientCommand::ShowHand,
+                                            };
+                                            tx_client.send(msg)?;
+                                            waker.wake()?;
+                                        }
+                                        "spectate" => {
+                                            let msg = ClientMessage {
+                                                username: self.username.clone(),
+                                                command: ClientCommand::ChangeState(
+                                                    UserState::Spectate,
+                                                ),
+                                            };
+                                            tx_client.send(msg)?;
+                                            waker.wake()?;
+                                        }
+                                        "start" => {
+                                            let msg = ClientMessage {
+                                                username: self.username.to_string(),
+                                                command: ClientCommand::StartGame,
+                                            };
+                                            tx_client.send(msg)?;
+                                            waker.wake()?;
+                                        }
                                         cmd => {
                                             let content = match cmd {
-                                                "view board" => view.board_as_string(),
-                                                "view players" => view.players_as_string(),
-                                                "view pots" => view.pot_as_string(),
-                                                "view turn" => view.turn_as_string(),
-                                                cmd => format!("Unrecognized command: {cmd}"),
+                                                "board" => view.board_as_string(),
+                                                "players" => view.players_as_string(),
+                                                "pots" => view.pot_as_string(),
+                                                "turn" => view.turn_as_string(),
+                                                cmd => format!("unrecognized command: {cmd}"),
                                             };
                                             let text = Text::raw(content);
                                             self.log_handle.push(text.into());
@@ -345,6 +485,28 @@ impl App {
                         }
                     }
                 }
+            }
+
+            if let Ok(msg) = rx_server.try_recv() {
+                match msg {
+                    ServerResponse::Ack(msg) => {
+                        let record = Record::new(RecordKind::System, msg.to_string());
+                        self.log_handle.push(record.into());
+                    }
+                    ServerResponse::ClientError(error) => {
+                        let record = Record::new(RecordKind::Error, error.to_string());
+                        self.log_handle.push(record.into());
+                    }
+                    ServerResponse::GameView(new_view) => view = new_view,
+                    ServerResponse::TurnSignal(_) => {
+                        let record = Record::new(RecordKind::System, "it's your turn!".to_string());
+                        self.log_handle.push(record.into());
+                    }
+                    ServerResponse::UserError(error) => {
+                        let record = Record::new(RecordKind::Error, error.to_string());
+                        self.log_handle.push(record.into());
+                    }
+                };
             }
         }
     }

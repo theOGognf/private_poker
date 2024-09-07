@@ -777,7 +777,7 @@ macro_rules! impl_user_managers {
                 let mut user = if let Some(user) = self.data.spectators.remove(username) {
                     user
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
-                    self.data.waitlist.remove(waitlist_idx).expect("Waitlister exists.")
+                    self.data.waitlist.remove(waitlist_idx).expect("waitlister exists")
                 } else if let Some(player_idx) = self.data.players.iter().position(|p| p.user.name == username) {
                     self.data.players_to_spectate.remove(username);
                     let player = self.data.players.remove(player_idx);
@@ -799,7 +799,7 @@ macro_rules! impl_user_managers {
                 let user = if self.data.spectators.contains_key(username) {
                     return Ok(true);
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
-                    self.data.waitlist.remove(waitlist_idx).expect("Waitlister exists.")
+                    self.data.waitlist.remove(waitlist_idx).expect("waitlister exists")
                 } else if let Some(player_idx) = self.data.players.iter().position(|p| p.user.name == username) {
                     self.data.players_to_remove.remove(username);
                     let player = self.data.players.remove(player_idx);
@@ -827,7 +827,7 @@ macro_rules! impl_user_managers_with_queue {
                 let mut user = if let Some(user) = self.data.spectators.remove(username) {
                     user
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
-                    self.data.waitlist.remove(waitlist_idx).expect("Waitlister exists.")
+                    self.data.waitlist.remove(waitlist_idx).expect("waitlister exists")
                 } else if let Some(_) = self.data.players.iter().position(|p| p.user.name == username) {
                     // Need to remove the player from other queues just in
                     // case they changed their mind.
@@ -853,7 +853,7 @@ macro_rules! impl_user_managers_with_queue {
                 let user = if self.data.spectators.contains_key(username) {
                     return Ok(true)
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
-                    self.data.waitlist.remove(waitlist_idx).expect("Waitlister exists.")
+                    self.data.waitlist.remove(waitlist_idx).expect("waitlister exists")
                 } else if let Some(_) = self.data.players.iter().position(|p| p.user.name == username) {
                     // Need to remove the player from other queues just in
                     // case they changed their mind.
@@ -1000,8 +1000,8 @@ impl From<Game<MoveButton>> for Game<CollectBlinds> {
             .clone()
             .cycle()
             .skip(value.data.big_blind_idx + 1);
-        value.data.big_blind_idx = seats.next().expect("Big blind position exists.");
-        value.data.starting_action_idx = seats.next().expect("Starting action position exists.");
+        value.data.big_blind_idx = seats.next().expect("big blind position exists");
+        value.data.starting_action_idx = seats.next().expect("starting action position exists");
         value.data.next_action_idx = Some(value.data.starting_action_idx);
         // Reverse the table search to find the small blind position relative
         // to the big blind position since the small blind must always trail the big
@@ -1010,7 +1010,7 @@ impl From<Game<MoveButton>> for Game<CollectBlinds> {
             .rev()
             .cycle()
             .skip(num_players - value.data.big_blind_idx);
-        value.data.small_blind_idx = seats.next().expect("Small blind position exists.");
+        value.data.small_blind_idx = seats.next().expect("small blind position exists");
         Self {
             data: value.data,
             state: CollectBlinds {},
@@ -1044,7 +1044,7 @@ impl From<Game<CollectBlinds>> for Game<Deal> {
                     }
                 }
                 _ => unreachable!(
-                    "A player can't be in a game if they don't have enough for the big blind."
+                    "a player can't be in a game if they don't have enough for the big blind"
                 ),
             };
             // Impossible for a side pot to be created from the blinds, so
@@ -1071,7 +1071,7 @@ impl From<Game<Deal>> for Game<TakeAction> {
         // Deal 2 cards per player, looping over players and dealing them 1 card
         // at a time.
         while value.data.deck_idx < (2 * num_players) {
-            let deal_idx = seats.next().expect("Dealing position exists.");
+            let deal_idx = seats.next().expect("dealing position exists");
             let player = &mut value.data.players[deal_idx];
             let card = value.data.deck[value.data.deck_idx];
             player.cards.push(card);
@@ -1426,7 +1426,7 @@ impl Game<DistributePot> {
                 let winner_investment = pot
                     .investments
                     .remove(&winner_player_idx)
-                    .expect("Winners are players.");
+                    .expect("winners are players");
                 if winner_investment > max_winner_investment {
                     max_winner_investment = winner_investment;
                 }
@@ -1511,7 +1511,7 @@ impl From<Game<RemovePlayers>> for Game<DivideDonations> {
         while let Some(username) = value.data.players_to_remove.pop_first() {
             value
                 .remove_user(&username)
-                .expect("Players can be removed.");
+                .expect("players can be removed");
         }
         Self {
             data: value.data,
@@ -1599,7 +1599,7 @@ impl From<Game<BootPlayers>> for Game<Lobby> {
         while let Some(username) = value.data.players_to_spectate.pop_first() {
             value
                 .spectate_user(&username)
-                .expect("Players can be moved.");
+                .expect("players can be moved");
         }
         Self {
             data: value.data,
@@ -1788,14 +1788,12 @@ impl PokerState {
                         4 => PokerState::River(game.into()),
                         5 => PokerState::ShowHands(game.into()),
                         _ => unreachable!(
-                            "There can only be 0, 3, 4, or 5 community cards on the board at a time."
+                            "there can only be 0, 3, 4, or 5 community cards on the board at a time"
                         ),
                     }
                 } else {
-                    match game.act(Action::Fold) {
-                        Err(_) => unreachable!("Force folding is OK."),
-                        _ => PokerState::TakeAction(game),
-                    }
+                    game.act(Action::Fold).expect("force folding is OK");
+                    PokerState::TakeAction(game)
                 }
             }
             PokerState::Flop(game) => {

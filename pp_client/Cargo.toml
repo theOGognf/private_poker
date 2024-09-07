@@ -7,8 +7,6 @@ edition = "2021"
 anyhow = "1.0.86"
 chrono = "0.4.38"
 clap = "4.5.16"
-env_logger = "0.11.5"
-log = "0.4.22"
 mio = { version = "1.0.2", features = ["net", "os-poll"] }
 private_poker = { path = "../private_poker" }
 ratatui = "0.28.0"

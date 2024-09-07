@@ -502,8 +502,6 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
- "env_logger",
- "log",
  "mio",
  "private_poker",
  "ratatui",

@@ -1,5 +1,5 @@
 pub mod net;
-pub use net::{client::Client, messages, server};
+pub use net::{client::Client, messages, server, utils};
 
 pub mod game;
 pub use game::{

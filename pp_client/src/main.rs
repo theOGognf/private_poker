@@ -34,7 +34,6 @@ fn main() -> Result<(), Error> {
         .get_one::<String>("connect")
         .expect("Server address is an invalid string.");
 
-    env_logger::builder().format_target(false).init();
     // Doesn't make sense to use the complexity of non-blocking IO
     // for connecting to the poker server, so we try to connect with
     // a blocking client instead. The client is then eventually
