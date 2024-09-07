@@ -9,18 +9,18 @@ use app::App;
 
 fn main() -> Result<(), Error> {
     let username = Arg::new("username")
-        .help("Client username.")
+        .help("client username")
         .required(true)
         .value_name("USERNAME");
 
     let addr = Arg::new("connect")
-        .help("Server socket connection address.")
+        .help("server socket connection address")
         .default_value("127.0.0.1:6969")
         .long("connect")
         .value_name("IP:PORT");
 
     let matches = Command::new("pp_client")
-        .about("Connect to a centralized poker server over TCP.")
+        .about("connect to a centralized poker server over TCP")
         .version("0.0.1")
         .arg(addr)
         .arg(username)
@@ -28,11 +28,11 @@ fn main() -> Result<(), Error> {
 
     let username = matches
         .get_one::<String>("username")
-        .expect("Username is an invalid string.");
+        .expect("username is an invalid string");
 
     let addr = matches
         .get_one::<String>("connect")
-        .expect("Server address is an invalid string.");
+        .expect("server address is an invalid string");
 
     // Doesn't make sense to use the complexity of non-blocking IO
     // for connecting to the poker server, so we try to connect with

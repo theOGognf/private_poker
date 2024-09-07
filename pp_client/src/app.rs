@@ -302,7 +302,7 @@ impl App {
                                             | io::ErrorKind::ConnectionReset
                                             | io::ErrorKind::TimedOut
                                             | io::ErrorKind::UnexpectedEof => {
-                                                bail!("Connection dropped");
+                                                bail!("connection dropped");
                                             }
                                             // Would block "errors" are the OS's way of saying that the
                                             // connection is not actually ready to perform this I/O operation.
@@ -349,7 +349,7 @@ impl App {
                                                 | io::ErrorKind::InvalidData
                                                 | io::ErrorKind::TimedOut
                                                 | io::ErrorKind::UnexpectedEof => {
-                                                    bail!("Connection dropped");
+                                                    bail!("connection dropped");
                                                 }
                                                 // Would block "errors" are the OS's way of saying that the
                                                 // connection is not actually ready to perform this I/O operation.
