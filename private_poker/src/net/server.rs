@@ -740,7 +740,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                     // the commanding client.
                     match result {
                         Ok(()) => {
-                            info!("ack: {msg}");
+                            info!("{msg}");
                             let msg = ServerMessage::Ack(msg);
                             tx_server.send(msg)?;
                             waker.wake()?;
