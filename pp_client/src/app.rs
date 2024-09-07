@@ -305,7 +305,6 @@ impl App {
                     if kind == KeyEventKind::Press {
                         match modifiers {
                             KeyModifiers::CONTROL => match code {
-                                KeyCode::Char('c') => return Ok(()),
                                 KeyCode::Home => self.log_handle.jump_to_first(),
                                 KeyCode::End => self.log_handle.jump_to_last(),
                                 _ => {}
@@ -401,8 +400,8 @@ impl App {
                 " to record a command, enter ".into(),
                 "help".bold(),
                 " to view commands,".into(),
-                " or press ".into(),
-                "CTRL+C".bold(),
+                " or enter ".into(),
+                "exit".bold(),
                 " to exit.".into(),
             ],
             Style::default(),
