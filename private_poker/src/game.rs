@@ -151,7 +151,7 @@ impl fmt::Display for GameView {
         writeln!(f)?;
         writeln!(f, "Spectators:")?;
         match self.spectators.len() {
-            0 => writeln!(f, "N/A")?,
+            0 => writeln!(f, "n/a")?,
             _ => {
                 for user in self.spectators.values() {
                     writeln!(f, "{user}")?;
@@ -163,7 +163,7 @@ impl fmt::Display for GameView {
         writeln!(f)?;
         writeln!(f, "Waitlisters:")?;
         match self.waitlist.len() {
-            0 => writeln!(f, "N/A")?,
+            0 => writeln!(f, "n/a")?,
             _ => {
                 for waitlister in self.waitlist.iter() {
                     writeln!(f, "{waitlister}")?;
@@ -207,7 +207,7 @@ impl GameView {
     pub fn board_as_string(&self) -> String {
         let mut repr = vec![];
         match self.board.len() {
-            0 => repr.push("N/A".to_string()),
+            0 => repr.push("n/a".to_string()),
             _ => {
                 for card in self.board.iter() {
                     repr.push(card.to_string())
@@ -220,11 +220,11 @@ impl GameView {
     pub fn pot_as_string(&self) -> String {
         let mut repr = vec![];
         match self.pots.len() {
-            0 => repr.push("N/A".to_string()),
+            0 => repr.push("n/a".to_string()),
             _ => {
                 for (mut i, pot) in self.pots.iter().enumerate() {
                     i += 1;
-                    repr.push(format!("Pot #{}: {}", i, pot));
+                    repr.push(format!("pot #{}: {}", i, pot));
                 }
             }
         }
@@ -235,7 +235,7 @@ impl GameView {
         let mut repr = vec![];
         match self.players.len() {
             0 => {
-                repr.push("N/A".to_string());
+                repr.push("n/a".to_string());
             }
             _ => {
                 for player in self.players.iter() {
@@ -248,7 +248,7 @@ impl GameView {
 
     pub fn turn_as_string(&self) -> String {
         match self.next_action_idx {
-            None => "N/A".to_string(),
+            None => "n/a".to_string(),
             Some(player_idx) => {
                 let username = &self.players[player_idx].user.name;
                 username.clone()

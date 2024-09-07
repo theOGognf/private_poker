@@ -415,7 +415,7 @@ impl App {
                                         "exit" => return Ok(()),
                                         "fold" => {
                                             let msg = ClientMessage {
-                                                username: self.username.to_string(),
+                                                username: self.username.clone(),
                                                 command: ClientCommand::TakeAction(Action::Fold),
                                             };
                                             tx_client.send(msg)?;
@@ -433,7 +433,7 @@ impl App {
                                         }
                                         "show hand" => {
                                             let msg = ClientMessage {
-                                                username: self.username.to_string(),
+                                                username: self.username.clone(),
                                                 command: ClientCommand::ShowHand,
                                             };
                                             tx_client.send(msg)?;
@@ -451,7 +451,7 @@ impl App {
                                         }
                                         "start" => {
                                             let msg = ClientMessage {
-                                                username: self.username.to_string(),
+                                                username: self.username.clone(),
                                                 command: ClientCommand::StartGame,
                                             };
                                             tx_client.send(msg)?;
