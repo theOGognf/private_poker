@@ -459,10 +459,10 @@ impl App {
                                         }
                                         cmd => {
                                             let content = match cmd {
-                                                "board" => view.board_as_string(),
-                                                "players" => view.players_as_string(),
-                                                "pots" => view.pot_as_string(),
-                                                "turn" => view.turn_as_string(),
+                                                "board" => view.board_to_string(),
+                                                "game" => view.to_string(),
+                                                "players" => view.players_to_string(),
+                                                "pots" => view.pots_to_string(),
                                                 cmd => format!("unrecognized command: {cmd}"),
                                             };
                                             let text = Text::raw(content);

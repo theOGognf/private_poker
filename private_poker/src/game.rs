@@ -95,19 +95,19 @@ type UserView = User;
 pub struct PlayerView {
     user: UserView,
     state: PlayerState,
-    cards: Option<Vec<Card>>,
+    cards: Vec<Card>,
 }
 
 impl fmt::Display for PlayerView {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut repr = vec![format!("{} | {} |", self.user, self.state)];
-        match &self.cards {
-            Some(cards) => {
-                for card in cards.iter() {
+        match self.cards.len() {
+            0 => repr.push(" ???  ???".to_string()),
+            _ => {
+                for card in self.cards.iter() {
                     repr.push(card.to_string());
                 }
             }
-            None => repr.push("?? ??".to_string()),
         }
         write!(f, "{}", repr.join(" "))
     }
@@ -143,68 +143,74 @@ pub struct GameView {
 
 impl fmt::Display for GameView {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f)?;
-        writeln!(f, "Small blind: ${}", self.small_blind)?;
-        writeln!(f, "Big blind: ${}", self.small_blind)?;
+        write!(f, "blinds: {}/{}", self.big_blind, self.small_blind)?;
+        write!(f, "\n")?;
 
         // Display users just spectating the game.
-        writeln!(f)?;
-        writeln!(f, "Spectators:")?;
+        write!(f, "\n")?;
+        write!(f, "spectators:")?;
+        write!(f, "\n")?;
         match self.spectators.len() {
-            0 => writeln!(f, "n/a")?,
+            0 => write!(f, "n/a")?,
             _ => {
                 for user in self.spectators.values() {
-                    writeln!(f, "{user}")?;
+                    write!(f, "{user}")?;
                 }
             }
         };
+        write!(f, "\n")?;
 
         // Display users in queue to play.
-        writeln!(f)?;
-        writeln!(f, "Waitlisters:")?;
+        write!(f, "\n")?;
+        write!(f, "waitlisters:")?;
+        write!(f, "\n")?;
         match self.waitlist.len() {
-            0 => writeln!(f, "n/a")?,
+            0 => write!(f, "n/a")?,
             _ => {
                 for waitlister in self.waitlist.iter() {
-                    writeln!(f, "{waitlister}")?;
+                    write!(f, "{waitlister}")?;
                 }
             }
         }
+        write!(f, "\n")?;
 
         // Display number of open seats.
-        writeln!(f)?;
-        writeln!(f, "Number of open seats: {}", self.open_seats.len())?;
+        write!(f, "\n")?;
+        write!(f, "open seats:")?;
+        write!(f, "\n")?;
+        write!(f, "{}", self.open_seats.len())?;
+        write!(f, "\n")?;
 
         // Display all players.
-        writeln!(f)?;
-        writeln!(f, "Players:")?;
-        let players = self.players_as_string();
-        writeln!(f, "{players}")?;
+        write!(f, "\n")?;
+        write!(f, "players:")?;
+        write!(f, "\n")?;
+        let players = self.players_to_string();
+        write!(f, "{players}")?;
+        write!(f, "\n")?;
 
         // Display all pots.
-        writeln!(f)?;
-        writeln!(f, "Pots:")?;
-        let pots = self.pot_as_string();
-        writeln!(f, "{pots}")?;
+        write!(f, "\n")?;
+        write!(f, "pots:")?;
+        write!(f, "\n")?;
+        let pots = self.pots_to_string();
+        write!(f, "{pots}")?;
+        write!(f, "\n")?;
 
         // Display community cards (cards on the board).
-        writeln!(f)?;
-        writeln!(f, "Board:")?;
-        let board = self.board_as_string();
-        writeln!(f, "{board}")?;
+        write!(f, "\n")?;
+        write!(f, "board:")?;
+        write!(f, "\n")?;
+        let board = self.board_to_string();
+        write!(f, "{board}")?;
+        write!(f, "\n")?;
 
-        // Display whose turn it is.
-        writeln!(f)?;
-        let turn = self.turn_as_string();
-        writeln!(f, "{turn}")?;
-
-        writeln!(f)?;
         Ok(())
     }
 }
 
 impl GameView {
-    pub fn board_as_string(&self) -> String {
+    pub fn board_to_string(&self) -> String {
         let mut repr = vec![];
         match self.board.len() {
             0 => repr.push("n/a".to_string()),
@@ -217,7 +223,7 @@ impl GameView {
         repr.join(" ")
     }
 
-    pub fn pot_as_string(&self) -> String {
+    pub fn pots_to_string(&self) -> String {
         let mut repr = vec![];
         match self.pots.len() {
             0 => repr.push("n/a".to_string()),
@@ -231,7 +237,7 @@ impl GameView {
         repr.join("\n")
     }
 
-    pub fn players_as_string(&self) -> String {
+    pub fn players_to_string(&self) -> String {
         let mut repr = vec![];
         match self.players.len() {
             0 => {
@@ -244,16 +250,6 @@ impl GameView {
             }
         }
         repr.join("\n")
-    }
-
-    pub fn turn_as_string(&self) -> String {
-        match self.next_action_idx {
-            None => "n/a".to_string(),
-            Some(player_idx) => {
-                let username = &self.players[player_idx].user.name;
-                username.clone()
-            }
-        }
     }
 }
 
@@ -460,9 +456,9 @@ impl<T> Game<T> {
         let mut players = Vec::with_capacity(self.data.settings.max_players);
         for player in self.data.players.iter() {
             let cards = if player.user.name == username || player.state == PlayerState::Show {
-                Some(player.cards.clone())
+                player.cards.clone()
             } else {
-                None
+                vec![]
             };
             let player_view = PlayerView {
                 user: player.user.clone(),
@@ -1651,9 +1647,11 @@ impl fmt::Display for PokerState {
                 format!("moving button with {num_players} players")
             }
             PokerState::CollectBlinds(ref game) => {
+                let big_blind = game.data.big_blind;
                 let big_blind_username = &game.data.players[game.data.big_blind_idx].user.name;
+                let small_blind = game.data.small_blind;
                 let small_blind_username = &game.data.players[game.data.small_blind_idx].user.name;
-                format!("collecting big blind from {big_blind_username} and small blind from {small_blind_username}")
+                format!("collecting a ${big_blind} big blind from {big_blind_username} and a ${small_blind} small blind from {small_blind_username}")
             }
             PokerState::Deal(ref game) => {
                 let num_cards = 2 * game.get_num_players();

@@ -48,7 +48,8 @@ impl fmt::Display for Card {
             13 => "K",
             v => &v.to_string(),
         };
-        write!(f, "{}{}", value, self.1)
+        let repr = format!("{value}{}", self.1);
+        write!(f, "{repr:>4}")
     }
 }
 
@@ -186,12 +187,13 @@ pub enum PlayerState {
 
 impl fmt::Display for PlayerState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            PlayerState::Wait => write!(f, "waiting"),
-            PlayerState::AllIn => write!(f, "all-in"),
-            PlayerState::Fold => write!(f, "folded"),
-            PlayerState::Show => write!(f, "showing"),
-        }
+        let repr = match self {
+            PlayerState::Wait => "waiting",
+            PlayerState::AllIn => "all-in",
+            PlayerState::Fold => "folded",
+            PlayerState::Show => "showing",
+        };
+        write!(f, "{repr:7}")
     }
 }
 
