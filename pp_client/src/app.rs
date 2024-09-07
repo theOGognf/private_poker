@@ -15,7 +15,7 @@ use ratatui::{
     layout::{Constraint, Layout, Margin, Position},
     style::{Style, Stylize},
     symbols::scrollbar,
-    text::{Line, Span, Text},
+    text::{Line, Text},
     widgets::{
         Block, List, ListDirection, ListItem, ListState, Paragraph, ScrollDirection, Scrollbar,
         ScrollbarOrientation, ScrollbarState,
@@ -26,17 +26,17 @@ use std::{
     collections::VecDeque,
     io,
     net::TcpStream,
-    sync::{
-        mpsc::{channel, Receiver, Sender},
-        Arc, Mutex,
-    },
+    sync::mpsc::{channel, Receiver, Sender},
     thread,
+    time::Duration,
 };
 
 pub const MAX_LOG_RECORDS: usize = 1024;
+pub const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
 #[derive(Clone)]
 enum RecordSource {
+    Error,
     System,
     User,
 }
@@ -58,23 +58,27 @@ impl Record {
     }
 }
 
-impl From<Record> for Vec<Span<'_>> {
+impl From<Record> for ListItem<'_> {
     fn from(val: Record) -> Self {
         let source = match val.source {
-            RecordSource::System => format!("{:6}", "SYSTEM").yellow(),
+            RecordSource::Error => format!("{:6}", "ERROR").light_red(),
+            RecordSource::System => format!("{:6}", "SYSTEM").light_yellow(),
             RecordSource::User => format!("{:6}", "USER").light_green(),
         };
 
-        vec![
-            format!("  [{} ", val.datetime.format("%Y-%m-%d %H:%M:%S")).into(),
+        let msg = vec![
+            format!("[{} ", val.datetime.format("%Y-%m-%d %H:%M:%S")).into(),
             source,
             format!("]: {}", val.content).into(),
-        ]
+        ];
+
+        let content = Line::from(msg);
+        ListItem::new(content)
     }
 }
 
 struct LogHandle {
-    records: VecDeque<Record>,
+    list_items: VecDeque<ListItem<'static>>,
     list_state: ListState,
     scroll_state: ScrollbarState,
 }
@@ -83,7 +87,7 @@ impl LogHandle {
     pub fn clear(&mut self) {
         self.jump_to_last();
         self.scroll_state = self.scroll_state.content_length(0);
-        self.records.clear();
+        self.list_items.clear();
     }
 
     pub fn jump_to_first(&mut self) {
@@ -112,19 +116,18 @@ impl LogHandle {
 
     pub fn new() -> Self {
         Self {
-            records: VecDeque::with_capacity(MAX_LOG_RECORDS),
+            list_items: VecDeque::with_capacity(MAX_LOG_RECORDS),
             list_state: ListState::default(),
             scroll_state: ScrollbarState::new(0),
         }
     }
 
-    pub fn push(&mut self, source: RecordSource, content: String) {
-        let record = Record::new(source, content);
-        if self.records.len() == MAX_LOG_RECORDS {
-            self.records.pop_back();
+    pub fn push(&mut self, item: ListItem<'static>) {
+        if self.list_items.len() == MAX_LOG_RECORDS {
+            self.list_items.pop_back();
         }
-        self.records.push_front(record);
-        self.scroll_state = self.scroll_state.content_length(self.records.len());
+        self.list_items.push_front(item);
+        self.scroll_state = self.scroll_state.content_length(self.list_items.len());
         self.move_down();
     }
 }
@@ -225,24 +228,12 @@ impl UserInput {
     }
 }
 
-enum ViewRequest {
-    Board,
-    Pots,
-    Players,
-    Turn,
-}
-
-enum WorkerMessage {
-    Client(ViewRequest),
-    Server(Box<ServerResponse>),
-}
-
 /// App holds the state of the application
 pub struct App {
     username: String,
     addr: String,
     /// History of recorded messages
-    log_handle: Arc<Mutex<LogHandle>>,
+    log_handle: LogHandle,
     /// Current value of the input box
     user_input: UserInput,
 }
@@ -252,7 +243,7 @@ impl App {
         Self {
             username,
             addr,
-            log_handle: Arc::new(Mutex::new(LogHandle::new())),
+            log_handle: LogHandle::new(),
             user_input: UserInput::new(),
         }
     }
@@ -264,7 +255,7 @@ impl App {
         mut terminal: DefaultTerminal,
     ) -> Result<(), Error> {
         let (tx_client, rx_client): (Sender<ClientMessage>, Receiver<ClientMessage>) = channel();
-        let (tx_worker, rx_worker): (Sender<WorkerMessage>, Receiver<WorkerMessage>) = channel();
+        let (tx_server, rx_server): (Sender<ServerResponse>, Receiver<ServerResponse>) = channel();
 
         let mut poll = Poll::new()?;
         let waker = Waker::new(poll.registry(), WAKER)?;
@@ -281,7 +272,7 @@ impl App {
             poll.registry()
                 .register(&mut stream, SERVER, Interest::READABLE)?;
 
-            debug!("Polling for network events.");
+            debug!("Polling for network events");
             loop {
                 if let Err(error) = poll.poll(&mut events, Some(DEFAULT_POLL_TIMEOUT)) {
                     match error.kind() {
@@ -300,84 +291,59 @@ impl App {
             }
         });
 
-        // This thread helps manage the log handle, writing updates from the
-        // server to it. This helps prevent some kind of receiver call or loop
-        // within the main (UI) thread.
-        let log_handle = self.log_handle.clone();
-        thread::spawn(move || -> Result<(), Error> {
-            let mut view = view;
-            loop {
-                let msg = rx_worker.recv()?;
-                match msg {
-                    WorkerMessage::Client(view_request) => {
-                        let repr = match view_request {
-                            ViewRequest::Board => view.board_as_string(),
-                            ViewRequest::Players => view.players_as_string(),
-                            ViewRequest::Pots => view.pot_as_string(),
-                            ViewRequest::Turn => view.turn_as_string(),
-                        };
-                        let mut log_handle = log_handle.lock().expect("Locking on view request.");
-                        log_handle.push(RecordSource::System, repr);
-                    }
-                    WorkerMessage::Server(server_response) => {
-                        match *server_response {
-                            ServerResponse::GameView(new_view) => view = new_view,
-                            other => {
-                                let repr = other.to_string();
-                                let mut log_handle = log_handle.lock().expect("Locking on server response.");
-                                log_handle.push(RecordSource::System, repr)
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
         loop {
             terminal.draw(|frame| self.draw(frame))?;
 
-            if let Event::Key(KeyEvent {
-                code,
-                modifiers,
-                kind,
-                ..
-            }) = event::read()?
-            {
-                let mut log_handle = self.log_handle.lock().expect("Locking on key event.");
-                if kind == KeyEventKind::Press {
-                    match modifiers {
-                        KeyModifiers::CONTROL => match code {
-                            KeyCode::Char('c') => return Ok(()),
-                            KeyCode::Home => log_handle.jump_to_first(),
-                            KeyCode::End => log_handle.jump_to_last(),
-                            _ => {}
-                        },
-                        KeyModifiers::NONE => match code {
-                            KeyCode::Enter => {
-                                let content = self.user_input.submit();
-                                log_handle.push(RecordSource::User, content.clone());
-                                match content.as_str() {
-                                    "clear" => log_handle.clear(),
-                                    "exit" => return Ok(()),
-                                    "view players" => {
-                                        let msg = WorkerMessage::Client(ViewRequest::Players);
-                                        tx_worker.send(msg)?;
+            if event::poll(POLL_TIMEOUT)? {
+                if let Event::Key(KeyEvent {
+                    code,
+                    modifiers,
+                    kind,
+                    ..
+                }) = event::read()?
+                {
+                    if kind == KeyEventKind::Press {
+                        match modifiers {
+                            KeyModifiers::CONTROL => match code {
+                                KeyCode::Char('c') => return Ok(()),
+                                KeyCode::Home => self.log_handle.jump_to_first(),
+                                KeyCode::End => self.log_handle.jump_to_last(),
+                                _ => {}
+                            },
+                            KeyModifiers::NONE => match code {
+                                KeyCode::Enter => {
+                                    let cmd = self.user_input.submit();
+                                    let record = Record::new(RecordSource::User, cmd.clone());
+                                    self.log_handle.push(record.into());
+                                    match cmd.as_str() {
+                                        "clear" => self.log_handle.clear(),
+                                        "exit" => return Ok(()),
+                                        cmd => {
+                                            let content = match cmd {
+                                                "view board" => view.board_as_string(),
+                                                "view players" => view.players_as_string(),
+                                                "view pots" => view.pot_as_string(),
+                                                "view turn" => view.turn_as_string(),
+                                                cmd => format!("Unrecognized command: {cmd}"),
+                                            };
+                                            let text = Text::raw(content);
+                                            self.log_handle.push(text.into());
+                                        }
                                     }
-                                    _ => {}
                                 }
-                            }
-                            KeyCode::Char(to_insert) => self.user_input.input(to_insert),
-                            KeyCode::Backspace => self.user_input.backspace(),
-                            KeyCode::Delete => self.user_input.delete(),
-                            KeyCode::Left => self.user_input.move_left(),
-                            KeyCode::Right => self.user_input.move_right(),
-                            KeyCode::Up => log_handle.move_up(),
-                            KeyCode::Down => log_handle.move_down(),
-                            KeyCode::Home => self.user_input.jump_to_first(),
-                            KeyCode::End => self.user_input.jump_to_last(),
+                                KeyCode::Char(to_insert) => self.user_input.input(to_insert),
+                                KeyCode::Backspace => self.user_input.backspace(),
+                                KeyCode::Delete => self.user_input.delete(),
+                                KeyCode::Left => self.user_input.move_left(),
+                                KeyCode::Right => self.user_input.move_right(),
+                                KeyCode::Up => self.log_handle.move_up(),
+                                KeyCode::Down => self.log_handle.move_down(),
+                                KeyCode::Home => self.user_input.jump_to_first(),
+                                KeyCode::End => self.user_input.jump_to_last(),
+                                _ => {}
+                            },
                             _ => {}
-                        },
-                        _ => {}
+                        }
                     }
                 }
             }
@@ -393,24 +359,15 @@ impl App {
         let [log_area, user_input_area, help_area] = vertical.areas(frame.area());
 
         // Render log window.
-        let mut log_handle = self.log_handle.lock().expect("Locking on render.");
-        let log_records: VecDeque<ListItem> = log_handle
-            .records
-            .iter()
-            .map(|r| {
-                let message: Vec<Span<'_>> = (*r).clone().into();
-                let content = Line::from(message);
-                ListItem::new(content)
-            })
-            .collect();
+        let log_records = self.log_handle.list_items.clone();
         let log_records = List::new(log_records)
             .direction(ListDirection::BottomToTop)
-            .block(Block::bordered().title("Log"));
-        frame.render_stateful_widget(log_records, log_area, &mut log_handle.list_state);
+            .block(Block::bordered());
+        frame.render_stateful_widget(log_records, log_area, &mut self.log_handle.list_state);
 
         // Render log window scrollbar.
         frame.render_stateful_widget(
-            Scrollbar::new(ScrollbarOrientation::VerticalLeft)
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
                 .symbols(scrollbar::VERTICAL)
                 .begin_symbol(None)
                 .end_symbol(None),
@@ -418,7 +375,7 @@ impl App {
                 vertical: 1,
                 horizontal: 1,
             }),
-            &mut log_handle.scroll_state,
+            &mut self.log_handle.scroll_state,
         );
 
         // Render user input area.

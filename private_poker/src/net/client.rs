@@ -63,7 +63,7 @@ impl Client {
                 _ => thread::sleep(connect_timeout),
             }
         }
-        bail!("Couldn't connect to {addr} as {username}.")
+        bail!("Couldn't connect to {addr} as {username}")
     }
 
     pub fn recv(&mut self) -> Result<ServerResponse, Error> {
@@ -81,7 +81,7 @@ impl Client {
             Ok(ServerResponse::ClientError(error)) => bail!(error),
             Ok(ServerResponse::UserError(error)) => bail!(error),
             Ok(response) => {
-                bail!("Invalid server response: {response}.")
+                bail!("Invalid server response: {response}")
             }
             Err(error) => bail!(error),
         }
@@ -91,7 +91,7 @@ impl Client {
         match utils::read_prefixed::<ServerResponse, TcpStream>(stream) {
             Ok(ServerResponse::ClientError(error)) => Ok(error),
             Ok(response) => {
-                bail!("Invalid server response: {response}.")
+                bail!("Invalid server response: {response}")
             }
             Err(error) => bail!(error),
         }
@@ -101,7 +101,7 @@ impl Client {
         match utils::read_prefixed::<ServerResponse, TcpStream>(stream) {
             Ok(ServerResponse::UserError(error)) => Ok(error),
             Ok(response) => {
-                bail!("Invalid server response: {response}.")
+                bail!("Invalid server response: {response}")
             }
             Err(error) => bail!(error),
         }
@@ -113,7 +113,7 @@ impl Client {
             Ok(ServerResponse::GameView(view)) => Ok(view),
             Ok(ServerResponse::UserError(error)) => bail!(error),
             Ok(response) => {
-                bail!("Invalid server response: {response}.")
+                bail!("Invalid server response: {response}")
             }
             Err(error) => bail!(error),
         }

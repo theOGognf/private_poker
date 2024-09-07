@@ -177,16 +177,19 @@ impl fmt::Display for GameView {
 
         // Display all players.
         writeln!(f)?;
+        writeln!(f, "Players:")?;
         let players = self.players_as_string();
         writeln!(f, "{players}")?;
 
         // Display all pots.
         writeln!(f)?;
+        writeln!(f, "Pots:")?;
         let pots = self.pot_as_string();
         writeln!(f, "{pots}")?;
 
         // Display community cards (cards on the board).
         writeln!(f)?;
+        writeln!(f, "Board:")?;
         let board = self.board_as_string();
         writeln!(f, "{board}")?;
 
@@ -202,21 +205,26 @@ impl fmt::Display for GameView {
 
 impl GameView {
     pub fn board_as_string(&self) -> String {
-        let mut repr = vec!["Board:".to_string()];
-        for card in self.board.iter() {
-            repr.push(card.to_string())
+        let mut repr = vec![];
+        match self.board.len() {
+            0 => repr.push("N/A".to_string()),
+            _ => {
+                for card in self.board.iter() {
+                    repr.push(card.to_string())
+                }
+            }
         }
         repr.join(" ")
     }
 
     pub fn pot_as_string(&self) -> String {
-        let mut repr = vec!["Pots:".to_string()];
+        let mut repr = vec![];
         match self.pots.len() {
             0 => repr.push("N/A".to_string()),
             _ => {
                 for (mut i, pot) in self.pots.iter().enumerate() {
                     i += 1;
-                    repr.push(format!("Pot #{}: {}", i, pot.to_string()));
+                    repr.push(format!("Pot #{}: {}", i, pot));
                 }
             }
         }
@@ -224,7 +232,7 @@ impl GameView {
     }
 
     pub fn players_as_string(&self) -> String {
-        let mut repr = vec!["Players:".to_string()];
+        let mut repr = vec![];
         match self.players.len() {
             0 => {
                 repr.push("N/A".to_string());
@@ -240,11 +248,11 @@ impl GameView {
 
     pub fn turn_as_string(&self) -> String {
         match self.next_action_idx {
+            None => "N/A".to_string(),
             Some(player_idx) => {
                 let username = &self.players[player_idx].user.name;
-                format!("{username}'s turn")
+                username.clone()
             }
-            None => format!("end of betting round"),
         }
     }
 }

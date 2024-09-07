@@ -39,7 +39,7 @@ fn main() -> Result<(), Error> {
     let config: PokerConfig = game_settings.into();
 
     env_logger::builder().format_target(false).init();
-    info!("Starting at {addr}.");
+    info!("Starting at {addr}");
     server::run(addr, config)?;
 
     Ok(())
