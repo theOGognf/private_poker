@@ -78,6 +78,7 @@ pub enum ServerResponse {
     Ack(ClientMessage),
     ClientError(ClientError),
     GameView(GameView),
+    Status(String),
     TurnSignal(HashSet<Action>),
     UserError(UserError),
 }
@@ -88,6 +89,7 @@ impl fmt::Display for ServerResponse {
             ServerResponse::Ack(msg) => write!(f, "{msg}"),
             ServerResponse::ClientError(error) => write!(f, "{error}"),
             ServerResponse::GameView(view) => write!(f, "{view}"),
+            ServerResponse::Status(status) => write!(f, "{status}"),
             ServerResponse::TurnSignal(action_options) => {
                 let repr = Game::<TakeAction>::action_options_to_string(action_options);
                 write!(f, "{repr}")
@@ -104,5 +106,6 @@ pub enum ServerMessage {
         username: String,
         data: Box<ServerResponse>,
     },
+    Status(String),
     Views(HashMap<String, GameView>),
 }

@@ -412,6 +412,14 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                         tokens_to_reregister.insert(token);
                                     }
                                 }
+                                // Server status is a game status update to all clients.
+                                ServerMessage::Status(msg) => {
+                                    for token in token_manager.confirmed_tokens.keys() {
+                                        let msg = ServerResponse::Status(msg.clone());
+                                        messages_to_write.entry(*token).or_default().push_back(msg);
+                                        tokens_to_reregister.insert(*token);
+                                    }
+                                }
                                 // Views go to all clients. We can safely ignore cases where a client
                                 // no longer exists to receive a view because the view is specific
                                 // to the client.
@@ -636,10 +644,18 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
     });
 
     let mut state: PokerState = config.game_settings.into();
+    let mut status = state.to_string();
     loop {
+        state = state.step();
         let repr = state.to_string();
         info!("{repr}");
-        state = state.step();
+        // Only send new statuses to clients to avoid spam.
+        if repr != status {
+            status = repr;
+            let msg = ServerMessage::Status(status.clone());
+            tx_server.send(msg)?;
+            waker.wake()?;
+        }
 
         let views = state.get_views();
         let msg = ServerMessage::Views(views);
@@ -658,7 +674,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                     // Check if the username from the last turn is the same as the
                     // username from this turn. If so, we need to check if there
                     // was a timeout.
-                    let send_turn_signal = if let Some(ref last_username) = next_action_username {
+                    if let Some(ref last_username) = next_action_username {
                         // If there's a timeout, then that means the user didn't
                         // make a decision in time, and they have to fold.
                         if timeout.as_secs() == 0 && &username == last_username {
@@ -684,24 +700,18 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
 
                             break 'command;
                         } else {
-                            true
+                            let response = ServerResponse::TurnSignal(action_options);
+                            info!("{username} {response}");
+                            let msg = ServerMessage::Response {
+                                username: username.clone(),
+                                data: Box::new(response),
+                            };
+                            tx_server.send(msg)?;
+                            waker.wake()?;
+
+                            next_action_username = Some(username);
+                            timeout = config.server_timeouts.action;
                         }
-                    } else {
-                        false
-                    };
-
-                    if send_turn_signal {
-                        let response = ServerResponse::TurnSignal(action_options);
-                        info!("{username} {response}");
-                        let msg = ServerMessage::Response {
-                            username: username.clone(),
-                            data: Box::new(response),
-                        };
-                        tx_server.send(msg)?;
-                        waker.wake()?;
-
-                        next_action_username = Some(username);
-                        timeout = config.server_timeouts.action;
                     }
                 }
                 // If it's no one's turn and there's a timeout, then we must

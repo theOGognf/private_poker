@@ -498,6 +498,10 @@ impl App {
                         self.log_handle.push(record.into());
                     }
                     ServerResponse::GameView(new_view) => view = new_view,
+                    ServerResponse::Status(msg) => {
+                        let record = Record::new(RecordKind::System, msg);
+                        self.log_handle.push(record.into());
+                    }
                     ServerResponse::TurnSignal(_) => {
                         let record = Record::new(RecordKind::System, "it's your turn!".to_string());
                         self.log_handle.push(record.into());
