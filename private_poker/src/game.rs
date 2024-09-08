@@ -251,7 +251,7 @@ impl GameView {
                         .collect::<Vec<_>>()
                         .join(" | ")
                 };
-                let repr = format!("{} | {}", player.to_string(), hand_repr);
+                let repr = format!("{} | {}", player, hand_repr);
                 hands_repr.push(repr);
             }
             hands_repr.join("\n")
