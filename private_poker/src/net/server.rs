@@ -646,16 +646,20 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
     let mut state: PokerState = config.game_settings.into();
     let mut status = state.to_string();
     loop {
-        state = state.step();
+        // Order is kind of key here. We get the status string before
+        // we step so we can inform users what's happening rather than
+        // what's going to happen in the future. This allows faster
+        // feedback from a user's perspective.
         let repr = state.to_string();
         info!("{repr}");
         // Only send new statuses to clients to avoid spam.
-        if repr != status {
+        if status != repr {
             status = repr;
             let msg = ServerMessage::Status(status.clone());
             tx_server.send(msg)?;
             waker.wake()?;
         }
+        state = state.step();
 
         let views = state.get_views();
         let msg = ServerMessage::Views(views);
@@ -700,11 +704,19 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
 
                             break 'command;
                         } else {
-                            let response = ServerResponse::TurnSignal(action_options);
-                            info!("{username} {response}");
+                            // Let all users know whose turn it is.
+                            let turn_signal = ServerResponse::TurnSignal(action_options);
+                            let status =
+                                format!("it's {username}'s turn and they can {turn_signal}");
+                            let msg = ServerMessage::Status(status.clone());
+                            tx_server.send(msg)?;
+                            waker.wake()?;
+
+                            // Let player know it's their turn.
+                            info!("{status}");
                             let msg = ServerMessage::Response {
                                 username: username.clone(),
-                                data: Box::new(response),
+                                data: Box::new(turn_signal),
                             };
                             tx_server.send(msg)?;
                             waker.wake()?;

@@ -454,7 +454,6 @@ pub struct Game<T> {
 impl<T> Game<T> {
     pub fn action_options_to_string(action_options: &HashSet<Action>) -> String {
         let mut repr = vec![];
-        repr.push("can ".to_string());
         let num_options = action_options.len();
         for (i, action) in action_options.iter().enumerate() {
             let sub_repr = match i {
@@ -1653,24 +1652,18 @@ impl fmt::Display for PokerState {
                 let num_users = game.get_num_users();
                 let num_potential_players = game.get_num_potential_players();
                 let big_blind = game.data.big_blind;
-                format!("lobby has {num_users} user(s), {num_potential_players} potential player(s), and a ${big_blind} big blind")
+                format!("in lobby with {num_users} user(s), {num_potential_players} potential player(s), and a ${big_blind} big blind")
             }
-            PokerState::SeatPlayers(ref game) => {
-                let num_potential_players = game.get_num_potential_players();
-                format!("seating {num_potential_players} players and starting the game")
-            }
+            PokerState::SeatPlayers(_) => "seating players".to_string(),
             PokerState::MoveButton(_) => "moving button".to_string(),
             PokerState::CollectBlinds(ref game) => {
                 let big_blind = game.data.big_blind;
                 let big_blind_username = &game.data.players[game.data.big_blind_idx].user.name;
                 let small_blind = game.data.small_blind;
                 let small_blind_username = &game.data.players[game.data.small_blind_idx].user.name;
-                format!("collecting a ${big_blind} big blind from {big_blind_username} and a ${small_blind} small blind from {small_blind_username}")
+                format!("collecting ${big_blind} from {big_blind_username} and ${small_blind} from {small_blind_username}")
             }
-            PokerState::Deal(ref game) => {
-                let num_cards = 2 * game.get_num_players();
-                format!("dealing {num_cards} cards")
-            }
+            PokerState::Deal(_) => "dealing cards".to_string(),
             PokerState::TakeAction(ref game) => {
                 if game.is_ready_for_next_phase() {
                     "end of betting round".to_string()
@@ -1757,6 +1750,18 @@ impl PokerState {
         PokerState::Lobby(game)
     }
 
+    fn phase_transition(game: Game<TakeAction>) -> PokerState {
+        match game.get_num_community_cards() {
+            0 => PokerState::Flop(game.into()),
+            3 => PokerState::Turn(game.into()),
+            4 => PokerState::River(game.into()),
+            5 => PokerState::ShowHands(game.into()),
+            _ => unreachable!(
+                "there can only be 0, 3, 4, or 5 community cards on the board at a time"
+            ),
+        }
+    }
+
     pub fn show_hand(&mut self, username: &str) -> Result<(), UserError> {
         match self {
             PokerState::DistributePot(ref mut game) => {
@@ -1792,18 +1797,14 @@ impl PokerState {
             PokerState::Deal(game) => PokerState::TakeAction(game.into()),
             PokerState::TakeAction(mut game) => {
                 if game.is_ready_for_next_phase() {
-                    match game.get_num_community_cards() {
-                        0 => PokerState::Flop(game.into()),
-                        3 => PokerState::Turn(game.into()),
-                        4 => PokerState::River(game.into()),
-                        5 => PokerState::ShowHands(game.into()),
-                        _ => unreachable!(
-                            "there can only be 0, 3, 4, or 5 community cards on the board at a time"
-                        ),
-                    }
+                    PokerState::phase_transition(game)
                 } else {
                     game.act(Action::Fold).expect("force folding is OK");
-                    PokerState::TakeAction(game)
+                    if game.is_ready_for_next_phase() {
+                        PokerState::phase_transition(game)
+                    } else {
+                        PokerState::TakeAction(game)
+                    }
                 }
             }
             PokerState::Flop(game) => {
