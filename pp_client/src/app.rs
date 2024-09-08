@@ -463,6 +463,7 @@ impl App {
                                                 "game" => view.to_string(),
                                                 "players" => view.players_to_string(),
                                                 "pots" => view.pots_to_string(),
+                                                "table" => view.table_to_string(),
                                                 cmd => format!("unrecognized command: {cmd}"),
                                             };
                                             let text = Text::raw(content);

@@ -143,7 +143,7 @@ pub struct GameView {
 
 impl fmt::Display for GameView {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "blinds: {}/{}", self.big_blind, self.small_blind)?;
+        write!(f, "blinds: ${}/${}", self.big_blind, self.small_blind)?;
         writeln!(f)?;
 
         // Display users just spectating the game.
@@ -249,6 +249,17 @@ impl GameView {
                 }
             }
         }
+        repr.join("\n")
+    }
+
+    pub fn table_to_string(&self) -> String {
+        let mut repr = vec!["board:".to_string()];
+        let board = self.board_to_string();
+        repr.push(board);
+        repr.push("".to_string());
+        repr.push("players:".to_string());
+        let players = self.players_to_string();
+        repr.push(players);
         repr.join("\n")
     }
 }
