@@ -651,9 +651,9 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
         // what's going to happen in the future. This allows faster
         // feedback from a user's perspective.
         let repr = state.to_string();
-        info!("{repr}");
         // Only send new statuses to clients to avoid spam.
         if status != repr {
+            info!("{repr}");
             status = repr;
             let msg = ServerMessage::Status(status.clone());
             tx_server.send(msg)?;
@@ -772,7 +772,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             waker.wake()?;
                         }
                         Err(error) => {
-                            error!("{msg}: {error}");
+                            error!("{error}: {msg}");
                             let msg = ServerMessage::Response {
                                 username: msg.username,
                                 data: Box::new(ServerResponse::UserError(error)),

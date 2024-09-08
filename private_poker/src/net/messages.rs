@@ -55,7 +55,7 @@ impl fmt::Display for ClientCommand {
             ClientCommand::ShowHand => write!(f, "showed their hand"),
             ClientCommand::StartGame => write!(f, "started the game"),
             ClientCommand::TakeAction(action) => {
-                write!(f, "decided to {action}")
+                write!(f, "{action}ed")
             }
         }
     }
