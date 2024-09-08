@@ -69,17 +69,17 @@ pub enum Rank {
 impl fmt::Display for Rank {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let repr = match self {
-            Rank::HighCard => "high",
-            Rank::OnePair => "pair",
-            Rank::TwoPair => "two pair",
-            Rank::ThreeOfAKind => "three of a kind",
-            Rank::Straight => "straight",
-            Rank::Flush => "flush",
-            Rank::FullHouse => "full house",
-            Rank::FourOfAKind => "four of a kind",
-            Rank::StraightFlush => "straight flush",
+            Rank::HighCard => "hi",
+            Rank::OnePair => "pr",
+            Rank::TwoPair => "to pr",
+            Rank::ThreeOfAKind => "toak",
+            Rank::Straight => "str8",
+            Rank::Flush => "fl",
+            Rank::FullHouse => "fh",
+            Rank::FourOfAKind => "foak",
+            Rank::StraightFlush => "str8 fl",
         };
-        write!(f, "{repr}")
+        write!(f, "{repr:7}")
     }
 }
 
@@ -91,11 +91,18 @@ pub struct SubHand {
 
 impl fmt::Display for SubHand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut repr = vec![];
-        for value in self.values.iter() {
-            repr.push(value.to_string());
-        }
-        let repr = repr.join(" ");
+        let repr = self
+            .values
+            .iter()
+            .map(|v| match v {
+                1 | 14 => "A".to_string(),
+                11 => "J".to_string(),
+                12 => "Q".to_string(),
+                13 => "K".to_string(),
+                v => v.to_string(),
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
         write!(f, "{repr} {}", self.rank)
     }
 }

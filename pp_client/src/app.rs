@@ -490,6 +490,16 @@ impl App {
                                                         tx_client.send(msg)?;
                                                         waker.wake()?;
                                                     }
+                                                    "check" => {
+                                                        let msg = ClientMessage {
+                                                            username: self.username.to_string(),
+                                                            command: ClientCommand::TakeAction(
+                                                                Action::Check,
+                                                            ),
+                                                        };
+                                                        tx_client.send(msg)?;
+                                                        waker.wake()?;
+                                                    }
                                                     "clear" => self.log_handle.clear(),
                                                     "exit" => return Ok(()),
                                                     "fold" => {
