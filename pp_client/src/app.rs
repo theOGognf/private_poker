@@ -133,6 +133,17 @@ impl LogHandle {
         self.scroll_state = self.scroll_state.content_length(self.list_items.len());
         self.move_down();
     }
+
+    /// Push a string that has newlines so that each line is a separate
+    /// item in the log. This makes it such that each item can be scrolled
+    /// through independently and large strings can be rendered in parts
+    /// if they can't fit within the whole terminal.
+    pub fn push_multiline_string(&mut self, item: String) {
+        for content in item.split("\n") {
+            let line = Line::raw(content.to_string());
+            self.push(line.into());
+        }
+    }
 }
 
 struct UserInput {
@@ -242,6 +253,48 @@ pub struct App {
 }
 
 impl App {
+    fn commands() -> Command {
+        let all_in = Command::new("all-in").about("Go all-in, betting all your money on the hand.");
+        let board = Command::new("board").about("Display community cards.");
+        let call = Command::new("call").about("Match the investment required to continue playing.");
+        let check =
+            Command::new("check").about("Check, voting to move to the next card reveal(s).");
+        let clear = Command::new("clear").about("Clear command outputs.");
+        let exit = Command::new("exit").about("Exit the poker client.");
+        let fold = Command::new("fold").about("Fold, forfeiting your hand.");
+        let game = Command::new("game").about("Display all game entities.");
+        let play = Command::new("play").about("Join the playing waitlist.");
+        let players = Command::new("players")
+            .about("Display all players (and their hands if they're showing).");
+        let pots =
+            Command::new("pots").about("Display the pots and the investments players have made.");
+        let show = Command::new("show").about("Show your hand. Only possible during the showdown.");
+        let spectate = Command::new("spectate").about("Join spectators. If you're playing a game, you won't join spectators until the current game is over.");
+        let start = Command::new("start").about("Start the game.");
+        let table = Command::new("table").about("Display the community cards and all the player hands that are visible from your perspective.");
+        Command::new("poker")
+            .disable_help_flag(true)
+            .disable_version_flag(true)
+            .next_line_help(true)
+            .no_binary_name(true)
+            .override_usage("Enter any of the following to interact with the poker server or render game states.")
+            .subcommand(all_in)
+            .subcommand(board)
+            .subcommand(call)
+            .subcommand(check)
+            .subcommand(clear)
+            .subcommand(exit)
+            .subcommand(fold)
+            .subcommand(game)
+            .subcommand(play)
+            .subcommand(players)
+            .subcommand(pots)
+            .subcommand(show)
+            .subcommand(spectate)
+            .subcommand(start)
+            .subcommand(table)
+    }
+
     pub fn new(username: String, addr: String) -> Self {
         Self {
             username,
@@ -257,10 +310,7 @@ impl App {
         mut view: GameView,
         mut terminal: DefaultTerminal,
     ) -> Result<(), Error> {
-        let all_in = Command::new("all-in").about("Go all-in.");
-        let commands = Command::new("poker")
-            .no_binary_name(true)
-            .subcommand(all_in);
+        let commands = App::commands();
 
         let (tx_client, rx_client): (Sender<ClientMessage>, Receiver<ClientMessage>) = channel();
         let (tx_server, rx_server): (Sender<ServerResponse>, Receiver<ServerResponse>) = channel();
@@ -412,8 +462,8 @@ impl App {
                                     self.log_handle.push(record.into());
                                     let cmd = user_input.split(" ");
                                     match commands.clone().try_get_matches_from(cmd) {
-                                        Ok(matches) => match matches.subcommand_name() {
-                                            Some(cmd) => {
+                                        Ok(matches) => {
+                                            if let Some(cmd) = matches.subcommand_name() {
                                                 match cmd {
                                                     "all-in" => {
                                                         let msg = ClientMessage {
@@ -424,6 +474,11 @@ impl App {
                                                         };
                                                         tx_client.send(msg)?;
                                                         waker.wake()?;
+                                                    }
+                                                    "board" => {
+                                                        let content = view.board_to_string();
+                                                        let line = Line::raw(content);
+                                                        self.log_handle.push(line.into());
                                                     }
                                                     "call" => {
                                                         let msg = ClientMessage {
@@ -447,6 +502,11 @@ impl App {
                                                         tx_client.send(msg)?;
                                                         waker.wake()?;
                                                     }
+                                                    "game" => {
+                                                        let content = view.to_string();
+                                                        self.log_handle
+                                                            .push_multiline_string(content);
+                                                    }
                                                     "play" => {
                                                         let msg = ClientMessage {
                                                             username: self.username.clone(),
@@ -457,8 +517,18 @@ impl App {
                                                         tx_client.send(msg)?;
                                                         waker.wake()?;
                                                     }
+                                                    "players" => {
+                                                        let content = view.players_to_string();
+                                                        self.log_handle
+                                                            .push_multiline_string(content);
+                                                    }
+                                                    "pots" => {
+                                                        let content = view.pots_to_string();
+                                                        self.log_handle
+                                                            .push_multiline_string(content);
+                                                    }
                                                     "raise" => {}
-                                                    "show hand" => {
+                                                    "show" => {
                                                         let msg = ClientMessage {
                                                             username: self.username.clone(),
                                                             command: ClientCommand::ShowHand,
@@ -484,31 +554,29 @@ impl App {
                                                         tx_client.send(msg)?;
                                                         waker.wake()?;
                                                     }
-
-                                                    _ => unreachable!("always some subcommand")
-                                                    cmd => {
-                                                        let content = match cmd {
-                                                            "board" => view.board_to_string(),
-                                                            "game" => view.to_string(),
-                                                            "players" => view.players_to_string(),
-                                                            "pots" => view.pots_to_string(),
-                                                            "table" => view.table_to_string(),
-                                                        };
-                                                        let text = Text::raw(content);
-                                                        self.log_handle.push(text.into());
+                                                    "table" => {
+                                                        let content = view.table_to_string();
+                                                        self.log_handle
+                                                            .push_multiline_string(content);
                                                     }
+                                                    _ => unreachable!("always a subcommand"),
                                                 }
                                             }
-                                            None => unreachable!("always some subcommand")
-                                        },
-                                        Err(_) => {
-                                            let content =
-                                                format!("unrecognized command: {user_input}");
-                                            let text = Text::raw(content);
-                                            self.log_handle.push(text.into());
                                         }
+                                        Err(_) => match user_input.as_str() {
+                                            "help" => {
+                                                let help =
+                                                    commands.clone().render_help().to_string();
+                                                self.log_handle.push_multiline_string(help);
+                                            }
+                                            invalid => {
+                                                let content =
+                                                    format!("unrecognized command: {invalid}");
+                                                let line = Line::raw(content);
+                                                self.log_handle.push(line.into());
+                                            }
+                                        },
                                     }
-  
                                 }
                                 KeyCode::Char(to_insert) => self.user_input.input(to_insert),
                                 KeyCode::Backspace => self.user_input.backspace(),
@@ -599,19 +667,17 @@ impl App {
         ));
 
         // Render user input help message.
-        let (help_message, help_style) = (
-            vec![
-                "Press ".into(),
-                "Enter".bold(),
-                " to record a command, enter ".into(),
-                "help".bold(),
-                " to view commands,".into(),
-                " or enter ".into(),
-                "exit".bold(),
-                " to exit.".into(),
-            ],
-            Style::default(),
-        );
+        let help_message = vec![
+            "Press ".into(),
+            "Enter".bold(),
+            " to record a command, enter ".into(),
+            "help".bold(),
+            " to view commands,".into(),
+            " or enter ".into(),
+            "exit".bold(),
+            " to exit.".into(),
+        ];
+        let help_style = Style::default();
         let help_message = Text::from(Line::from(help_message)).patch_style(help_style);
         let help_message = Paragraph::new(help_message);
         frame.render_widget(help_message, help_area);

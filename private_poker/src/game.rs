@@ -1,3 +1,4 @@
+use functional::eval;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use serde::{Deserialize, Serialize};
@@ -150,12 +151,11 @@ impl fmt::Display for GameView {
         writeln!(f)?;
         write!(f, "spectators:")?;
         writeln!(f)?;
-        match self.spectators.len() {
-            0 => write!(f, "n/a")?,
-            _ => {
-                for user in self.spectators.values() {
-                    write!(f, "{user}")?;
-                }
+        if self.spectators.is_empty() {
+            write!(f, "n/a")?
+        } else {
+            for user in self.spectators.values() {
+                write!(f, "{user}")?
             }
         };
         writeln!(f)?;
@@ -164,12 +164,11 @@ impl fmt::Display for GameView {
         writeln!(f)?;
         write!(f, "waitlisters:")?;
         writeln!(f)?;
-        match self.waitlist.len() {
-            0 => write!(f, "n/a")?,
-            _ => {
-                for waitlister in self.waitlist.iter() {
-                    write!(f, "{waitlister}")?;
-                }
+        if self.waitlist.is_empty() {
+            write!(f, "n/a")?
+        } else {
+            for waitlister in self.waitlist.iter() {
+                write!(f, "{waitlister}")?;
             }
         }
         writeln!(f)?;
@@ -203,7 +202,6 @@ impl fmt::Display for GameView {
         writeln!(f)?;
         let board = self.board_to_string();
         write!(f, "{board}")?;
-        writeln!(f)?;
 
         Ok(())
     }
@@ -212,12 +210,11 @@ impl fmt::Display for GameView {
 impl GameView {
     pub fn board_to_string(&self) -> String {
         let mut repr = vec![];
-        match self.board.len() {
-            0 => repr.push("n/a".to_string()),
-            _ => {
-                for card in self.board.iter() {
-                    repr.push(card.to_string())
-                }
+        if self.board.is_empty() {
+            repr.push("n/a".to_string());
+        } else {
+            for card in self.board.iter() {
+                repr.push(card.to_string());
             }
         }
         repr.join(" ")
@@ -225,31 +222,40 @@ impl GameView {
 
     pub fn pots_to_string(&self) -> String {
         let mut repr = vec![];
-        match self.pots.len() {
-            0 => repr.push("n/a".to_string()),
-            _ => {
-                for (mut i, pot) in self.pots.iter().enumerate() {
-                    i += 1;
-                    repr.push(format!("pot #{}: {}", i, pot));
-                }
+        if self.pots.is_empty() {
+            repr.push("n/a".to_string());
+        } else {
+            for (mut i, pot) in self.pots.iter().enumerate() {
+                i += 1;
+                repr.push(format!("pot #{}: {}", i, pot));
             }
         }
         repr.join("\n")
     }
 
     pub fn players_to_string(&self) -> String {
-        let mut repr = vec![];
-        match self.players.len() {
-            0 => {
-                repr.push("n/a".to_string());
+        if self.players.is_empty() {
+            "n/a".to_string()
+        } else {
+            let mut hands_repr = vec![];
+            for player in self.players.iter() {
+                let hand_repr = if player.cards.is_empty() {
+                    "???".to_string()
+                } else {
+                    let mut cards = self.board.clone();
+                    cards.extend(player.cards.clone());
+                    cards.sort_unstable();
+                    let hand = eval(&cards);
+                    hand.iter()
+                        .map(|subhand| subhand.to_string())
+                        .collect::<Vec<_>>()
+                        .join(" | ")
+                };
+                let repr = format!("{} | {}", player.to_string(), hand_repr);
+                hands_repr.push(repr);
             }
-            _ => {
-                for player in self.players.iter() {
-                    repr.push(player.to_string())
-                }
-            }
+            hands_repr.join("\n")
         }
-        repr.join("\n")
     }
 
     pub fn table_to_string(&self) -> String {

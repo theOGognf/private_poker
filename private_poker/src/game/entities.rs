@@ -22,11 +22,11 @@ pub enum Suit {
 impl fmt::Display for Suit {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Suit::Club => write!(f, "♧"),
-            Suit::Spade => write!(f, "♤"),
-            Suit::Diamond => write!(f, "♦"),
-            Suit::Heart => write!(f, "♥"),
-            Suit::Wild => write!(f, "*"),
+            Suit::Club => write!(f, "C"),
+            Suit::Spade => write!(f, "S"),
+            Suit::Diamond => write!(f, "D"),
+            Suit::Heart => write!(f, "H"),
+            Suit::Wild => write!(f, "W"),
         }
     }
 }
@@ -66,10 +66,38 @@ pub enum Rank {
     StraightFlush,
 }
 
+impl fmt::Display for Rank {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            Rank::HighCard => "high",
+            Rank::OnePair => "pair",
+            Rank::TwoPair => "two pair",
+            Rank::ThreeOfAKind => "three of a kind",
+            Rank::Straight => "straight",
+            Rank::Flush => "flush",
+            Rank::FullHouse => "full house",
+            Rank::FourOfAKind => "four of a kind",
+            Rank::StraightFlush => "straight flush",
+        };
+        write!(f, "{repr}")
+    }
+}
+
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct SubHand {
     pub rank: Rank,
     pub values: Vec<Value>,
+}
+
+impl fmt::Display for SubHand {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut repr = vec![];
+        for value in self.values.iter() {
+            repr.push(value.to_string());
+        }
+        let repr = repr.join(" ");
+        write!(f, "{repr} {}", self.rank)
+    }
 }
 
 /// Type alias for whole dollars. All bets and player stacks are represented

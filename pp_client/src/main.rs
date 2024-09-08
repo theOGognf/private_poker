@@ -4,7 +4,6 @@ use clap::{Arg, Command};
 use private_poker::Client;
 
 mod app;
-
 use app::App;
 
 fn main() -> Result<(), Error> {
