@@ -79,7 +79,7 @@ impl fmt::Display for Rank {
             Rank::FourOfAKind => "foak",
             Rank::StraightFlush => "str8 fl",
         };
-        write!(f, "{repr:7}")
+        write!(f, "{repr}")
     }
 }
 
@@ -103,7 +103,8 @@ impl fmt::Display for SubHand {
             })
             .collect::<Vec<_>>()
             .join(" ");
-        write!(f, "{repr} {}", self.rank)
+        let repr = format!("{repr} {}", self.rank);
+        write!(f, "{repr:16}")
     }
 }
 

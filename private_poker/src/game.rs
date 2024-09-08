@@ -259,7 +259,11 @@ impl GameView {
     }
 
     pub fn table_to_string(&self) -> String {
-        let mut repr = vec!["board:".to_string()];
+        let mut repr = vec!["pots:".to_string()];
+        let pots = self.pots_to_string();
+        repr.push(pots);
+        repr.push("".to_string());
+        repr.push("board:".to_string());
         let board = self.board_to_string();
         repr.push(board);
         repr.push("".to_string());
