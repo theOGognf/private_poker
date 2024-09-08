@@ -139,7 +139,7 @@ impl LogHandle {
     /// through independently and large strings can be rendered in parts
     /// if they can't fit within the whole terminal.
     pub fn push_multiline_string(&mut self, item: String) {
-        for content in item.split("\n") {
+        for content in item.split('\n') {
             let line = Line::raw(content.to_string());
             self.push(line.into());
         }
@@ -460,7 +460,7 @@ impl App {
                                     let user_input = self.user_input.submit();
                                     let record = Record::new(RecordKind::User, user_input.clone());
                                     self.log_handle.push(record.into());
-                                    let cmd = user_input.split(" ");
+                                    let cmd = user_input.split(' ');
                                     match commands.clone().try_get_matches_from(cmd) {
                                         Ok(matches) => {
                                             if let Some(cmd) = matches.subcommand_name() {
