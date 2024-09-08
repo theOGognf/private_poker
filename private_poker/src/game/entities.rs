@@ -105,7 +105,7 @@ impl fmt::Display for User {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Action {
     AllIn,
-    Call(Usd),
+    Call,
     Check,
     Fold,
     Raise(Usd),
@@ -115,7 +115,7 @@ impl fmt::Display for Action {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Action::AllIn => write!(f, "all-in"),
-            Action::Call(_) => write!(f, "call"),
+            Action::Call => write!(f, "call"),
             Action::Check => write!(f, "check"),
             Action::Fold => write!(f, "fold"),
             Action::Raise(_) => write!(f, "raise"),

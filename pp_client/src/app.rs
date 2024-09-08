@@ -1,5 +1,6 @@
 use anyhow::{bail, Error};
 use chrono::{DateTime, Utc};
+use clap::Command;
 use mio::{Events, Interest, Poll, Waker};
 use private_poker::{
     entities::Action,
@@ -256,6 +257,11 @@ impl App {
         mut view: GameView,
         mut terminal: DefaultTerminal,
     ) -> Result<(), Error> {
+        let all_in = Command::new("all-in").about("Go all-in.");
+        let commands = Command::new("poker")
+            .no_binary_name(true)
+            .subcommand(all_in);
+
         let (tx_client, rx_client): (Sender<ClientMessage>, Receiver<ClientMessage>) = channel();
         let (tx_server, rx_server): (Sender<ServerResponse>, Receiver<ServerResponse>) = channel();
 
@@ -401,75 +407,108 @@ impl App {
                             },
                             KeyModifiers::NONE => match code {
                                 KeyCode::Enter => {
-                                    let cmd = self.user_input.submit();
-                                    let record = Record::new(RecordKind::User, cmd.clone());
+                                    let user_input = self.user_input.submit();
+                                    let record = Record::new(RecordKind::User, user_input.clone());
                                     self.log_handle.push(record.into());
-                                    match cmd.as_str() {
-                                        // "call" => {
-                                        //     let msg = ClientMessage {
-                                        //         username: self.username.to_string(),
-                                        //         command: ClientCommand::TakeAction(Action::Call(())),
-                                        //     };
-                                        // }
-                                        "clear" => self.log_handle.clear(),
-                                        "exit" => return Ok(()),
-                                        "fold" => {
-                                            let msg = ClientMessage {
-                                                username: self.username.clone(),
-                                                command: ClientCommand::TakeAction(Action::Fold),
-                                            };
-                                            tx_client.send(msg)?;
-                                            waker.wake()?;
-                                        }
-                                        "play" => {
-                                            let msg = ClientMessage {
-                                                username: self.username.clone(),
-                                                command: ClientCommand::ChangeState(
-                                                    UserState::Play,
-                                                ),
-                                            };
-                                            tx_client.send(msg)?;
-                                            waker.wake()?;
-                                        }
-                                        "show hand" => {
-                                            let msg = ClientMessage {
-                                                username: self.username.clone(),
-                                                command: ClientCommand::ShowHand,
-                                            };
-                                            tx_client.send(msg)?;
-                                            waker.wake()?;
-                                        }
-                                        "spectate" => {
-                                            let msg = ClientMessage {
-                                                username: self.username.clone(),
-                                                command: ClientCommand::ChangeState(
-                                                    UserState::Spectate,
-                                                ),
-                                            };
-                                            tx_client.send(msg)?;
-                                            waker.wake()?;
-                                        }
-                                        "start" => {
-                                            let msg = ClientMessage {
-                                                username: self.username.clone(),
-                                                command: ClientCommand::StartGame,
-                                            };
-                                            tx_client.send(msg)?;
-                                            waker.wake()?;
-                                        }
-                                        cmd => {
-                                            let content = match cmd {
-                                                "board" => view.board_to_string(),
-                                                "game" => view.to_string(),
-                                                "players" => view.players_to_string(),
-                                                "pots" => view.pots_to_string(),
-                                                "table" => view.table_to_string(),
-                                                cmd => format!("unrecognized command: {cmd}"),
-                                            };
+                                    let cmd = user_input.split(" ");
+                                    match commands.clone().try_get_matches_from(cmd) {
+                                        Ok(matches) => match matches.subcommand_name() {
+                                            Some(cmd) => {
+                                                match cmd {
+                                                    "all-in" => {
+                                                        let msg = ClientMessage {
+                                                            username: self.username.to_string(),
+                                                            command: ClientCommand::TakeAction(
+                                                                Action::AllIn,
+                                                            ),
+                                                        };
+                                                        tx_client.send(msg)?;
+                                                        waker.wake()?;
+                                                    }
+                                                    "call" => {
+                                                        let msg = ClientMessage {
+                                                            username: self.username.to_string(),
+                                                            command: ClientCommand::TakeAction(
+                                                                Action::Call,
+                                                            ),
+                                                        };
+                                                        tx_client.send(msg)?;
+                                                        waker.wake()?;
+                                                    }
+                                                    "clear" => self.log_handle.clear(),
+                                                    "exit" => return Ok(()),
+                                                    "fold" => {
+                                                        let msg = ClientMessage {
+                                                            username: self.username.clone(),
+                                                            command: ClientCommand::TakeAction(
+                                                                Action::Fold,
+                                                            ),
+                                                        };
+                                                        tx_client.send(msg)?;
+                                                        waker.wake()?;
+                                                    }
+                                                    "play" => {
+                                                        let msg = ClientMessage {
+                                                            username: self.username.clone(),
+                                                            command: ClientCommand::ChangeState(
+                                                                UserState::Play,
+                                                            ),
+                                                        };
+                                                        tx_client.send(msg)?;
+                                                        waker.wake()?;
+                                                    }
+                                                    "raise" => {}
+                                                    "show hand" => {
+                                                        let msg = ClientMessage {
+                                                            username: self.username.clone(),
+                                                            command: ClientCommand::ShowHand,
+                                                        };
+                                                        tx_client.send(msg)?;
+                                                        waker.wake()?;
+                                                    }
+                                                    "spectate" => {
+                                                        let msg = ClientMessage {
+                                                            username: self.username.clone(),
+                                                            command: ClientCommand::ChangeState(
+                                                                UserState::Spectate,
+                                                            ),
+                                                        };
+                                                        tx_client.send(msg)?;
+                                                        waker.wake()?;
+                                                    }
+                                                    "start" => {
+                                                        let msg = ClientMessage {
+                                                            username: self.username.clone(),
+                                                            command: ClientCommand::StartGame,
+                                                        };
+                                                        tx_client.send(msg)?;
+                                                        waker.wake()?;
+                                                    }
+
+                                                    _ => unreachable!("always some subcommand")
+                                                    cmd => {
+                                                        let content = match cmd {
+                                                            "board" => view.board_to_string(),
+                                                            "game" => view.to_string(),
+                                                            "players" => view.players_to_string(),
+                                                            "pots" => view.pots_to_string(),
+                                                            "table" => view.table_to_string(),
+                                                        };
+                                                        let text = Text::raw(content);
+                                                        self.log_handle.push(text.into());
+                                                    }
+                                                }
+                                            }
+                                            None => unreachable!("always some subcommand")
+                                        },
+                                        Err(_) => {
+                                            let content =
+                                                format!("unrecognized command: {user_input}");
                                             let text = Text::raw(content);
                                             self.log_handle.push(text.into());
                                         }
                                     }
+  
                                 }
                                 KeyCode::Char(to_insert) => self.user_input.input(to_insert),
                                 KeyCode::Backspace => self.user_input.backspace(),

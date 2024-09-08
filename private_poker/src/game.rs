@@ -574,7 +574,7 @@ impl<T> Game<T> {
                 let raise = self.get_total_min_raise_by_player_idx(action_idx);
                 let call = self.get_total_call_by_player_idx(action_idx);
                 if call > 0 && call < user.money {
-                    action_options.insert(Action::Call(call));
+                    action_options.insert(Action::Call);
                 } else if call == 0 {
                     action_options.insert(Action::Check);
                 }
@@ -1122,6 +1122,7 @@ impl Game<TakeAction> {
                 if !action_options.contains(&action) {
                     return Err(UserError::InvalidAction { action });
                 }
+                let player_total_call = self.get_total_call_by_player_idx(player_idx);
                 let player = &mut self.data.players[player_idx];
                 // Convert the action to a valid bet. Sanitize the bet amount according
                 // to the player's intended action.
@@ -1130,9 +1131,9 @@ impl Game<TakeAction> {
                         action: BetAction::AllIn,
                         amount: player.user.money,
                     },
-                    Action::Call(amount) => Bet {
+                    Action::Call => Bet {
                         action: BetAction::Call,
-                        amount,
+                        amount: player_total_call,
                     },
                     Action::Check => {
                         self.data.num_players_called += 1;
@@ -2156,20 +2157,12 @@ mod game_tests {
         assert_eq!(game.act(Action::AllIn), Ok(()));
         assert_eq!(
             game.get_next_action_options(),
-            Some(HashSet::from([
-                Action::AllIn,
-                Action::Call(195),
-                Action::Fold,
-            ]))
+            Some(HashSet::from([Action::AllIn, Action::Call, Action::Fold,]))
         );
         assert_eq!(game.act(Action::AllIn), Ok(()));
         assert_eq!(
             game.get_next_action_options(),
-            Some(HashSet::from([
-                Action::AllIn,
-                Action::Call(395),
-                Action::Fold,
-            ]))
+            Some(HashSet::from([Action::AllIn, Action::Call, Action::Fold,]))
         );
         assert_eq!(game.act(Action::AllIn), Ok(()));
         let game: Game<Flop> = game.into();
@@ -2379,7 +2372,7 @@ mod game_tests {
             game.get_next_action_options(),
             Some(HashSet::from([
                 Action::AllIn,
-                Action::Call(10),
+                Action::Call,
                 Action::Fold,
                 Action::Raise(20)
             ]))
@@ -2405,22 +2398,22 @@ mod game_tests {
             game.get_next_action_options(),
             Some(HashSet::from([
                 Action::AllIn,
-                Action::Call(10),
+                Action::Call,
                 Action::Fold,
                 Action::Raise(20)
             ]))
         );
-        assert_eq!(game.act(Action::Call(10)), Ok(()));
+        assert_eq!(game.act(Action::Call), Ok(()));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([
                 Action::AllIn,
-                Action::Call(5),
+                Action::Call,
                 Action::Fold,
                 Action::Raise(15)
             ]))
         );
-        assert_eq!(game.act(Action::Call(5)), Ok(()));
+        assert_eq!(game.act(Action::Call), Ok(()));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([
@@ -2441,7 +2434,7 @@ mod game_tests {
             game.get_next_action_options(),
             Some(HashSet::from([
                 Action::AllIn,
-                Action::Call(10),
+                Action::Call,
                 Action::Fold,
                 Action::Raise(20)
             ]))
@@ -2451,7 +2444,7 @@ mod game_tests {
             game.get_next_action_options(),
             Some(HashSet::from([
                 Action::AllIn,
-                Action::Call(5),
+                Action::Call,
                 Action::Fold,
                 Action::Raise(15)
             ]))
@@ -2467,7 +2460,7 @@ mod game_tests {
             game.get_next_action_options(),
             Some(HashSet::from([
                 Action::AllIn,
-                Action::Call(10),
+                Action::Call,
                 Action::Fold,
                 Action::Raise(20)
             ]))
@@ -2477,7 +2470,7 @@ mod game_tests {
             game.get_next_action_options(),
             Some(HashSet::from([
                 Action::AllIn,
-                Action::Call(5),
+                Action::Call,
                 Action::Fold,
                 Action::Raise(15)
             ]))
@@ -2488,7 +2481,7 @@ mod game_tests {
             game.get_next_action_options(),
             Some(HashSet::from([
                 Action::AllIn,
-                Action::Call(10),
+                Action::Call,
                 Action::Fold,
                 Action::Raise(30)
             ]))
@@ -2499,7 +2492,7 @@ mod game_tests {
             game.get_next_action_options(),
             Some(HashSet::from([
                 Action::AllIn,
-                Action::Call(20),
+                Action::Call,
                 Action::Fold,
                 Action::Raise(60)
             ]))
@@ -2510,7 +2503,7 @@ mod game_tests {
             game.get_next_action_options(),
             Some(HashSet::from([
                 Action::AllIn,
-                Action::Call(40),
+                Action::Call,
                 Action::Fold,
                 Action::Raise(120)
             ]))
@@ -2647,9 +2640,9 @@ mod state_tests {
         // TakeAction
         state = state.step();
         // Call
-        assert_eq!(state.take_action("0", Action::Call(10)), Ok(()));
+        assert_eq!(state.take_action("0", Action::Call), Ok(()));
         // Check
-        assert_eq!(state.take_action("1", Action::Call(5)), Ok(()));
+        assert_eq!(state.take_action("1", Action::Call), Ok(()));
         // Check
         assert_eq!(state.take_action("2", Action::Check), Ok(()));
         // Flop
