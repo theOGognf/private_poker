@@ -481,7 +481,7 @@ impl<T> Game<T> {
             .map(|(i, action)| {
                 let repr = action.to_long_string();
                 match i {
-                    0 if num_options == 1 => format!("{repr}"),
+                    0 if num_options == 1 => repr,
                     0 if num_options == 2 => format!("{repr} "),
                     0 if num_options >= 3 => format!("{repr}, "),
                     i if i == num_options - 1 && num_options != 1 => format!("or {repr}"),

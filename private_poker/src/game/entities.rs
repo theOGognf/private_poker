@@ -162,8 +162,8 @@ impl Action {
     pub fn to_long_string(&self) -> String {
         match self {
             Action::AllIn | Action::Check | Action::Fold => self.to_string(),
-            Action::Call(amount) => format!("{} (== ${})", self.to_string(), amount),
-            Action::Raise(amount) => format!("{} (>= ${})", self.to_string(), amount),
+            Action::Call(amount) => format!("{self} (== ${})", amount),
+            Action::Raise(amount) => format!("{self} (>= ${})", amount),
         }
     }
 }
