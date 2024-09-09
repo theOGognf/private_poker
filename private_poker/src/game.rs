@@ -144,62 +144,50 @@ pub struct GameView {
 
 impl fmt::Display for GameView {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "blinds: ${}/${}", self.big_blind, self.small_blind)?;
-        writeln!(f)?;
+        writeln!(f, "blinds: ${}/${}", self.big_blind, self.small_blind)?;
 
         // Display users just spectating the game.
         writeln!(f)?;
-        write!(f, "spectators:")?;
-        writeln!(f)?;
+        writeln!(f, "spectators:")?;
         if self.spectators.is_empty() {
-            write!(f, "n/a")?
+            writeln!(f, "n/a")?
         } else {
             for user in self.spectators.values() {
-                write!(f, "{user}")?
+                writeln!(f, "{user}")?
             }
         };
-        writeln!(f)?;
 
         // Display users in queue to play.
         writeln!(f)?;
-        write!(f, "waitlisters:")?;
-        writeln!(f)?;
+        writeln!(f, "waitlisters:")?;
         if self.waitlist.is_empty() {
-            write!(f, "n/a")?
+            writeln!(f, "n/a")?
         } else {
             for waitlister in self.waitlist.iter() {
-                write!(f, "{waitlister}")?;
+                writeln!(f, "{waitlister}")?;
             }
         }
-        writeln!(f)?;
 
         // Display number of open seats.
         writeln!(f)?;
-        write!(f, "open seats:")?;
-        writeln!(f)?;
-        write!(f, "{}", self.open_seats.len())?;
-        writeln!(f)?;
+        writeln!(f, "open seats:")?;
+        writeln!(f, "{}", self.open_seats.len())?;
 
         // Display all players.
         writeln!(f)?;
-        write!(f, "players:")?;
-        writeln!(f)?;
+        writeln!(f, "players:")?;
         let players = self.players_to_string();
-        write!(f, "{players}")?;
-        writeln!(f)?;
+        writeln!(f, "{players}")?;
 
         // Display all pots.
         writeln!(f)?;
-        write!(f, "pots:")?;
-        writeln!(f)?;
+        writeln!(f, "pots:")?;
         let pots = self.pots_to_string();
-        write!(f, "{pots}")?;
-        writeln!(f)?;
+        writeln!(f, "{pots}")?;
 
         // Display community cards (cards on the board).
         writeln!(f)?;
-        write!(f, "board:")?;
-        writeln!(f)?;
+        writeln!(f, "board:")?;
         let board = self.board_to_string();
         write!(f, "{board}")?;
 
@@ -227,7 +215,7 @@ impl GameView {
         } else {
             for (mut i, pot) in self.pots.iter().enumerate() {
                 i += 1;
-                repr.push(format!("pot #{}: {}", i, pot));
+                repr.push(format!("#{}: {}", i, pot));
             }
         }
         repr.join("\n")
