@@ -738,7 +738,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
             // IO thread.
             while timeout.as_secs() > 0 {
                 let start = Instant::now();
-                if let Ok(msg) = rx_client.recv_timeout(timeout) {
+                if let Ok(mut msg) = rx_client.recv_timeout(timeout) {
                     let result = match msg.command {
                         ClientCommand::ChangeState(ref new_user_state) => match new_user_state {
                             UserState::Play => state.waitlist_user(&msg.username),
@@ -748,11 +748,12 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                         ClientCommand::Leave => state.remove_user(&msg.username),
                         ClientCommand::ShowHand => state.show_hand(&msg.username),
                         ClientCommand::StartGame => state.init_start(&msg.username),
-                        ClientCommand::TakeAction(ref action) => {
-                            state.take_action(&msg.username, action.clone()).map(|()| {
+                        ClientCommand::TakeAction(ref mut action) => state
+                            .take_action(&msg.username, action.clone())
+                            .map(|new_action| {
                                 timeout = Duration::ZERO;
-                            })
-                        }
+                                *action = new_action;
+                            }),
                     };
 
                     // Get the result from a client's command. If their command

@@ -1122,14 +1122,14 @@ impl From<Game<Deal>> for Game<TakeAction> {
 }
 
 impl Game<TakeAction> {
-    pub fn act(&mut self, action: Action) -> Result<(), UserError> {
-        self.affect(action)?;
+    pub fn act(&mut self, action: Action) -> Result<Action, UserError> {
+        let sanitized_action = self.affect(action)?;
         self.data.next_action_idx = self.get_next_action_idx(false);
         self.state.action_options = self.get_next_action_options();
-        Ok(())
+        Ok(sanitized_action)
     }
 
-    fn affect(&mut self, action: Action) -> Result<(), UserError> {
+    fn affect(&mut self, action: Action) -> Result<Action, UserError> {
         match (self.data.next_action_idx, &self.state.action_options) {
             (Some(player_idx), Some(action_options)) => {
                 if !action_options.contains(&action) {
@@ -1149,12 +1149,12 @@ impl Game<TakeAction> {
                     },
                     Action::Check => {
                         self.data.num_players_called += 1;
-                        return Ok(());
+                        return Ok(action);
                     }
                     Action::Fold => {
                         player.state = PlayerState::Fold;
                         self.data.num_players_active -= 1;
-                        return Ok(());
+                        return Ok(action);
                     }
                     Action::Raise(amount) => Bet {
                         action: BetAction::Raise,
@@ -1223,7 +1223,8 @@ impl Game<TakeAction> {
                         self.data.pots.push(side_pot);
                     }
                 }
-                Ok(())
+                // Return the santized action.
+                Ok(bet.into())
             }
             _ => Err(UserError::OutOfTurnAction),
         }
@@ -1867,13 +1868,13 @@ impl PokerState {
         }
     }
 
-    pub fn take_action(&mut self, username: &str, action: Action) -> Result<(), UserError> {
+    pub fn take_action(&mut self, username: &str, action: Action) -> Result<Action, UserError> {
         match self {
             PokerState::TakeAction(ref mut game)
                 if !game.is_ready_for_next_phase() && game.is_turn(username) =>
             {
-                game.act(action)?;
-                Ok(())
+                let sanitized_action = game.act(action)?;
+                Ok(sanitized_action)
             }
             _ => Err(UserError::OutOfTurnAction),
         }
@@ -2053,9 +2054,9 @@ mod game_tests {
     #[test]
     fn early_showdown() {
         let mut game = init_game_at_deal();
-        assert_eq!(game.act(Action::Fold), Ok(()));
-        assert_eq!(game.act(Action::AllIn), Ok(()));
-        assert_eq!(game.act(Action::AllIn), Ok(()));
+        assert_eq!(game.act(Action::Fold), Ok(Action::Fold));
+        assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
+        assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         let game: Game<Flop> = game.into();
         let game: Game<Turn> = game.into();
         assert_eq!(game.get_num_community_cards(), 3);
@@ -2121,17 +2122,17 @@ mod game_tests {
         let game: Game<CollectBlinds> = game.into();
         let game: Game<Deal> = game.into();
         let mut game: Game<TakeAction> = game.into();
-        assert_eq!(game.act(Action::AllIn), Ok(()));
+        assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([Action::AllIn, Action::Fold,]))
         );
-        assert_eq!(game.act(Action::AllIn), Ok(()));
+        assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([Action::AllIn, Action::Fold,]))
         );
-        assert_eq!(game.act(Action::AllIn), Ok(()));
+        assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         let game: Game<Flop> = game.into();
         let game: Game<Turn> = game.into();
         let game: Game<River> = game.into();
@@ -2166,7 +2167,7 @@ mod game_tests {
         let game: Game<CollectBlinds> = game.into();
         let game: Game<Deal> = game.into();
         let mut game: Game<TakeAction> = game.into();
-        assert_eq!(game.act(Action::AllIn), Ok(()));
+        assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([
@@ -2175,7 +2176,7 @@ mod game_tests {
                 Action::Fold,
             ]))
         );
-        assert_eq!(game.act(Action::AllIn), Ok(()));
+        assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([
@@ -2184,7 +2185,7 @@ mod game_tests {
                 Action::Fold,
             ]))
         );
-        assert_eq!(game.act(Action::AllIn), Ok(()));
+        assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         let game: Game<Flop> = game.into();
         let game: Game<Turn> = game.into();
         let game: Game<River> = game.into();
@@ -2397,17 +2398,17 @@ mod game_tests {
                 Action::Raise(20)
             ]))
         );
-        assert_eq!(game.act(Action::AllIn), Ok(()));
+        assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([Action::AllIn, Action::Fold]))
         );
-        assert_eq!(game.act(Action::AllIn), Ok(()));
+        assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([Action::AllIn, Action::Fold]))
         );
-        assert_eq!(game.act(Action::Fold), Ok(()));
+        assert_eq!(game.act(Action::Fold), Ok(Action::Fold));
         assert_eq!(game.get_next_action_options(), None);
     }
 
@@ -2423,7 +2424,7 @@ mod game_tests {
                 Action::Raise(20)
             ]))
         );
-        assert_eq!(game.act(Action::Call(10)), Ok(()));
+        assert_eq!(game.act(Action::Call(10)), Ok(Action::Call(10)));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([
@@ -2433,7 +2434,7 @@ mod game_tests {
                 Action::Raise(15)
             ]))
         );
-        assert_eq!(game.act(Action::Call(5)), Ok(()));
+        assert_eq!(game.act(Action::Call(5)), Ok(Action::Call(5)));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([
@@ -2443,7 +2444,7 @@ mod game_tests {
                 Action::Raise(20)
             ]))
         );
-        assert_eq!(game.act(Action::Check), Ok(()));
+        assert_eq!(game.act(Action::Check), Ok(Action::Check));
         assert_eq!(game.get_next_action_options(), None);
     }
 
@@ -2459,7 +2460,7 @@ mod game_tests {
                 Action::Raise(20)
             ]))
         );
-        assert_eq!(game.act(Action::Fold), Ok(()));
+        assert_eq!(game.act(Action::Fold), Ok(Action::Fold));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([
@@ -2469,7 +2470,7 @@ mod game_tests {
                 Action::Raise(15)
             ]))
         );
-        assert_eq!(game.act(Action::Fold), Ok(()));
+        assert_eq!(game.act(Action::Fold), Ok(Action::Fold));
         assert_eq!(game.get_next_action_options(), None);
     }
 
@@ -2485,7 +2486,7 @@ mod game_tests {
                 Action::Raise(20)
             ]))
         );
-        assert_eq!(game.act(Action::Fold), Ok(()));
+        assert_eq!(game.act(Action::Fold), Ok(Action::Fold));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([
@@ -2496,7 +2497,7 @@ mod game_tests {
             ]))
         );
         // Total call is 20
-        assert_eq!(game.act(Action::Raise(15)), Ok(()));
+        assert_eq!(game.act(Action::Raise(15)), Ok(Action::Raise(15)));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([
@@ -2507,7 +2508,7 @@ mod game_tests {
             ]))
         );
         // Total call is 40
-        assert_eq!(game.act(Action::Raise(30)), Ok(()));
+        assert_eq!(game.act(Action::Raise(30)), Ok(Action::Raise(30)));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([
@@ -2518,7 +2519,7 @@ mod game_tests {
             ]))
         );
         // Total call is 80
-        assert_eq!(game.act(Action::Raise(60)), Ok(()));
+        assert_eq!(game.act(Action::Raise(60)), Ok(Action::Raise(60)));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([
@@ -2528,7 +2529,7 @@ mod game_tests {
                 Action::Raise(120)
             ]))
         );
-        assert_eq!(game.act(Action::Fold), Ok(()));
+        assert_eq!(game.act(Action::Fold), Ok(Action::Fold));
         assert_eq!(game.get_next_action_options(), None);
     }
 }
@@ -2617,7 +2618,7 @@ mod state_tests {
         // TakeAction
         state = state.step();
         // All-in
-        assert_eq!(state.take_action("0", Action::AllIn), Ok(()));
+        assert_eq!(state.take_action("0", Action::AllIn), Ok(Action::AllIn));
         // 1st fold
         state = state.step();
         // 2nd fold
@@ -2660,41 +2661,44 @@ mod state_tests {
         // TakeAction
         state = state.step();
         // Call
-        assert_eq!(state.take_action("0", Action::Call(10)), Ok(()));
+        assert_eq!(
+            state.take_action("0", Action::Call(10)),
+            Ok(Action::Call(10))
+        );
         // Check
-        assert_eq!(state.take_action("1", Action::Call(5)), Ok(()));
+        assert_eq!(state.take_action("1", Action::Call(5)), Ok(Action::Call(5)));
         // Check
-        assert_eq!(state.take_action("2", Action::Check), Ok(()));
+        assert_eq!(state.take_action("2", Action::Check), Ok(Action::Check));
         // Flop
         state = state.step();
         // TakeAction
         state = state.step();
         // Check
-        assert_eq!(state.take_action("0", Action::Check), Ok(()));
+        assert_eq!(state.take_action("0", Action::Check), Ok(Action::Check));
         // Check
-        assert_eq!(state.take_action("1", Action::Check), Ok(()));
+        assert_eq!(state.take_action("1", Action::Check), Ok(Action::Check));
         // Check
-        assert_eq!(state.take_action("2", Action::Check), Ok(()));
+        assert_eq!(state.take_action("2", Action::Check), Ok(Action::Check));
         // Turn
         state = state.step();
         // TakeAction
         state = state.step();
         // Check
-        assert_eq!(state.take_action("0", Action::Check), Ok(()));
+        assert_eq!(state.take_action("0", Action::Check), Ok(Action::Check));
         // Check
-        assert_eq!(state.take_action("1", Action::Check), Ok(()));
+        assert_eq!(state.take_action("1", Action::Check), Ok(Action::Check));
         // Check
-        assert_eq!(state.take_action("2", Action::Check), Ok(()));
+        assert_eq!(state.take_action("2", Action::Check), Ok(Action::Check));
         // River
         state = state.step();
         // TakeAction
         state = state.step();
         // Check
-        assert_eq!(state.take_action("0", Action::AllIn), Ok(()));
+        assert_eq!(state.take_action("0", Action::AllIn), Ok(Action::AllIn));
         // Check
-        assert_eq!(state.take_action("1", Action::Fold), Ok(()));
+        assert_eq!(state.take_action("1", Action::Fold), Ok(Action::Fold));
         // Check
-        assert_eq!(state.take_action("2", Action::Fold), Ok(()));
+        assert_eq!(state.take_action("2", Action::Fold), Ok(Action::Fold));
         // ShowHands
         state = state.step();
         // DistributePot

@@ -68,8 +68,8 @@ impl From<Record> for ListItem<'_> {
         let kind = match val.kind {
             RecordKind::Alert => format!("{:6}", "ALERT").light_magenta(),
             RecordKind::Error => format!("{:6}", "ERROR").light_red(),
-            RecordKind::Game => format!("{:6}", "GAME").light_blue(),
-            RecordKind::System => format!("{:6}", "SYSTEM").light_yellow(),
+            RecordKind::Game => format!("{:6}", "GAME").light_yellow(),
+            RecordKind::System => format!("{:6}", "SYSTEM").light_blue(),
             RecordKind::User => format!("{:6}", "USER").light_green(),
         };
 
@@ -437,7 +437,7 @@ impl App {
                 }
             },
         }
-        return Ok(());
+        Ok(())
     }
 
     pub fn new(username: String, addr: String) -> Self {
@@ -711,6 +711,11 @@ impl App {
                         action_options = new_action_options;
                         let record = Record::new(RecordKind::Alert, "it's your turn!".to_string());
                         self.log_handle.push(record.into());
+
+                        // Push the table state to the terminal so the player
+                        // doesn't have to enter a new command.
+                        let content = view.table_to_string();
+                        self.log_handle.push_multiline_string(content);
                     }
                     ServerResponse::UserError(error) => {
                         let record = Record::new(RecordKind::Error, error.to_string());

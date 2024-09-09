@@ -160,6 +160,16 @@ impl fmt::Display for Action {
     }
 }
 
+impl From<Bet> for Action {
+    fn from(value: Bet) -> Self {
+        match value.action {
+            BetAction::AllIn => Action::AllIn,
+            BetAction::Call => Action::Call(value.amount),
+            BetAction::Raise => Action::Raise(value.amount),
+        }
+    }
+}
+
 impl Action {
     pub fn to_action_string(&self) -> String {
         match self {
