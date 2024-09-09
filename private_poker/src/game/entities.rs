@@ -149,22 +149,31 @@ pub enum Action {
 
 impl fmt::Display for Action {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Action::AllIn => write!(f, "all-in"),
-            Action::Call(_) => write!(f, "call"),
-            Action::Check => write!(f, "check"),
-            Action::Fold => write!(f, "fold"),
-            Action::Raise(_) => write!(f, "raise"),
-        }
+        let repr = match self {
+            Action::AllIn => "all-in".to_string(),
+            Action::Call(amount) => format!("call ${amount}"),
+            Action::Check => "check".to_string(),
+            Action::Fold => "fold".to_string(),
+            Action::Raise(amount) => format!("raise ${amount}"),
+        };
+        write!(f, "{repr}")
     }
 }
 
 impl Action {
-    pub fn to_long_string(&self) -> String {
+    pub fn to_action_string(&self) -> String {
+        match self {
+            Action::AllIn | Action::Check | Action::Fold => format!("{self}s"),
+            Action::Call(amount) => format!("calls ${amount}"),
+            Action::Raise(amount) => format!("raises ${amount}"),
+        }
+    }
+
+    pub fn to_option_string(&self) -> String {
         match self {
             Action::AllIn | Action::Check | Action::Fold => self.to_string(),
-            Action::Call(amount) => format!("{self} (== ${})", amount),
-            Action::Raise(amount) => format!("{self} (>= ${})", amount),
+            Action::Call(amount) => format!("call (== ${})", amount),
+            Action::Raise(amount) => format!("raise (>= ${})", amount),
         }
     }
 }

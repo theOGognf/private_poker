@@ -33,7 +33,7 @@ pub enum UserError {
     GameAlreadyStarting,
     #[error("insufficient funds to satisfy the ${big_blind} big blind")]
     InsufficientFunds { big_blind: Usd },
-    #[error("tried an illegal {action}")]
+    #[error("{action} is invalid")]
     InvalidAction { action: Action },
     #[error("tried an illegal {bet}")]
     InvalidBet { bet: Bet },
@@ -479,7 +479,7 @@ impl<T> Game<T> {
             .iter()
             .enumerate()
             .map(|(i, action)| {
-                let repr = action.to_long_string();
+                let repr = action.to_option_string();
                 match i {
                     0 if num_options == 1 => repr,
                     0 if num_options == 2 => format!("{repr} "),
