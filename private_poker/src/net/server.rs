@@ -22,10 +22,10 @@ use super::{
     utils::{read_prefixed, write_prefixed},
 };
 
-pub const DEFAULT_ACTION_TIMEOUT: Duration = Duration::from_secs(15);
+pub const DEFAULT_ACTION_TIMEOUT: Duration = Duration::from_secs(30);
 pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 pub const DEFAULT_POLL_TIMEOUT: Duration = Duration::from_secs(1);
-pub const DEFAULT_STEP_TIMEOUT: Duration = Duration::from_secs(3);
+pub const DEFAULT_STEP_TIMEOUT: Duration = Duration::from_secs(5);
 pub const MAX_NETWORK_EVENTS_PER_USER: usize = 6;
 pub const SERVER: Token = Token(0);
 pub const WAKER: Token = Token(1);
