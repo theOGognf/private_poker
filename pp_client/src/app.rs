@@ -26,7 +26,7 @@ use ratatui::{
     DefaultTerminal, Frame,
 };
 use std::{
-    collections::VecDeque,
+    collections::{HashSet, VecDeque},
     io,
     net::TcpStream,
     sync::mpsc::{channel, Receiver, Sender},
@@ -437,6 +437,7 @@ impl App {
             }
         });
 
+        let mut action_options = HashSet::new();
         loop {
             terminal.draw(|frame| self.draw(frame))?;
 
@@ -466,14 +467,24 @@ impl App {
                                             if let Some(cmd) = matches.subcommand_name() {
                                                 match cmd {
                                                     "all-in" => {
-                                                        let msg = ClientMessage {
-                                                            username: self.username.to_string(),
-                                                            command: ClientCommand::TakeAction(
-                                                                Action::AllIn,
-                                                            ),
-                                                        };
-                                                        tx_client.send(msg)?;
-                                                        waker.wake()?;
+                                                        if let Some(action) =
+                                                            action_options.take(&Action::AllIn)
+                                                        {
+                                                            let msg = ClientMessage {
+                                                                username: self.username.to_string(),
+                                                                command: ClientCommand::TakeAction(
+                                                                    action,
+                                                                ),
+                                                            };
+                                                            tx_client.send(msg)?;
+                                                            waker.wake()?;
+                                                        } else {
+                                                            let record = Record::new(
+                                                                RecordKind::Error,
+                                                                "can't all-in now".to_string(),
+                                                            );
+                                                            self.log_handle.push(record.into());
+                                                        }
                                                     }
                                                     "board" => {
                                                         let content = view.board_to_string();
@@ -481,36 +492,66 @@ impl App {
                                                         self.log_handle.push(line.into());
                                                     }
                                                     "call" => {
-                                                        let msg = ClientMessage {
-                                                            username: self.username.to_string(),
-                                                            command: ClientCommand::TakeAction(
-                                                                Action::Call,
-                                                            ),
-                                                        };
-                                                        tx_client.send(msg)?;
-                                                        waker.wake()?;
+                                                        if let Some(action) =
+                                                            action_options.take(&Action::Call(0))
+                                                        {
+                                                            let msg = ClientMessage {
+                                                                username: self.username.to_string(),
+                                                                command: ClientCommand::TakeAction(
+                                                                    action,
+                                                                ),
+                                                            };
+                                                            tx_client.send(msg)?;
+                                                            waker.wake()?;
+                                                        } else {
+                                                            let record = Record::new(
+                                                                RecordKind::Error,
+                                                                "can't call now".to_string(),
+                                                            );
+                                                            self.log_handle.push(record.into());
+                                                        }
                                                     }
                                                     "check" => {
-                                                        let msg = ClientMessage {
-                                                            username: self.username.to_string(),
-                                                            command: ClientCommand::TakeAction(
-                                                                Action::Check,
-                                                            ),
-                                                        };
-                                                        tx_client.send(msg)?;
-                                                        waker.wake()?;
+                                                        if let Some(action) =
+                                                            action_options.take(&Action::Check)
+                                                        {
+                                                            let msg = ClientMessage {
+                                                                username: self.username.to_string(),
+                                                                command: ClientCommand::TakeAction(
+                                                                    action,
+                                                                ),
+                                                            };
+                                                            tx_client.send(msg)?;
+                                                            waker.wake()?;
+                                                        } else {
+                                                            let record = Record::new(
+                                                                RecordKind::Error,
+                                                                "can't check now".to_string(),
+                                                            );
+                                                            self.log_handle.push(record.into());
+                                                        }
                                                     }
                                                     "clear" => self.log_handle.clear(),
                                                     "exit" => return Ok(()),
                                                     "fold" => {
-                                                        let msg = ClientMessage {
-                                                            username: self.username.clone(),
-                                                            command: ClientCommand::TakeAction(
-                                                                Action::Fold,
-                                                            ),
-                                                        };
-                                                        tx_client.send(msg)?;
-                                                        waker.wake()?;
+                                                        if let Some(action) =
+                                                            action_options.take(&Action::Fold)
+                                                        {
+                                                            let msg = ClientMessage {
+                                                                username: self.username.clone(),
+                                                                command: ClientCommand::TakeAction(
+                                                                    action,
+                                                                ),
+                                                            };
+                                                            tx_client.send(msg)?;
+                                                            waker.wake()?;
+                                                        } else {
+                                                            let record = Record::new(
+                                                                RecordKind::Error,
+                                                                "can't fold now".to_string(),
+                                                            );
+                                                            self.log_handle.push(record.into());
+                                                        }
                                                     }
                                                     "game" => {
                                                         let content = view.to_string();
@@ -580,10 +621,11 @@ impl App {
                                                 self.log_handle.push_multiline_string(help);
                                             }
                                             invalid => {
-                                                let content =
-                                                    format!("unrecognized command: {invalid}");
-                                                let line = Line::raw(content);
-                                                self.log_handle.push(line.into());
+                                                let record = Record::new(
+                                                    RecordKind::Error,
+                                                    format!("unrecognized command: {invalid}"),
+                                                );
+                                                self.log_handle.push(record.into());
                                             }
                                         },
                                     }
@@ -620,7 +662,8 @@ impl App {
                         let record = Record::new(RecordKind::System, msg);
                         self.log_handle.push(record.into());
                     }
-                    ServerResponse::TurnSignal(_) => {
+                    ServerResponse::TurnSignal(new_action_options) => {
+                        action_options = new_action_options;
                         let record = Record::new(RecordKind::System, "it's your turn!".to_string());
                         self.log_handle.push(record.into());
                     }

@@ -3,7 +3,6 @@ use std::{
     collections::HashMap,
     fmt,
     hash::{Hash, Hasher},
-    mem::discriminant,
 };
 
 use super::constants;
@@ -70,14 +69,14 @@ impl fmt::Display for Rank {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let repr = match self {
             Rank::HighCard => "hi",
-            Rank::OnePair => "pr",
-            Rank::TwoPair => "to pr",
-            Rank::ThreeOfAKind => "toak",
+            Rank::OnePair => "1pr",
+            Rank::TwoPair => "2pr",
+            Rank::ThreeOfAKind => "3k",
             Rank::Straight => "str8",
-            Rank::Flush => "fl",
-            Rank::FullHouse => "fh",
-            Rank::FourOfAKind => "foak",
-            Rank::StraightFlush => "str8 fl",
+            Rank::Flush => "flush",
+            Rank::FullHouse => "full",
+            Rank::FourOfAKind => "4k",
+            Rank::StraightFlush => "str8 flush",
         };
         write!(f, "{repr}")
     }
@@ -141,7 +140,7 @@ impl fmt::Display for User {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Action {
     AllIn,
-    Call,
+    Call(Usd),
     Check,
     Fold,
     Raise(Usd),
@@ -151,10 +150,20 @@ impl fmt::Display for Action {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Action::AllIn => write!(f, "all-in"),
-            Action::Call => write!(f, "call"),
+            Action::Call(_) => write!(f, "call"),
             Action::Check => write!(f, "check"),
             Action::Fold => write!(f, "fold"),
             Action::Raise(_) => write!(f, "raise"),
+        }
+    }
+}
+
+impl Action {
+    pub fn to_long_string(&self) -> String {
+        match self {
+            Action::AllIn | Action::Check | Action::Fold => self.to_string(),
+            Action::Call(amount) => format!("{} (== ${})", self.to_string(), amount),
+            Action::Raise(amount) => format!("{} (>= ${})", self.to_string(), amount),
         }
     }
 }
@@ -168,13 +177,13 @@ impl Eq for Action {}
 
 impl Hash for Action {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        discriminant(self).hash(state);
+        self.to_string().hash(state);
     }
 }
 
 impl PartialEq for Action {
     fn eq(&self, other: &Self) -> bool {
-        discriminant(self) == discriminant(other)
+        self.to_string() == other.to_string()
     }
 }
 

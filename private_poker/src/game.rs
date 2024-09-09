@@ -21,9 +21,9 @@ use entities::{
 
 #[derive(Debug, Deserialize, Eq, Error, PartialEq, Serialize)]
 pub enum UserError {
-    #[error("cannot show hand now")]
+    #[error("can't show hand now")]
     CannotShowHand,
-    #[error("cannot start game unless you're waitlisted or playing")]
+    #[error("can't start game unless you're waitlisted or playing")]
     CannotStartGame,
     #[error("game is full")]
     CapacityReached,
@@ -474,19 +474,22 @@ pub struct Game<T> {
 /// General game methods.
 impl<T> Game<T> {
     pub fn action_options_to_string(action_options: &HashSet<Action>) -> String {
-        let mut repr = vec![];
         let num_options = action_options.len();
-        for (i, action) in action_options.iter().enumerate() {
-            let sub_repr = match i {
-                0 if num_options == 1 => format!("{action}"),
-                0 if num_options == 2 => format!("{action} "),
-                0 if num_options >= 3 => format!("{action}, "),
-                i if i == num_options - 1 && num_options != 1 => format!("or {action}"),
-                _ => format!("{action}, "),
-            };
-            repr.push(sub_repr);
-        }
-        repr.join("")
+        action_options
+            .iter()
+            .enumerate()
+            .map(|(i, action)| {
+                let repr = action.to_long_string();
+                match i {
+                    0 if num_options == 1 => format!("{repr}"),
+                    0 if num_options == 2 => format!("{repr} "),
+                    0 if num_options >= 3 => format!("{repr}, "),
+                    i if i == num_options - 1 && num_options != 1 => format!("or {repr}"),
+                    _ => format!("{repr}, "),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("")
     }
 
     fn as_view(&self, username: &str) -> GameView {
@@ -584,7 +587,7 @@ impl<T> Game<T> {
                 let raise = self.get_total_min_raise_by_player_idx(action_idx);
                 let call = self.get_total_call_by_player_idx(action_idx);
                 if call > 0 && call < user.money {
-                    action_options.insert(Action::Call);
+                    action_options.insert(Action::Call(call));
                 } else if call == 0 {
                     action_options.insert(Action::Check);
                 }
@@ -1132,7 +1135,6 @@ impl Game<TakeAction> {
                 if !action_options.contains(&action) {
                     return Err(UserError::InvalidAction { action });
                 }
-                let player_total_call = self.get_total_call_by_player_idx(player_idx);
                 let player = &mut self.data.players[player_idx];
                 // Convert the action to a valid bet. Sanitize the bet amount according
                 // to the player's intended action.
@@ -1141,9 +1143,9 @@ impl Game<TakeAction> {
                         action: BetAction::AllIn,
                         amount: player.user.money,
                     },
-                    Action::Call => Bet {
+                    Action::Call(amount) => Bet {
                         action: BetAction::Call,
-                        amount: player_total_call,
+                        amount,
                     },
                     Action::Check => {
                         self.data.num_players_called += 1;
@@ -2167,12 +2169,20 @@ mod game_tests {
         assert_eq!(game.act(Action::AllIn), Ok(()));
         assert_eq!(
             game.get_next_action_options(),
-            Some(HashSet::from([Action::AllIn, Action::Call, Action::Fold,]))
+            Some(HashSet::from([
+                Action::AllIn,
+                Action::Call(195),
+                Action::Fold,
+            ]))
         );
         assert_eq!(game.act(Action::AllIn), Ok(()));
         assert_eq!(
             game.get_next_action_options(),
-            Some(HashSet::from([Action::AllIn, Action::Call, Action::Fold,]))
+            Some(HashSet::from([
+                Action::AllIn,
+                Action::Call(395),
+                Action::Fold,
+            ]))
         );
         assert_eq!(game.act(Action::AllIn), Ok(()));
         let game: Game<Flop> = game.into();
@@ -2382,7 +2392,7 @@ mod game_tests {
             game.get_next_action_options(),
             Some(HashSet::from([
                 Action::AllIn,
-                Action::Call,
+                Action::Call(10),
                 Action::Fold,
                 Action::Raise(20)
             ]))
@@ -2408,22 +2418,22 @@ mod game_tests {
             game.get_next_action_options(),
             Some(HashSet::from([
                 Action::AllIn,
-                Action::Call,
+                Action::Call(10),
                 Action::Fold,
                 Action::Raise(20)
             ]))
         );
-        assert_eq!(game.act(Action::Call), Ok(()));
+        assert_eq!(game.act(Action::Call(10)), Ok(()));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([
                 Action::AllIn,
-                Action::Call,
+                Action::Call(5),
                 Action::Fold,
                 Action::Raise(15)
             ]))
         );
-        assert_eq!(game.act(Action::Call), Ok(()));
+        assert_eq!(game.act(Action::Call(5)), Ok(()));
         assert_eq!(
             game.get_next_action_options(),
             Some(HashSet::from([
@@ -2444,7 +2454,7 @@ mod game_tests {
             game.get_next_action_options(),
             Some(HashSet::from([
                 Action::AllIn,
-                Action::Call,
+                Action::Call(10),
                 Action::Fold,
                 Action::Raise(20)
             ]))
@@ -2454,7 +2464,7 @@ mod game_tests {
             game.get_next_action_options(),
             Some(HashSet::from([
                 Action::AllIn,
-                Action::Call,
+                Action::Call(5),
                 Action::Fold,
                 Action::Raise(15)
             ]))
@@ -2470,7 +2480,7 @@ mod game_tests {
             game.get_next_action_options(),
             Some(HashSet::from([
                 Action::AllIn,
-                Action::Call,
+                Action::Call(10),
                 Action::Fold,
                 Action::Raise(20)
             ]))
@@ -2480,7 +2490,7 @@ mod game_tests {
             game.get_next_action_options(),
             Some(HashSet::from([
                 Action::AllIn,
-                Action::Call,
+                Action::Call(5),
                 Action::Fold,
                 Action::Raise(15)
             ]))
@@ -2491,7 +2501,7 @@ mod game_tests {
             game.get_next_action_options(),
             Some(HashSet::from([
                 Action::AllIn,
-                Action::Call,
+                Action::Call(10),
                 Action::Fold,
                 Action::Raise(30)
             ]))
@@ -2502,7 +2512,7 @@ mod game_tests {
             game.get_next_action_options(),
             Some(HashSet::from([
                 Action::AllIn,
-                Action::Call,
+                Action::Call(20),
                 Action::Fold,
                 Action::Raise(60)
             ]))
@@ -2513,7 +2523,7 @@ mod game_tests {
             game.get_next_action_options(),
             Some(HashSet::from([
                 Action::AllIn,
-                Action::Call,
+                Action::Call(40),
                 Action::Fold,
                 Action::Raise(120)
             ]))
@@ -2650,9 +2660,9 @@ mod state_tests {
         // TakeAction
         state = state.step();
         // Call
-        assert_eq!(state.take_action("0", Action::Call), Ok(()));
+        assert_eq!(state.take_action("0", Action::Call(10)), Ok(()));
         // Check
-        assert_eq!(state.take_action("1", Action::Call), Ok(()));
+        assert_eq!(state.take_action("1", Action::Call(5)), Ok(()));
         // Check
         assert_eq!(state.take_action("2", Action::Check), Ok(()));
         // Flop
