@@ -3,6 +3,7 @@ use std::{
     collections::HashMap,
     fmt,
     hash::{Hash, Hasher},
+    mem::discriminant,
 };
 
 use super::constants;
@@ -177,13 +178,13 @@ impl Eq for Action {}
 
 impl Hash for Action {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.to_string().hash(state);
+        discriminant(self).hash(state);
     }
 }
 
 impl PartialEq for Action {
     fn eq(&self, other: &Self) -> bool {
-        self.to_string() == other.to_string()
+        discriminant(self) == discriminant(other)
     }
 }
 
