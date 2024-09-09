@@ -73,11 +73,11 @@ impl fmt::Display for Rank {
             Rank::OnePair => "1pr",
             Rank::TwoPair => "2pr",
             Rank::ThreeOfAKind => "3k",
-            Rank::Straight => "str8",
-            Rank::Flush => "flush",
+            Rank::Straight => "s8",
+            Rank::Flush => "fs",
             Rank::FullHouse => "full",
             Rank::FourOfAKind => "4k",
-            Rank::StraightFlush => "str8 flush",
+            Rank::StraightFlush => "s8fs",
         };
         write!(f, "{repr}")
     }
