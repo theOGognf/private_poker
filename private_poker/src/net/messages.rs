@@ -27,10 +27,11 @@ pub enum UserState {
 
 impl fmt::Display for UserState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            UserState::Play => write!(f, "waitlister"),
-            UserState::Spectate => write!(f, "spectator"),
-        }
+        let repr = match self {
+            UserState::Play => "waitlister",
+            UserState::Spectate => "spectator",
+        };
+        write!(f, "{repr}")
     }
 }
 
@@ -46,18 +47,15 @@ pub enum ClientCommand {
 
 impl fmt::Display for ClientCommand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self {
-            ClientCommand::ChangeState(state) => {
-                write!(f, "joined the {state}s")
-            }
-            ClientCommand::Connect => write!(f, "connected"),
-            ClientCommand::Leave => write!(f, "left the game"),
-            ClientCommand::ShowHand => write!(f, "showed their hand"),
-            ClientCommand::StartGame => write!(f, "started the game"),
-            ClientCommand::TakeAction(action) => {
-                write!(f, "{}", action.to_action_string())
-            }
-        }
+        let repr = match &self {
+            ClientCommand::ChangeState(state) => &format!("joined the {state}s"),
+            ClientCommand::Connect => "connected",
+            ClientCommand::Leave => "left the game",
+            ClientCommand::ShowHand => "showed their hand",
+            ClientCommand::StartGame => "started the game",
+            ClientCommand::TakeAction(action) => &action.to_action_string(),
+        };
+        write!(f, "{repr}")
     }
 }
 
@@ -85,17 +83,17 @@ pub enum ServerResponse {
 
 impl fmt::Display for ServerResponse {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match &self {
-            ServerResponse::Ack(msg) => write!(f, "{msg}"),
-            ServerResponse::ClientError(error) => write!(f, "{error}"),
-            ServerResponse::GameView(view) => write!(f, "{view}"),
-            ServerResponse::Status(status) => write!(f, "{status}"),
+        let repr = match &self {
+            ServerResponse::Ack(msg) => msg.to_string(),
+            ServerResponse::ClientError(error) => error.to_string(),
+            ServerResponse::GameView(view) => view.to_string(),
+            ServerResponse::Status(status) => status.to_string(),
             ServerResponse::TurnSignal(action_options) => {
-                let repr = Game::<TakeAction>::action_options_to_string(action_options);
-                write!(f, "{repr}")
+                Game::<TakeAction>::action_options_to_string(action_options)
             }
-            ServerResponse::UserError(error) => write!(f, "{error}"),
-        }
+            ServerResponse::UserError(error) => error.to_string(),
+        };
+        write!(f, "{repr}")
     }
 }
 

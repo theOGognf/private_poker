@@ -247,18 +247,17 @@ impl GameView {
     }
 
     pub fn table_to_string(&self) -> String {
-        let mut repr = vec!["pots:".to_string()];
-        let pots = self.pots_to_string();
-        repr.push(pots);
-        repr.push("".to_string());
-        repr.push("board:".to_string());
-        let board = self.board_to_string();
-        repr.push(board);
-        repr.push("".to_string());
-        repr.push("players:".to_string());
-        let players = self.players_to_string();
-        repr.push(players);
-        repr.join("\n")
+        [
+            "pots:",
+            &self.pots_to_string(),
+            "",
+            "board:",
+            &self.board_to_string(),
+            "",
+            "players:",
+            &self.players_to_string(),
+        ]
+        .join("\n")
     }
 }
 
@@ -1665,44 +1664,40 @@ impl fmt::Display for PokerState {
                 let num_users = game.get_num_users();
                 let num_potential_players = game.get_num_potential_players();
                 let big_blind = game.data.big_blind;
-                format!("in lobby with {num_users} user(s), {num_potential_players} potential player(s), and a ${big_blind} big blind")
+                &format!("in lobby with {num_users} user(s), {num_potential_players} potential player(s), and a ${big_blind} big blind")
             }
-            PokerState::SeatPlayers(_) => "seating players".to_string(),
-            PokerState::MoveButton(_) => "moving button".to_string(),
+            PokerState::SeatPlayers(_) => "seating players",
+            PokerState::MoveButton(_) => "moving button",
             PokerState::CollectBlinds(ref game) => {
                 let big_blind = game.data.big_blind;
                 let big_blind_username = &game.data.players[game.data.big_blind_idx].user.name;
                 let small_blind = game.data.small_blind;
                 let small_blind_username = &game.data.players[game.data.small_blind_idx].user.name;
-                format!("collecting ${big_blind} from {big_blind_username} and ${small_blind} from {small_blind_username}")
+                &format!("collecting ${big_blind} from {big_blind_username} and ${small_blind} from {small_blind_username}")
             }
-            PokerState::Deal(_) => "dealing cards".to_string(),
+            PokerState::Deal(_) => "dealing cards",
             PokerState::TakeAction(ref game) => {
                 if game.is_ready_for_next_phase() {
-                    "end of betting round".to_string()
+                    "end of betting round"
                 } else {
-                    "betting round transition".to_string()
+                    "betting round transition"
                 }
             }
-            PokerState::Flop(_) => "the flop".to_string(),
-            PokerState::Turn(_) => "the turn".to_string(),
-            PokerState::River(_) => "the river".to_string(),
+            PokerState::Flop(_) => "the flop",
+            PokerState::Turn(_) => "the turn",
+            PokerState::River(_) => "the river",
             PokerState::ShowHands(ref game) => {
                 let num_pots = game.get_num_pots();
-                format!("showing hands for pot #{num_pots}")
+                &format!("showing hands for pot #{num_pots}")
             }
             PokerState::DistributePot(ref game) => {
                 let num_pots = game.get_num_pots();
-                format!("distributing pot #{num_pots}")
+                &format!("distributing pot #{num_pots}")
             }
-            PokerState::RemovePlayers(_) => {
-                "removing players that joined spectators or left".to_string()
-            }
-            PokerState::DivideDonations(_) => "dividing donations".to_string(),
-            PokerState::UpdateBlinds(_) => "updating blinds".to_string(),
-            PokerState::BootPlayers(_) => {
-                "booting players that can't afford the big blind".to_string()
-            }
+            PokerState::RemovePlayers(_) => "removing players that joined spectators or left",
+            PokerState::DivideDonations(_) => "dividing donations",
+            PokerState::UpdateBlinds(_) => "updating blinds",
+            PokerState::BootPlayers(_) => "booting players that can't afford the big blind",
         };
         write!(f, "{repr}")
     }

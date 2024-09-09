@@ -21,13 +21,14 @@ pub enum Suit {
 
 impl fmt::Display for Suit {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Suit::Club => write!(f, "C"),
-            Suit::Spade => write!(f, "S"),
-            Suit::Diamond => write!(f, "D"),
-            Suit::Heart => write!(f, "H"),
-            Suit::Wild => write!(f, "W"),
-        }
+        let repr = match self {
+            Suit::Club => "C",
+            Suit::Spade => "S",
+            Suit::Diamond => "D",
+            Suit::Heart => "H",
+            Suit::Wild => "W",
+        };
+        write!(f, "{repr}")
     }
 }
 
@@ -150,11 +151,11 @@ pub enum Action {
 impl fmt::Display for Action {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let repr = match self {
-            Action::AllIn => "all-in".to_string(),
-            Action::Call(amount) => format!("call ${amount}"),
-            Action::Check => "check".to_string(),
-            Action::Fold => "fold".to_string(),
-            Action::Raise(amount) => format!("raise ${amount}"),
+            Action::AllIn => "all-in",
+            Action::Call(amount) => &format!("call ${amount}"),
+            Action::Check => "check",
+            Action::Fold => "fold",
+            Action::Raise(amount) => &format!("raise ${amount}"),
         };
         write!(f, "{repr}")
     }
@@ -224,11 +225,12 @@ pub struct Bet {
 impl fmt::Display for Bet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let amount = self.amount;
-        match self.action {
-            BetAction::AllIn => write!(f, "all-in of ${amount}"),
-            BetAction::Call => write!(f, "call of ${amount}"),
-            BetAction::Raise => write!(f, "raise of ${amount}"),
-        }
+        let repr = match self.action {
+            BetAction::AllIn => format!("all-in of ${amount}"),
+            BetAction::Call => format!("call of ${amount}"),
+            BetAction::Raise => format!("raise of ${amount}"),
+        };
+        write!(f, "{repr}")
     }
 }
 
