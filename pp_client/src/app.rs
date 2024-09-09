@@ -455,14 +455,13 @@ impl App {
             .about("Display all players (and their hands if they're showing).");
         let pots =
             Command::new("pots").about("Display the pots and the investments players have made.");
-        let raise = Command::new("raise")
-            .about("Raise the investment required to stay in the hand.")
-            .arg(
-                Arg::new("amount")
-                    .help("Raise amount.")
-                    .default_value("")
-                    .value_name("AMOUNT"),
-            );
+        let raise_about = ["Raise the investment required to stay in the hand.", "Entering `raise` without a value defaults to the min raise amount.", "Entering `raise AMOUNT` will raise by AMOUNT, but AMOUNT must be >= the min raise amount."].join("\n");
+        let raise = Command::new("raise").about(raise_about).arg(
+            Arg::new("amount")
+                .help("Raise amount.")
+                .default_value("")
+                .value_name("AMOUNT"),
+        );
         let show = Command::new("show").about("Show your hand. Only possible during the showdown.");
         let spectate = Command::new("spectate").about(
             "Join spectators. If you're a player, you won't spectate until the game is over.",
