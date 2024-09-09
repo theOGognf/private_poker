@@ -214,9 +214,9 @@ impl fmt::Display for Bet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let amount = self.amount;
         match self.action {
-            BetAction::AllIn => write!(f, "all-in with ${amount}"),
-            BetAction::Call => write!(f, "call with ${amount}"),
-            BetAction::Raise => write!(f, "raise with ${amount}"),
+            BetAction::AllIn => write!(f, "all-in of ${amount}"),
+            BetAction::Call => write!(f, "call of ${amount}"),
+            BetAction::Raise => write!(f, "raise of ${amount}"),
         }
     }
 }

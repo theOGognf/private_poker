@@ -325,7 +325,6 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
             .register(&mut server, SERVER, Interest::READABLE)?;
 
         loop {
-            debug!("polling for network events");
             if let Err(error) = poll.poll(&mut events, Some(config.server_timeouts.poll)) {
                 match error.kind() {
                     io::ErrorKind::Interrupted => continue,
@@ -693,11 +692,11 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             tx_server.send(msg)?;
                             waker.wake()?;
 
-                            // Force spectate them so they don't disrupt
+                            // Force remove them so they don't disrupt
                             // future games and ack it.
-                            warn!("{username} will be forced to spectate at the end of the game");
-                            state.spectate_user(&username)?;
-                            let command = ClientCommand::ChangeState(UserState::Spectate);
+                            warn!("{username} will be removed at the end of the game");
+                            state.remove_user(&username)?;
+                            let command = ClientCommand::Leave;
                             let msg = ServerMessage::Ack(ClientMessage { username, command });
                             tx_server.send(msg)?;
                             waker.wake()?;

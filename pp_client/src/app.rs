@@ -1,9 +1,9 @@
 use anyhow::{bail, Error};
 use chrono::{DateTime, Utc};
-use clap::Command;
+use clap::{Arg, Command};
 use mio::{Events, Interest, Poll, Waker};
 use private_poker::{
-    entities::Action,
+    entities::{Action, Usd},
     game::GameView,
     messages::UserState,
     net::{
@@ -39,7 +39,9 @@ pub const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
 #[derive(Clone)]
 enum RecordKind {
+    Alert,
     Error,
+    Game,
     System,
     User,
 }
@@ -64,7 +66,9 @@ impl Record {
 impl From<Record> for ListItem<'_> {
     fn from(val: Record) -> Self {
         let kind = match val.kind {
+            RecordKind::Alert => format!("{:6}", "ALERT").light_magenta(),
             RecordKind::Error => format!("{:6}", "ERROR").light_red(),
+            RecordKind::Game => format!("{:6}", "GAME").light_blue(),
             RecordKind::System => format!("{:6}", "SYSTEM").light_yellow(),
             RecordKind::User => format!("{:6}", "USER").light_green(),
         };
@@ -246,6 +250,7 @@ impl UserInput {
 pub struct App {
     username: String,
     addr: String,
+    commands: Command,
     /// History of recorded messages
     log_handle: LogHandle,
     /// Current value of the input box
@@ -253,10 +258,192 @@ pub struct App {
 }
 
 impl App {
-    fn commands() -> Command {
+    fn handle_command(
+        &mut self,
+        user_input: &str,
+        action_options: &HashSet<Action>,
+        view: &GameView,
+        tx_client: &Sender<ClientMessage>,
+        waker: &Waker,
+    ) -> Result<(), Error> {
+        let cmd = user_input.split(' ');
+        match self.commands.clone().try_get_matches_from(cmd) {
+            Ok(matches) => {
+                if let Some(cmd) = matches.subcommand_name() {
+                    match cmd {
+                        "all-in" => {
+                            if let Some(action) = action_options.get(&Action::AllIn) {
+                                let msg = ClientMessage {
+                                    username: self.username.to_string(),
+                                    command: ClientCommand::TakeAction(action.clone()),
+                                };
+                                tx_client.send(msg)?;
+                                waker.wake()?;
+                            } else {
+                                let record =
+                                    Record::new(RecordKind::Error, "can't all-in now".to_string());
+                                self.log_handle.push(record.into());
+                            }
+                        }
+                        "board" => {
+                            let content = view.board_to_string();
+                            let line = Line::raw(content);
+                            self.log_handle.push(line.into());
+                        }
+                        "call" => {
+                            // Actions use their variant for comparisons,
+                            // so we don't need to provide the correct call
+                            // amount to see if it exists within the action
+                            // options.
+                            if let Some(action) = action_options.get(&Action::Call(0)) {
+                                let msg = ClientMessage {
+                                    username: self.username.to_string(),
+                                    command: ClientCommand::TakeAction(action.clone()),
+                                };
+                                tx_client.send(msg)?;
+                                waker.wake()?;
+                            } else {
+                                let record =
+                                    Record::new(RecordKind::Error, "can't call now".to_string());
+                                self.log_handle.push(record.into());
+                            }
+                        }
+                        "check" => {
+                            if let Some(action) = action_options.get(&Action::Check) {
+                                let msg = ClientMessage {
+                                    username: self.username.to_string(),
+                                    command: ClientCommand::TakeAction(action.clone()),
+                                };
+                                tx_client.send(msg)?;
+                                waker.wake()?;
+                            } else {
+                                let record =
+                                    Record::new(RecordKind::Error, "can't check now".to_string());
+                                self.log_handle.push(record.into());
+                            }
+                        }
+                        "clear" => self.log_handle.clear(),
+                        "exit" => bail!("exit"),
+                        "fold" => {
+                            if let Some(action) = action_options.get(&Action::Fold) {
+                                let msg = ClientMessage {
+                                    username: self.username.clone(),
+                                    command: ClientCommand::TakeAction(action.clone()),
+                                };
+                                tx_client.send(msg)?;
+                                waker.wake()?;
+                            } else {
+                                let record =
+                                    Record::new(RecordKind::Error, "can't fold now".to_string());
+                                self.log_handle.push(record.into());
+                            }
+                        }
+                        "game" => {
+                            let content = view.to_string();
+                            self.log_handle.push_multiline_string(content);
+                        }
+                        "play" => {
+                            let msg = ClientMessage {
+                                username: self.username.clone(),
+                                command: ClientCommand::ChangeState(UserState::Play),
+                            };
+                            tx_client.send(msg)?;
+                            waker.wake()?;
+                        }
+                        "players" => {
+                            let content = view.players_to_string();
+                            self.log_handle.push_multiline_string(content);
+                        }
+                        "pots" => {
+                            let content = view.pots_to_string();
+                            self.log_handle.push_multiline_string(content);
+                        }
+                        "raise" => {
+                            // Actions use their variant for comparisons,
+                            // so we don't need to provide the correct raise
+                            // amount to see if it exists within the action
+                            // options.
+                            if let Some(action) = action_options.get(&Action::Raise(0)) {
+                                match matches.subcommand_matches("raise") {
+                                    Some(matches) => match matches.get_one::<String>("amount") {
+                                        Some(amount) => {
+                                            let action = if let Ok(amount) = amount.parse::<Usd>() {
+                                                Action::Raise(amount)
+                                            } else {
+                                                action.clone()
+                                            };
+                                            let msg = ClientMessage {
+                                                username: self.username.to_string(),
+                                                command: ClientCommand::TakeAction(action),
+                                            };
+                                            tx_client.send(msg)?;
+                                            waker.wake()?;
+                                        }
+                                        None => unreachable!("always matches"),
+                                    },
+                                    None => {
+                                        unreachable!("always matches")
+                                    }
+                                }
+                            } else {
+                                let record =
+                                    Record::new(RecordKind::Error, "can't raise now".to_string());
+                                self.log_handle.push(record.into());
+                            }
+                        }
+                        "show" => {
+                            let msg = ClientMessage {
+                                username: self.username.clone(),
+                                command: ClientCommand::ShowHand,
+                            };
+                            tx_client.send(msg)?;
+                            waker.wake()?;
+                        }
+                        "spectate" => {
+                            let msg = ClientMessage {
+                                username: self.username.clone(),
+                                command: ClientCommand::ChangeState(UserState::Spectate),
+                            };
+                            tx_client.send(msg)?;
+                            waker.wake()?;
+                        }
+                        "start" => {
+                            let msg = ClientMessage {
+                                username: self.username.clone(),
+                                command: ClientCommand::StartGame,
+                            };
+                            tx_client.send(msg)?;
+                            waker.wake()?;
+                        }
+                        "table" => {
+                            let content = view.table_to_string();
+                            self.log_handle.push_multiline_string(content);
+                        }
+                        _ => unreachable!("always a subcommand"),
+                    }
+                }
+            }
+            Err(_) => match user_input {
+                "help" => {
+                    let help = self.commands.render_help().to_string();
+                    self.log_handle.push_multiline_string(help);
+                }
+                invalid => {
+                    let record = Record::new(
+                        RecordKind::Error,
+                        format!("unrecognized command: {invalid}"),
+                    );
+                    self.log_handle.push(record.into());
+                }
+            },
+        }
+        return Ok(());
+    }
+
+    pub fn new(username: String, addr: String) -> Self {
         let all_in = Command::new("all-in").about("Go all-in, betting all your money on the hand.");
         let board = Command::new("board").about("Display community cards.");
-        let call = Command::new("call").about("Match the investment required to continue playing.");
+        let call = Command::new("call").about("Match the investment required to stay in the hand.");
         let check =
             Command::new("check").about("Check, voting to move to the next card reveal(s).");
         let clear = Command::new("clear").about("Clear command outputs.");
@@ -268,21 +455,33 @@ impl App {
             .about("Display all players (and their hands if they're showing).");
         let pots =
             Command::new("pots").about("Display the pots and the investments players have made.");
+        let raise = Command::new("raise")
+            .about("Raise the investment required to stay in the hand.")
+            .arg(
+                Arg::new("amount")
+                    .help("Raise amount.")
+                    .default_value("")
+                    .value_name("AMOUNT"),
+            );
         let show = Command::new("show").about("Show your hand. Only possible during the showdown.");
-        let spectate = Command::new("spectate").about("Join spectators. If you're playing a game, you won't join spectators until the current game is over.");
+        let spectate = Command::new("spectate").about(
+            "Join spectators. If you're a player, you won't spectate until the game is over.",
+        );
         let start = Command::new("start").about("Start the game.");
-        let table = Command::new("table").about("Display the community cards and all the player hands that are visible from your perspective.");
+        let table = Command::new("table")
+            .about("Display all entities at the table (cards, pots, and players).");
         let usage = [
             "Enter any of the following to interact with the poker server or render game states.\n",
             "The typical flow is:",
             "- Two or more users prepare to play with `play`",
-            "- A user starts the game with `start`",
+            "- A player starts the game with `start`",
             "- Users view the game state with `game` and `table`",
             "- Players make actions with `all-in`, `call`, `check`, `fold`, and `raise`",
+            "- Players show hands with `show`",
             "- Users spectate with `spectate` or leave with `exit`",
         ]
         .join("\n");
-        Command::new("poker")
+        let commands = Command::new("poker")
             .disable_help_flag(true)
             .disable_version_flag(true)
             .next_line_help(true)
@@ -299,16 +498,15 @@ impl App {
             .subcommand(play)
             .subcommand(players)
             .subcommand(pots)
+            .subcommand(raise)
             .subcommand(show)
             .subcommand(spectate)
             .subcommand(start)
-            .subcommand(table)
-    }
-
-    pub fn new(username: String, addr: String) -> Self {
+            .subcommand(table);
         Self {
             username,
             addr,
+            commands,
             log_handle: LogHandle::new(),
             user_input: UserInput::new(),
         }
@@ -320,8 +518,6 @@ impl App {
         mut view: GameView,
         mut terminal: DefaultTerminal,
     ) -> Result<(), Error> {
-        let commands = App::commands();
-
         let (tx_client, rx_client): (Sender<ClientMessage>, Receiver<ClientMessage>) = channel();
         let (tx_server, rx_server): (Sender<ServerResponse>, Receiver<ServerResponse>) = channel();
 
@@ -447,7 +643,7 @@ impl App {
             }
         });
 
-        let mut action_options = HashSet::new();
+        let mut action_options: HashSet<Action> = HashSet::new();
         loop {
             terminal.draw(|frame| self.draw(frame))?;
 
@@ -471,174 +667,13 @@ impl App {
                                     let user_input = self.user_input.submit();
                                     let record = Record::new(RecordKind::User, user_input.clone());
                                     self.log_handle.push(record.into());
-                                    let cmd = user_input.split(' ');
-                                    match commands.clone().try_get_matches_from(cmd) {
-                                        Ok(matches) => {
-                                            if let Some(cmd) = matches.subcommand_name() {
-                                                match cmd {
-                                                    "all-in" => {
-                                                        if let Some(action) =
-                                                            action_options.take(&Action::AllIn)
-                                                        {
-                                                            let msg = ClientMessage {
-                                                                username: self.username.to_string(),
-                                                                command: ClientCommand::TakeAction(
-                                                                    action,
-                                                                ),
-                                                            };
-                                                            tx_client.send(msg)?;
-                                                            waker.wake()?;
-                                                        } else {
-                                                            let record = Record::new(
-                                                                RecordKind::Error,
-                                                                "can't all-in now".to_string(),
-                                                            );
-                                                            self.log_handle.push(record.into());
-                                                        }
-                                                    }
-                                                    "board" => {
-                                                        let content = view.board_to_string();
-                                                        let line = Line::raw(content);
-                                                        self.log_handle.push(line.into());
-                                                    }
-                                                    "call" => {
-                                                        if let Some(action) =
-                                                            action_options.take(&Action::Call(0))
-                                                        {
-                                                            let msg = ClientMessage {
-                                                                username: self.username.to_string(),
-                                                                command: ClientCommand::TakeAction(
-                                                                    action,
-                                                                ),
-                                                            };
-                                                            tx_client.send(msg)?;
-                                                            waker.wake()?;
-                                                        } else {
-                                                            let record = Record::new(
-                                                                RecordKind::Error,
-                                                                "can't call now".to_string(),
-                                                            );
-                                                            self.log_handle.push(record.into());
-                                                        }
-                                                    }
-                                                    "check" => {
-                                                        if let Some(action) =
-                                                            action_options.take(&Action::Check)
-                                                        {
-                                                            let msg = ClientMessage {
-                                                                username: self.username.to_string(),
-                                                                command: ClientCommand::TakeAction(
-                                                                    action,
-                                                                ),
-                                                            };
-                                                            tx_client.send(msg)?;
-                                                            waker.wake()?;
-                                                        } else {
-                                                            let record = Record::new(
-                                                                RecordKind::Error,
-                                                                "can't check now".to_string(),
-                                                            );
-                                                            self.log_handle.push(record.into());
-                                                        }
-                                                    }
-                                                    "clear" => self.log_handle.clear(),
-                                                    "exit" => return Ok(()),
-                                                    "fold" => {
-                                                        if let Some(action) =
-                                                            action_options.take(&Action::Fold)
-                                                        {
-                                                            let msg = ClientMessage {
-                                                                username: self.username.clone(),
-                                                                command: ClientCommand::TakeAction(
-                                                                    action,
-                                                                ),
-                                                            };
-                                                            tx_client.send(msg)?;
-                                                            waker.wake()?;
-                                                        } else {
-                                                            let record = Record::new(
-                                                                RecordKind::Error,
-                                                                "can't fold now".to_string(),
-                                                            );
-                                                            self.log_handle.push(record.into());
-                                                        }
-                                                    }
-                                                    "game" => {
-                                                        let content = view.to_string();
-                                                        self.log_handle
-                                                            .push_multiline_string(content);
-                                                    }
-                                                    "play" => {
-                                                        let msg = ClientMessage {
-                                                            username: self.username.clone(),
-                                                            command: ClientCommand::ChangeState(
-                                                                UserState::Play,
-                                                            ),
-                                                        };
-                                                        tx_client.send(msg)?;
-                                                        waker.wake()?;
-                                                    }
-                                                    "players" => {
-                                                        let content = view.players_to_string();
-                                                        self.log_handle
-                                                            .push_multiline_string(content);
-                                                    }
-                                                    "pots" => {
-                                                        let content = view.pots_to_string();
-                                                        self.log_handle
-                                                            .push_multiline_string(content);
-                                                    }
-                                                    "raise" => {}
-                                                    "show" => {
-                                                        let msg = ClientMessage {
-                                                            username: self.username.clone(),
-                                                            command: ClientCommand::ShowHand,
-                                                        };
-                                                        tx_client.send(msg)?;
-                                                        waker.wake()?;
-                                                    }
-                                                    "spectate" => {
-                                                        let msg = ClientMessage {
-                                                            username: self.username.clone(),
-                                                            command: ClientCommand::ChangeState(
-                                                                UserState::Spectate,
-                                                            ),
-                                                        };
-                                                        tx_client.send(msg)?;
-                                                        waker.wake()?;
-                                                    }
-                                                    "start" => {
-                                                        let msg = ClientMessage {
-                                                            username: self.username.clone(),
-                                                            command: ClientCommand::StartGame,
-                                                        };
-                                                        tx_client.send(msg)?;
-                                                        waker.wake()?;
-                                                    }
-                                                    "table" => {
-                                                        let content = view.table_to_string();
-                                                        self.log_handle
-                                                            .push_multiline_string(content);
-                                                    }
-                                                    _ => unreachable!("always a subcommand"),
-                                                }
-                                            }
-                                        }
-                                        Err(_) => match user_input.as_str() {
-                                            "help" => {
-                                                let help =
-                                                    commands.clone().render_help().to_string();
-                                                self.log_handle.push_multiline_string(help);
-                                            }
-                                            invalid => {
-                                                let record = Record::new(
-                                                    RecordKind::Error,
-                                                    format!("unrecognized command: {invalid}"),
-                                                );
-                                                self.log_handle.push(record.into());
-                                            }
-                                        },
-                                    }
+                                    self.handle_command(
+                                        &user_input,
+                                        &action_options,
+                                        &view,
+                                        &tx_client,
+                                        &waker,
+                                    )?;
                                 }
                                 KeyCode::Char(to_insert) => self.user_input.input(to_insert),
                                 KeyCode::Backspace => self.user_input.backspace(),
@@ -669,12 +704,12 @@ impl App {
                     }
                     ServerResponse::GameView(new_view) => view = new_view,
                     ServerResponse::Status(msg) => {
-                        let record = Record::new(RecordKind::System, msg);
+                        let record = Record::new(RecordKind::Game, msg);
                         self.log_handle.push(record.into());
                     }
                     ServerResponse::TurnSignal(new_action_options) => {
                         action_options = new_action_options;
-                        let record = Record::new(RecordKind::System, "it's your turn!".to_string());
+                        let record = Record::new(RecordKind::Alert, "it's your turn!".to_string());
                         self.log_handle.push(record.into());
                     }
                     ServerResponse::UserError(error) => {
