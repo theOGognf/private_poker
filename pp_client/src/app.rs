@@ -272,12 +272,22 @@ impl App {
         let spectate = Command::new("spectate").about("Join spectators. If you're playing a game, you won't join spectators until the current game is over.");
         let start = Command::new("start").about("Start the game.");
         let table = Command::new("table").about("Display the community cards and all the player hands that are visible from your perspective.");
+        let usage = [
+            "Enter any of the following to interact with the poker server or render game states.\n",
+            "The typical flow is:",
+            "- Two or more users prepare to play with `play`",
+            "- A user starts the game with `start`",
+            "- Users view the game state with `game` and `table`",
+            "- Players make actions with `all-in`, `call`, `check`, `fold`, and `raise`",
+            "- Users spectate with `spectate` or leave with `exit`",
+        ]
+        .join("\n");
         Command::new("poker")
             .disable_help_flag(true)
             .disable_version_flag(true)
             .next_line_help(true)
             .no_binary_name(true)
-            .override_usage("Enter any of the following to interact with the poker server or render game states.")
+            .override_usage(usage)
             .subcommand(all_in)
             .subcommand(board)
             .subcommand(call)
