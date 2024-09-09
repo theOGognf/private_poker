@@ -173,7 +173,8 @@ impl From<Bet> for Action {
 impl Action {
     pub fn to_action_string(&self) -> String {
         match self {
-            Action::AllIn | Action::Check | Action::Fold => format!("{self}s"),
+            Action::AllIn => format!("{self}s (unhinged)"),
+            Action::Check | Action::Fold => format!("{self}s"),
             Action::Call(amount) => format!("calls ${amount}"),
             Action::Raise(amount) => format!("raises ${amount}"),
         }
