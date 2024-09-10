@@ -31,7 +31,7 @@ use std::{
     net::TcpStream,
     sync::mpsc::{channel, Receiver, Sender},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 pub const MAX_LOG_RECORDS: usize = 1024;
@@ -46,6 +46,8 @@ enum RecordKind {
     User,
 }
 
+/// A timestamped terminal message with an importance label to help
+/// direct user attention.
 #[derive(Clone)]
 struct Record {
     datetime: DateTime<Utc>,
@@ -84,6 +86,7 @@ impl From<Record> for ListItem<'_> {
     }
 }
 
+/// Manages terminal messages and the terminal view position.
 struct LogHandle {
     list_items: VecDeque<ListItem<'static>>,
     list_state: ListState,
@@ -150,6 +153,7 @@ impl LogHandle {
     }
 }
 
+/// Manages user inputs at the terminal.
 struct UserInput {
     /// Position of cursor in the input box.
     char_idx: usize,
@@ -246,7 +250,43 @@ impl UserInput {
     }
 }
 
-/// App holds the state of the application
+/// Provides turn time remaining warnings at specific intervals when it's
+/// the player's turn.
+struct TurnTimeoutWarnings {
+    t: Instant,
+    warnings: VecDeque<u8>,
+}
+
+impl TurnTimeoutWarnings {
+    fn check(&mut self) -> Option<u8> {
+        if let Some(warning) = self.warnings.pop_front() {
+            let dt = Instant::now() - self.t;
+            let remaining = 30u64.saturating_sub(dt.as_secs());
+            if remaining as u8 <= warning {
+                Some(warning)
+            } else {
+                self.warnings.push_front(warning);
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    fn new() -> Self {
+        Self {
+            t: Instant::now(),
+            warnings: VecDeque::with_capacity(8),
+        }
+    }
+
+    fn reset(&mut self) {
+        self.t = Instant::now();
+        self.warnings = VecDeque::from_iter([30, 20, 10, 5, 4, 3, 2, 1]);
+    }
+}
+
+/// App holds the application state.
 pub struct App {
     username: String,
     addr: String,
@@ -647,7 +687,8 @@ impl App {
             }
         });
 
-        let mut action_options: HashSet<Action> = HashSet::new();
+        let mut action_options = HashSet::new();
+        let mut turn_timeout_warnings = TurnTimeoutWarnings::new();
         loop {
             terminal.draw(|frame| self.draw(frame))?;
 
@@ -713,6 +754,7 @@ impl App {
                     }
                     ServerResponse::TurnSignal(new_action_options) => {
                         action_options = new_action_options;
+                        turn_timeout_warnings.reset();
                         let record = Record::new(RecordKind::Alert, "it's your turn!".to_string());
                         self.log_handle.push(record.into());
 
@@ -726,6 +768,12 @@ impl App {
                         self.log_handle.push(record.into());
                     }
                 };
+            }
+
+            // Signal how much time is left to the user at specific intervals.
+            if let Some(warning) = turn_timeout_warnings.check() {
+                let record = Record::new(RecordKind::Alert, format!("{warning:>2} second(s) left"));
+                self.log_handle.push(record.into());
             }
         }
     }

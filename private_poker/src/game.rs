@@ -101,16 +101,16 @@ pub struct PlayerView {
 
 impl fmt::Display for PlayerView {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut repr = vec![format!("{} | {} |", self.user, self.state)];
-        match self.cards.len() {
-            0 => repr.push(" ???  ???".to_string()),
-            _ => {
-                for card in self.cards.iter() {
-                    repr.push(card.to_string());
-                }
-            }
-        }
-        write!(f, "{}", repr.join(" "))
+        let cards = if self.cards.is_empty() {
+            " ???  ???".to_string()
+        } else {
+            self.cards
+                .iter()
+                .map(|card| card.to_string())
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        write!(f, "{} | {} | {}", self.user, cards, self.state)
     }
 }
 
@@ -173,23 +173,8 @@ impl fmt::Display for GameView {
         writeln!(f, "open seats:")?;
         writeln!(f, "{}", self.open_seats.len())?;
 
-        // Display all players.
         writeln!(f)?;
-        writeln!(f, "players:")?;
-        let players = self.players_to_string();
-        writeln!(f, "{players}")?;
-
-        // Display all pots.
-        writeln!(f)?;
-        writeln!(f, "pots:")?;
-        let pots = self.pots_to_string();
-        writeln!(f, "{pots}")?;
-
-        // Display community cards (cards on the board).
-        writeln!(f)?;
-        writeln!(f, "board:")?;
-        let board = self.board_to_string();
-        write!(f, "{board}")?;
+        write!(f, "{}", self.table_to_string())?;
 
         Ok(())
     }
@@ -225,7 +210,7 @@ impl GameView {
         if self.players.is_empty() {
             "n/a".to_string()
         } else {
-            let mut hands_repr = vec![];
+            let mut repr = vec![];
             for player in self.players.iter() {
                 let hand_repr = if player.cards.is_empty() {
                     "???".to_string()
@@ -239,10 +224,10 @@ impl GameView {
                         .collect::<Vec<_>>()
                         .join(" | ")
                 };
-                let repr = format!("{} | {}", player, hand_repr);
-                hands_repr.push(repr);
+                let player_repr = format!("{} | {}", player, hand_repr);
+                repr.push(player_repr);
             }
-            hands_repr.join("\n")
+            repr.join("\n")
         }
     }
 
