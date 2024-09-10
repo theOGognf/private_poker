@@ -252,13 +252,21 @@ impl UserInput {
 
 /// Provides turn time remaining warnings at specific intervals when it's
 /// the player's turn.
-struct TurnTimeoutWarnings {
+struct TurnWarnings {
     t: Instant,
     warnings: VecDeque<u8>,
 }
 
-impl TurnTimeoutWarnings {
-    fn check(&mut self) -> Option<u8> {
+impl TurnWarnings {
+    fn new() -> Self {
+        Self {
+            t: Instant::now(),
+            warnings: VecDeque::with_capacity(8),
+        }
+    }
+
+    /// Check for a new warning.
+    fn pop(&mut self) -> Option<u8> {
         if let Some(warning) = self.warnings.pop_front() {
             let dt = Instant::now() - self.t;
             let remaining = 30u64.saturating_sub(dt.as_secs());
@@ -270,13 +278,6 @@ impl TurnTimeoutWarnings {
             }
         } else {
             None
-        }
-    }
-
-    fn new() -> Self {
-        Self {
-            t: Instant::now(),
-            warnings: VecDeque::with_capacity(8),
         }
     }
 
@@ -688,7 +689,7 @@ impl App {
         });
 
         let mut action_options = HashSet::new();
-        let mut turn_timeout_warnings = TurnTimeoutWarnings::new();
+        let mut turn_warnings = TurnWarnings::new();
         loop {
             terminal.draw(|frame| self.draw(frame))?;
 
@@ -754,7 +755,7 @@ impl App {
                     }
                     ServerResponse::TurnSignal(new_action_options) => {
                         action_options = new_action_options;
-                        turn_timeout_warnings.reset();
+                        turn_warnings.reset();
                         let record = Record::new(RecordKind::Alert, "it's your turn!".to_string());
                         self.log_handle.push(record.into());
 
@@ -771,7 +772,7 @@ impl App {
             }
 
             // Signal how much time is left to the user at specific intervals.
-            if let Some(warning) = turn_timeout_warnings.check() {
+            if let Some(warning) = turn_warnings.pop() {
                 let record = Record::new(RecordKind::Alert, format!("{warning:>2} second(s) left"));
                 self.log_handle.push(record.into());
             }
