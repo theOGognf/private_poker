@@ -49,7 +49,7 @@ impl fmt::Display for Card {
             13 => "K",
             v => &v.to_string(),
         };
-        let repr = format!("{value}{}", self.1);
+        let repr = format!("{value}/{}", self.1);
         write!(f, "{repr:>4}")
     }
 }
@@ -104,8 +104,7 @@ impl fmt::Display for SubHand {
             })
             .collect::<Vec<_>>()
             .join(" ");
-        let repr = format!("{repr} {}", self.rank);
-        write!(f, "{repr:16}")
+        write!(f, "{repr} {}", self.rank)
     }
 }
 

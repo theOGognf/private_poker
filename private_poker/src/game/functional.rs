@@ -136,7 +136,7 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
         if straight_count >= 5 {
             let straight_subhand = SubHand {
                 rank: Rank::Straight,
-                values: (*value - 4..*value).rev().collect(),
+                values: (*value - 5..*value).rev().collect(),
             };
             // We don't need to push the straight into the heap if something
             // better was already found.

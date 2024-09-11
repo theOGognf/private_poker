@@ -254,36 +254,41 @@ impl UserInput {
 /// the player's turn.
 struct TurnWarnings {
     t: Instant,
-    warnings: VecDeque<u8>,
+    idx: usize,
+    warnings: [u8; 8],
 }
 
 impl TurnWarnings {
+    /// Check for a new warning.
+    fn check(&mut self) -> Option<u8> {
+        if self.idx > 0 {
+            let ceiling = self.warnings.last().expect("warnings immutable");
+            let warning = self.warnings[self.idx - 1];
+            let dt = Instant::now() - self.t;
+            let remaining = ceiling.saturating_sub(dt.as_secs() as u8);
+            if remaining <= warning {
+                self.idx -= 1;
+                return Some(warning);
+            }
+        }
+        None
+    }
+
+    fn clear(&mut self) {
+        self.idx = 0;
+    }
+
     fn new() -> Self {
         Self {
             t: Instant::now(),
-            warnings: VecDeque::with_capacity(8),
-        }
-    }
-
-    /// Check for a new warning.
-    fn pop(&mut self) -> Option<u8> {
-        if let Some(warning) = self.warnings.pop_front() {
-            let dt = Instant::now() - self.t;
-            let remaining = 30u64.saturating_sub(dt.as_secs());
-            if remaining as u8 <= warning {
-                Some(warning)
-            } else {
-                self.warnings.push_front(warning);
-                None
-            }
-        } else {
-            None
+            idx: 0,
+            warnings: [1, 2, 3, 4, 5, 10, 20, 30],
         }
     }
 
     fn reset(&mut self) {
         self.t = Instant::now();
-        self.warnings = VecDeque::from_iter([30, 20, 10, 5, 4, 3, 2, 1]);
+        self.idx = self.warnings.len();
     }
 }
 
@@ -741,6 +746,12 @@ impl App {
             if let Ok(msg) = rx_server.try_recv() {
                 match msg {
                     ServerResponse::Ack(msg) => {
+                        // Our action was acknowledged, so we don't need warnings anymore.
+                        if let ClientCommand::TakeAction(_) = msg.command {
+                            if msg.username == self.username {
+                                turn_warnings.clear();
+                            }
+                        }
                         let record = Record::new(RecordKind::System, msg.to_string());
                         self.log_handle.push(record.into());
                     }
@@ -772,7 +783,7 @@ impl App {
             }
 
             // Signal how much time is left to the user at specific intervals.
-            if let Some(warning) = turn_warnings.pop() {
+            if let Some(warning) = turn_warnings.check() {
                 let record = Record::new(RecordKind::Alert, format!("{warning:>2} second(s) left"));
                 self.log_handle.push(record.into());
             }

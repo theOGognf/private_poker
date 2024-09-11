@@ -41,9 +41,9 @@ pub enum UserError {
     NotEnoughPlayers,
     #[error("tried acting out of turn")]
     OutOfTurnAction,
-    #[error("already exists")]
+    #[error("user already exists")]
     UserAlreadyExists,
-    #[error("does not exist")]
+    #[error("user does not exist")]
     UserDoesNotExist,
     #[error("not playing")]
     UserNotPlaying,
@@ -212,17 +212,14 @@ impl GameView {
         } else {
             let mut repr = vec![];
             for player in self.players.iter() {
-                let hand_repr = if player.cards.is_empty() {
-                    "???".to_string()
+                let mut cards = self.board.clone();
+                cards.extend(player.cards.clone());
+                cards.sort_unstable();
+                let hand = eval(&cards);
+                let hand_repr = if let Some(subhand) = hand.first() {
+                    &subhand.to_string()
                 } else {
-                    let mut cards = self.board.clone();
-                    cards.extend(player.cards.clone());
-                    cards.sort_unstable();
-                    let hand = eval(&cards);
-                    hand.iter()
-                        .map(|subhand| subhand.to_string())
-                        .collect::<Vec<_>>()
-                        .join(" | ")
+                    "???"
                 };
                 let player_repr = format!("{} | {}", player, hand_repr);
                 repr.push(player_repr);
@@ -1364,12 +1361,20 @@ impl Game<ShowHands> {
 
 impl From<Game<ShowHands>> for Game<DistributePot> {
     fn from(mut value: Game<ShowHands>) -> Self {
-        if let Some(pot) = value.data.pots.last() {
-            for (player_idx, _) in pot.investments.iter() {
-                let player = &mut value.data.players[*player_idx];
-                match player.state {
-                    PlayerState::AllIn | PlayerState::Wait => player.state = PlayerState::Show,
-                    _ => {}
+        let num_players_remaining: usize = value
+            .data
+            .players
+            .iter()
+            .map(|p| if p.state == PlayerState::Fold { 0 } else { 1 })
+            .sum();
+        if num_players_remaining > 1 {
+            if let Some(pot) = value.data.pots.last() {
+                for (player_idx, _) in pot.investments.iter() {
+                    let player = &mut value.data.players[*player_idx];
+                    match player.state {
+                        PlayerState::AllIn | PlayerState::Wait => player.state = PlayerState::Show,
+                        _ => {}
+                    }
                 }
             }
         }
