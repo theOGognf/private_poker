@@ -110,7 +110,7 @@ impl fmt::Display for PlayerView {
                 .collect::<Vec<_>>()
                 .join(" ")
         };
-        write!(f, "{} | {} | {}", self.user, cards, self.state)
+        write!(f, "{} | {} | {}", self.user, self.state, cards)
     }
 }
 
