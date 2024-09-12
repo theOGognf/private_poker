@@ -18,7 +18,7 @@ use ratatui::{
     layout::{Constraint, Layout, Margin, Position},
     style::{Style, Stylize},
     symbols::scrollbar,
-    text::{Line, Text},
+    text::{Line, Span, Text},
     widgets::{
         Block, List, ListDirection, ListItem, ListState, Paragraph, ScrollDirection, Scrollbar,
         ScrollbarOrientation, ScrollbarState,
@@ -39,11 +39,11 @@ pub const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
 #[derive(Clone)]
 enum RecordKind {
+    Ack,
     Alert,
     Error,
     Game,
-    System,
-    User,
+    You,
 }
 
 /// A timestamped terminal message with an importance label to help
@@ -67,17 +67,17 @@ impl Record {
 
 impl From<Record> for ListItem<'_> {
     fn from(val: Record) -> Self {
-        let kind = match val.kind {
-            RecordKind::Alert => format!("{:6}", "ALERT").light_magenta(),
-            RecordKind::Error => format!("{:6}", "ERROR").light_red(),
-            RecordKind::Game => format!("{:6}", "GAME").light_yellow(),
-            RecordKind::System => format!("{:6}", "SYSTEM").light_blue(),
-            RecordKind::User => format!("{:6}", "USER").light_green(),
+        let repr = match val.kind {
+            RecordKind::Ack => "ACK".light_blue(),
+            RecordKind::Alert => "ALERT".light_magenta(),
+            RecordKind::Error => "ERROR".light_red(),
+            RecordKind::Game => "GAME".light_yellow(),
+            RecordKind::You => "YOU".light_green(),
         };
 
         let msg = vec![
             format!("[{} ", val.datetime.format("%Y-%m-%d %H:%M:%S")).into(),
-            kind,
+            Span::styled(format!("{repr:5}"), repr.style),
             format!("]: {}", val.content).into(),
         ];
 
@@ -716,7 +716,7 @@ impl App {
                             KeyModifiers::NONE => match code {
                                 KeyCode::Enter => {
                                     let user_input = self.user_input.submit();
-                                    let record = Record::new(RecordKind::User, user_input.clone());
+                                    let record = Record::new(RecordKind::You, user_input.clone());
                                     self.log_handle.push(record.into());
                                     self.handle_command(
                                         &user_input,
@@ -752,7 +752,7 @@ impl App {
                                 turn_warnings.clear();
                             }
                         }
-                        let record = Record::new(RecordKind::System, msg.to_string());
+                        let record = Record::new(RecordKind::Ack, msg.to_string());
                         self.log_handle.push(record.into());
                     }
                     ServerResponse::ClientError(error) => {
