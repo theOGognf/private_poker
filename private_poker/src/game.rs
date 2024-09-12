@@ -1,4 +1,3 @@
-use functional::eval;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use serde::{Deserialize, Serialize};
@@ -214,8 +213,8 @@ impl GameView {
             for player in self.players.iter() {
                 let mut cards = self.board.clone();
                 cards.extend(player.cards.clone());
-                cards.sort_unstable();
-                let hand = eval(&cards);
+                functional::prepare_hand(&mut cards);
+                let hand = functional::eval(&cards);
                 let hand_repr = if let Some(subhand) = hand.first() {
                     &subhand.to_string()
                 } else {
@@ -1407,13 +1406,7 @@ impl Game<DistributePot> {
                     let hand_eval = || {
                         let mut cards = player.cards.clone();
                         cards.extend(self.data.board.clone());
-                        cards.sort_unstable();
-                        // Add ace highs to the hand for evaluation.
-                        for card_idx in 0..4 {
-                            if let Card(1, suit) = cards[card_idx] {
-                                cards.push(Card(14, suit));
-                            }
-                        }
+                        functional::prepare_hand(&mut cards);
                         functional::eval(&cards)
                     };
                     let hand = self

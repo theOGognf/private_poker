@@ -108,15 +108,16 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                 }
             }
 
+            let values = maybe_straight_flush_cards.iter().rev().copied().collect();
             if is_straight_flush {
                 hands.push(SubHand {
                     rank: Rank::StraightFlush,
-                    values: Vec::from(maybe_straight_flush_cards),
+                    values,
                 })
             } else {
                 hands.push(SubHand {
                     rank: Rank::Flush,
-                    values: Vec::from(maybe_straight_flush_cards),
+                    values,
                 })
             }
         }
@@ -136,7 +137,7 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
         if straight_count >= 5 {
             let straight_subhand = SubHand {
                 rank: Rank::Straight,
-                values: (*value - 5..*value).rev().collect(),
+                values: (*value - 4..=*value).rev().collect(),
             };
             // We don't need to push the straight into the heap if something
             // better was already found.
@@ -354,13 +355,35 @@ pub fn new_deck() -> [Card; 52] {
     deck
 }
 
+/// Prepare a hand for evaluation by sorting it and adding high
+/// aces to it so aces can be treated as 1s in addition to 14s.
+///
+/// # Examples
+///
+/// ```
+/// use private_poker::{entities::{Card, Rank, Suit}, functional::prepare_hand};
+///
+/// let mut cards = vec![Card(11, Suit::Club), Card(1, Suit::Heart), Card(10, Suit::Spade)];
+/// prepare_hand(&mut cards);
+/// assert_eq!(cards, vec![Card(1, Suit::Heart), Card(10, Suit::Spade), Card(11, Suit::Club), Card(14, Suit::Heart)])
+/// ```
+pub fn prepare_hand(cards: &mut Vec<Card>) {
+    cards.sort_unstable();
+    // Add ace highs to the hand for evaluation.
+    for card_idx in 0..4 {
+        if let Card(1, suit) = cards[card_idx] {
+            cards.push(Card(14, suit));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{argmax, eval};
-    use crate::game::entities::{Card, Rank, Suit};
+    use crate::game::entities::{Card, Rank, SubHand, Suit};
 
     struct TestHand {
-        expected_rank: Rank,
+        expected_best_subhand: SubHand,
         cards: Vec<Card>,
     }
 
@@ -372,8 +395,8 @@ mod tests {
                 let (test_hand1, test_hand2, expected_winner) = $value;
                 let hand1 = eval(&test_hand1.cards);
                 let hand2 = eval(&test_hand2.cards);
-                assert_eq!(test_hand1.expected_rank, hand1[0].rank);
-                assert_eq!(test_hand2.expected_rank, hand2[0].rank);
+                assert_eq!(test_hand1.expected_best_subhand, hand1[0]);
+                assert_eq!(test_hand2.expected_best_subhand, hand2[0]);
                 assert_eq!(expected_winner, argmax(&[hand1, hand2]));
             }
         )*
@@ -381,193 +404,415 @@ mod tests {
     }
 
     eval_and_argmax_tests! {
-        straight_flush_wins_to_flush: (TestHand{expected_rank: Rank::StraightFlush, cards: vec![
-            Card(1, Suit::Heart),
-            Card(5, Suit::Heart),
-            Card(6, Suit::Heart),
-            Card(7, Suit::Heart),
-            Card(8, Suit::Heart),
-            Card(9, Suit::Heart),
-            Card(14, Suit::Heart),
-        ]}, TestHand{expected_rank: Rank::Flush, cards: vec![
-            Card(2, Suit::Diamond),
-            Card(4, Suit::Diamond),
-            Card(5, Suit::Diamond),
-            Card(6, Suit::Diamond),
-            Card(7, Suit::Diamond),
-        ]}, vec![0]),
-        straight_loses_to_straight_flush: (TestHand{expected_rank: Rank::Straight, cards: vec![
-            Card(4, Suit::Heart),
-            Card(5, Suit::Heart),
-            Card(6, Suit::Club),
-            Card(7, Suit::Heart),
-            Card(8, Suit::Heart),
-        ]}, TestHand{expected_rank: Rank::StraightFlush, cards: vec![
-            Card(3, Suit::Diamond),
-            Card(4, Suit::Diamond),
-            Card(5, Suit::Diamond),
-            Card(6, Suit::Diamond),
-            Card(7, Suit::Diamond),
-        ]}, vec![1]),
-        straight_wins_to_high_card: (TestHand{expected_rank: Rank::Straight, cards: vec![
-            Card(4, Suit::Heart),
-            Card(5, Suit::Heart),
-            Card(6, Suit::Club),
-            Card(7, Suit::Heart),
-            Card(8, Suit::Heart),
-        ]}, TestHand{expected_rank: Rank::HighCard, cards: vec![
-            Card(1, Suit::Diamond),
-            Card(5, Suit::Heart),
-            Card(6, Suit::Heart),
-            Card(7, Suit::Heart),
-            Card(8, Suit::Heart),
-            Card(10, Suit::Diamond),
-        ]}, vec![0]),
-        flush_loses_to_straight_flush: (TestHand{expected_rank: Rank::Flush, cards: vec![
-            Card(4, Suit::Heart),
-            Card(5, Suit::Heart),
-            Card(6, Suit::Club),
-            Card(7, Suit::Heart),
-            Card(8, Suit::Heart),
-            Card(9, Suit::Heart),
-        ]}, TestHand{expected_rank: Rank::StraightFlush, cards: vec![
-            Card(3, Suit::Diamond),
-            Card(4, Suit::Diamond),
-            Card(5, Suit::Diamond),
-            Card(6, Suit::Diamond),
-            Card(7, Suit::Diamond),
-            Card(8, Suit::Diamond),
-        ]}, vec![1]),
-        flush_loses_to_flush: (TestHand{expected_rank: Rank::Flush, cards: vec![
-            Card(2, Suit::Diamond),
-            Card(5, Suit::Diamond),
-            Card(6, Suit::Diamond),
-            Card(7, Suit::Diamond),
-            Card(8, Suit::Diamond),
-        ]}, TestHand{expected_rank: Rank::Flush, cards: vec![
-            Card(3, Suit::Diamond),
-            Card(5, Suit::Diamond),
-            Card(6, Suit::Diamond),
-            Card(7, Suit::Diamond),
-            Card(8, Suit::Diamond),
-        ]}, vec![1]),
-        high_card_loses_to_high_card: (TestHand{expected_rank: Rank::HighCard, cards: vec![
-            Card(3, Suit::Club),
-            Card(5, Suit::Heart),
-            Card(7, Suit::Diamond),
-            Card(9, Suit::Heart),
-            Card(11, Suit::Spade),
-        ]}, TestHand{expected_rank: Rank::HighCard, cards: vec![
-            Card(4, Suit::Club),
-            Card(6, Suit::Heart),
-            Card(8, Suit::Diamond),
-            Card(10, Suit::Heart),
-            Card(12, Suit::Spade),
-        ]}, vec![1]),
-        high_card_wins_to_high_card: (TestHand{expected_rank: Rank::HighCard, cards: vec![
-            Card(4, Suit::Club),
-            Card(5, Suit::Heart),
-            Card(7, Suit::Diamond),
-            Card(9, Suit::Heart),
-            Card(11, Suit::Spade),
-        ]}, TestHand{expected_rank: Rank::HighCard, cards: vec![
-            Card(3, Suit::Club),
-            Card(5, Suit::Heart),
-            Card(7, Suit::Diamond),
-            Card(9, Suit::Heart),
-            Card(11, Suit::Spade),
-        ]}, vec![0]),
-        high_card_ties_with_high_card: (TestHand{expected_rank: Rank::HighCard, cards: vec![
-            Card(4, Suit::Club),
-            Card(5, Suit::Heart),
-            Card(7, Suit::Diamond),
-            Card(9, Suit::Heart),
-            Card(11, Suit::Spade),
-        ]}, TestHand{expected_rank: Rank::HighCard, cards: vec![
-            Card(4, Suit::Club),
-            Card(5, Suit::Heart),
-            Card(7, Suit::Diamond),
-            Card(9, Suit::Heart),
-            Card(11, Suit::Spade),
-        ]}, vec![0, 1]),
-        full_house_loses_to_full_house: (TestHand{expected_rank: Rank::FullHouse, cards: vec![
-            Card(4, Suit::Club),
-            Card(4, Suit::Heart),
-            Card(4, Suit::Diamond),
-            Card(6, Suit::Heart),
-            Card(6, Suit::Diamond),
-            Card(6, Suit::Club),
-            Card(8, Suit::Diamond),
-            Card(12, Suit::Spade),
-        ]}, TestHand{expected_rank: Rank::FullHouse, cards: vec![
-            Card(4, Suit::Club),
-            Card(4, Suit::Heart),
-            Card(4, Suit::Diamond),
-            Card(6, Suit::Heart),
-            Card(6, Suit::Diamond),
-            Card(11, Suit::Spade),
-        ]}, vec![0]),
-        two_pair_wins_to_two_pair: (TestHand{expected_rank: Rank::TwoPair, cards: vec![
-            Card(4, Suit::Club),
-            Card(4, Suit::Heart),
-            Card(6, Suit::Heart),
-            Card(8, Suit::Diamond),
-            Card(12, Suit::Club),
-            Card(12, Suit::Spade),
-        ]}, TestHand{expected_rank: Rank::TwoPair, cards: vec![
-            Card(4, Suit::Club),
-            Card(4, Suit::Heart),
-            Card(6, Suit::Heart),
-            Card(6, Suit::Diamond),
-            Card(11, Suit::Spade),
-        ]}, vec![0]),
-        one_pair_wins_to_one_pair: (TestHand{expected_rank: Rank::OnePair, cards: vec![
-            Card(4, Suit::Club),
-            Card(6, Suit::Heart),
-            Card(8, Suit::Diamond),
-            Card(12, Suit::Club),
-            Card(12, Suit::Spade),
-        ]}, TestHand{expected_rank: Rank::OnePair, cards: vec![
-            Card(3, Suit::Club),
-            Card(6, Suit::Heart),
-            Card(8, Suit::Diamond),
-            Card(12, Suit::Heart),
-            Card(12, Suit::Diamond),
-        ]}, vec![0]),
-        four_of_a_kind_wins_to_two_pair: (TestHand{expected_rank: Rank::FourOfAKind, cards: vec![
-            Card(4, Suit::Club),
-            Card(4, Suit::Heart),
-            Card(4, Suit::Diamond),
-            Card(4, Suit::Spade),
-            Card(6, Suit::Heart),
-            Card(8, Suit::Diamond),
-            Card(12, Suit::Club),
-            Card(12, Suit::Spade),
-        ]}, TestHand{expected_rank: Rank::TwoPair, cards: vec![
-            Card(4, Suit::Club),
-            Card(4, Suit::Heart),
-            Card(6, Suit::Heart),
-            Card(6, Suit::Diamond),
-            Card(11, Suit::Spade),
-        ]}, vec![0]),
-        high_card_loses_to_one_pair: (TestHand{expected_rank: Rank::HighCard, cards: vec![
-            Card(4, Suit::Club),
-            Card(12, Suit::Spade),
-        ]}, TestHand{expected_rank: Rank::OnePair, cards: vec![
-            Card(4, Suit::Club),
-            Card(4, Suit::Heart),
-            Card(11, Suit::Spade),
-        ]}, vec![1]),
-        three_of_a_kind_loses_to_three_of_a_kind: (TestHand{expected_rank: Rank::ThreeOfAKind, cards: vec![
-            Card(6, Suit::Heart),
-            Card(14, Suit::Spade),
-            Card(14, Suit::Diamond),
-            Card(14, Suit::Heart),
-        ]}, TestHand{expected_rank: Rank::ThreeOfAKind, cards: vec![
-            Card(7, Suit::Heart),
-            Card(14, Suit::Spade),
-            Card(14, Suit::Diamond),
-            Card(14, Suit::Heart),
-        ]}, vec![1]),
+        straight_flush_wins_to_flush: (
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::StraightFlush,
+                    values: vec![9, 8, 7, 6, 5] },
+                    cards: vec![
+                        Card(1, Suit::Heart),
+                        Card(5, Suit::Heart),
+                        Card(6, Suit::Heart),
+                        Card(7, Suit::Heart),
+                        Card(8, Suit::Heart),
+                        Card(9, Suit::Heart),
+                        Card(14, Suit::Heart),
+                    ]
+            },
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::Flush,
+                    values: vec![7, 6, 5, 4, 2]
+                },
+                cards: vec![
+                    Card(2, Suit::Diamond),
+                    Card(4, Suit::Diamond),
+                    Card(5, Suit::Diamond),
+                    Card(6, Suit::Diamond),
+                    Card(7, Suit::Diamond),
+                ]
+            }, vec![0]),
+        straight_loses_to_straight_flush: (
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::Straight,
+                    values: vec![8, 7, 6, 5, 4]
+                },
+                cards: vec![
+                    Card(4, Suit::Heart),
+                    Card(5, Suit::Heart),
+                    Card(6, Suit::Club),
+                    Card(7, Suit::Heart),
+                    Card(8, Suit::Heart),
+                ]
+            },
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::StraightFlush,
+                    values: vec![7, 6, 5, 4, 3]
+                },
+                cards: vec![
+                    Card(3, Suit::Diamond),
+                    Card(4, Suit::Diamond),
+                    Card(5, Suit::Diamond),
+                    Card(6, Suit::Diamond),
+                    Card(7, Suit::Diamond),
+                ]
+            }, vec![1]),
+        straight_wins_to_high_card: (
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::Straight,
+                    values: vec![8, 7, 6, 5, 4]
+                },
+                cards: vec![
+                    Card(4, Suit::Heart),
+                    Card(5, Suit::Heart),
+                    Card(6, Suit::Club),
+                    Card(7, Suit::Heart),
+                    Card(8, Suit::Heart),
+                ]
+            },
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::HighCard,
+                    values: vec![10]
+                },
+                cards: vec![
+                    Card(1, Suit::Diamond),
+                    Card(5, Suit::Heart),
+                    Card(6, Suit::Heart),
+                    Card(7, Suit::Heart),
+                    Card(8, Suit::Heart),
+                    Card(10, Suit::Diamond),
+                ]
+            }, vec![0]),
+        flush_loses_to_straight_flush: (
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::Flush,
+                    values: vec![9, 8, 7, 5, 4]
+                },
+                cards: vec![
+                    Card(4, Suit::Heart),
+                    Card(5, Suit::Heart),
+                    Card(6, Suit::Club),
+                    Card(7, Suit::Heart),
+                    Card(8, Suit::Heart),
+                    Card(9, Suit::Heart),
+                ]
+            },
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::StraightFlush,
+                    values: vec![8, 7, 6, 5, 4]
+                },
+                cards: vec![
+                    Card(3, Suit::Diamond),
+                    Card(4, Suit::Diamond),
+                    Card(5, Suit::Diamond),
+                    Card(6, Suit::Diamond),
+                    Card(7, Suit::Diamond),
+                    Card(8, Suit::Diamond),
+                ]
+            }, vec![1]),
+        flush_loses_to_flush_1: (
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::Flush,
+                    values: vec![8, 7, 6, 5, 2]
+                },
+                cards: vec![
+                    Card(2, Suit::Diamond),
+                    Card(5, Suit::Diamond),
+                    Card(6, Suit::Diamond),
+                    Card(7, Suit::Diamond),
+                    Card(8, Suit::Diamond),
+                ]
+            },
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::Flush,
+                    values: vec![8, 7, 6, 5, 3]
+                },
+                cards: vec![
+                    Card(3, Suit::Diamond),
+                    Card(5, Suit::Diamond),
+                    Card(6, Suit::Diamond),
+                    Card(7, Suit::Diamond),
+                    Card(8, Suit::Diamond),
+                ]
+            }, vec![1]),
+        flush_loses_to_flush_2: (
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::Flush,
+                    values: vec![8, 7, 6, 5, 3]
+                },
+                cards: vec![
+                    Card(3, Suit::Diamond),
+                    Card(5, Suit::Diamond),
+                    Card(6, Suit::Diamond),
+                    Card(7, Suit::Diamond),
+                    Card(8, Suit::Diamond),
+                ]
+            },
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::Flush,
+                    values: vec![10, 7, 6, 5, 2]
+                },
+                cards: vec![
+                    Card(2, Suit::Diamond),
+                    Card(5, Suit::Diamond),
+                    Card(6, Suit::Diamond),
+                    Card(7, Suit::Diamond),
+                    Card(10, Suit::Diamond),
+                ]
+            }, vec![1]),
+        high_card_loses_to_high_card: (
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::HighCard,
+                    values: vec![11]
+                },
+                cards: vec![
+                    Card(3, Suit::Club),
+                    Card(5, Suit::Heart),
+                    Card(7, Suit::Diamond),
+                    Card(9, Suit::Heart),
+                    Card(11, Suit::Spade),
+                ]
+            },
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::HighCard,
+                    values: vec![12]
+                },
+                cards: vec![
+                    Card(4, Suit::Club),
+                    Card(6, Suit::Heart),
+                    Card(8, Suit::Diamond),
+                    Card(10, Suit::Heart),
+                    Card(12, Suit::Spade),
+                ]
+            }, vec![1]),
+        high_card_wins_to_high_card: (
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::HighCard,
+                    values: vec![11]
+                },
+                cards: vec![
+                    Card(4, Suit::Club),
+                    Card(5, Suit::Heart),
+                    Card(7, Suit::Diamond),
+                    Card(9, Suit::Heart),
+                    Card(11, Suit::Spade),
+                ]
+            },
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::HighCard,
+                    values: vec![11]
+                },
+                cards: vec![
+                    Card(3, Suit::Club),
+                    Card(5, Suit::Heart),
+                    Card(7, Suit::Diamond),
+                    Card(9, Suit::Heart),
+                    Card(11, Suit::Spade),
+                ]
+    }, vec![0]),
+        high_card_ties_with_high_card: (
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::HighCard,
+                    values: vec![11]
+                },
+                    cards: vec![
+                        Card(4, Suit::Club),
+                        Card(5, Suit::Heart),
+                        Card(7, Suit::Diamond),
+                        Card(9, Suit::Heart),
+                        Card(11, Suit::Spade),
+                    ]
+            },
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::HighCard,
+                    values: vec![11]
+                },
+                cards: vec![
+                    Card(4, Suit::Club),
+                    Card(5, Suit::Heart),
+                    Card(7, Suit::Diamond),
+                    Card(9, Suit::Heart),
+                    Card(11, Suit::Spade),
+                ]
+            }, vec![0, 1]),
+        full_house_loses_to_full_house: (
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::FullHouse,
+                    values: vec![6, 6, 6, 4, 4]
+                },
+                cards: vec![
+                    Card(4, Suit::Club),
+                    Card(4, Suit::Heart),
+                    Card(4, Suit::Diamond),
+                    Card(6, Suit::Heart),
+                    Card(6, Suit::Diamond),
+                    Card(6, Suit::Club),
+                    Card(8, Suit::Diamond),
+                    Card(12, Suit::Spade),
+                ]
+            },
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::FullHouse,
+                    values: vec![4, 4, 4, 6, 6]
+                },
+                cards: vec![
+                    Card(4, Suit::Club),
+                    Card(4, Suit::Heart),
+                    Card(4, Suit::Diamond),
+                    Card(6, Suit::Heart),
+                    Card(6, Suit::Diamond),
+                    Card(11, Suit::Spade),
+                ]
+        }, vec![0]),
+        two_pair_wins_to_two_pair: (
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::TwoPair,
+                    values: vec![12, 12, 4, 4]
+                },
+                cards: vec![
+                    Card(4, Suit::Club),
+                    Card(4, Suit::Heart),
+                    Card(6, Suit::Heart),
+                    Card(8, Suit::Diamond),
+                    Card(12, Suit::Club),
+                    Card(12, Suit::Spade),
+                ]
+            },
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::TwoPair,
+                    values: vec![6, 6, 4, 4]
+                },
+                cards: vec![
+                    Card(4, Suit::Club),
+                    Card(4, Suit::Heart),
+                    Card(6, Suit::Heart),
+                    Card(6, Suit::Diamond),
+                    Card(11, Suit::Spade),
+                ]
+            }, vec![0]),
+        one_pair_wins_to_one_pair: (
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::OnePair,
+                    values: vec![12, 12]
+                },
+                cards: vec![
+                    Card(4, Suit::Club),
+                    Card(6, Suit::Heart),
+                    Card(8, Suit::Diamond),
+                    Card(12, Suit::Club),
+                    Card(12, Suit::Spade),
+                ]
+            },
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::OnePair,
+                    values: vec![12, 12]
+                },
+                cards: vec![
+                    Card(3, Suit::Club),
+                    Card(6, Suit::Heart),
+                    Card(8, Suit::Diamond),
+                    Card(12, Suit::Heart),
+                    Card(12, Suit::Diamond),
+                ]
+            }, vec![0]),
+        four_of_a_kind_wins_to_two_pair: (
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::FourOfAKind,
+                    values: vec![4, 4, 4, 4]
+                },
+                cards: vec![
+                    Card(4, Suit::Club),
+                    Card(4, Suit::Heart),
+                    Card(4, Suit::Diamond),
+                    Card(4, Suit::Spade),
+                    Card(6, Suit::Heart),
+                    Card(8, Suit::Diamond),
+                    Card(12, Suit::Club),
+                    Card(12, Suit::Spade),
+                ]
+            },
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::TwoPair,
+                    values: vec![6, 6, 4, 4]
+                },
+                cards: vec![
+                    Card(4, Suit::Club),
+                    Card(4, Suit::Heart),
+                    Card(6, Suit::Heart),
+                    Card(6, Suit::Diamond),
+                    Card(11, Suit::Spade),
+                ]
+            }, vec![0]),
+        high_card_loses_to_one_pair: (
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::HighCard,
+                    values: vec![12]
+                },
+                cards: vec![
+                    Card(4, Suit::Club),
+                    Card(12, Suit::Spade),
+                ]
+            },
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::OnePair,
+                    values: vec![4, 4]
+                },
+                cards: vec![
+                    Card(4, Suit::Club),
+                    Card(4, Suit::Heart),
+                    Card(11, Suit::Spade),
+                ]
+            }, vec![1]),
+        three_of_a_kind_loses_to_three_of_a_kind: (
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::ThreeOfAKind,
+                    values: vec![14, 14, 14]
+                },
+                cards: vec![
+                    Card(6, Suit::Heart),
+                    Card(14, Suit::Spade),
+                    Card(14, Suit::Diamond),
+                    Card(14, Suit::Heart),
+                ]
+            },
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::ThreeOfAKind,
+                    values: vec![14, 14, 14]
+                },
+                cards: vec![
+                    Card(7, Suit::Heart),
+                    Card(14, Suit::Spade),
+                    Card(14, Suit::Diamond),
+                    Card(14, Suit::Heart),
+                ]
+            }, vec![1]),
     }
 }
