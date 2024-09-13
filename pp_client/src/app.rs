@@ -301,7 +301,7 @@ pub struct App {
     log_handle: LogHandle,
     /// Current value of the input box
     user_input: UserInput,
-    /// Whether to display the table state window
+    /// Whether to display the table view window
     show_table: bool,
 }
 
@@ -808,7 +808,7 @@ impl App {
         let help_message = vec![
             "press ".into(),
             "Tab".bold(),
-            " to toggle the table state, press ".into(),
+            " to toggle the table view, press ".into(),
             "Enter".bold(),
             " to record a command, enter ".into(),
             "help".bold(),
@@ -821,7 +821,7 @@ impl App {
         let help_message = Paragraph::new(help_message);
         frame.render_widget(help_message, help_area);
 
-        // Render table state.
+        // Render table view.
         if self.show_table {
             let board = format!("board: {}", view.board_to_string());
             let blinds = format!("blinds: ${}/${}", view.big_blind, view.small_blind);
