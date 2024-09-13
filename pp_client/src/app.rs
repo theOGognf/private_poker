@@ -503,7 +503,7 @@ impl App {
             "The typical flow is:",
             "- Two or more users prepare to play with `play`",
             "- A player starts the game with `start`",
-            "- Users view the game state with Tab or `game`",
+            "- Users view the table with Tab",
             "- Players make actions with `all-in`, `call`, `check`, `fold`, and `raise`",
             "- Players show hands with `show`",
             "- Users spectate with `spectate` or leave with `exit`",
