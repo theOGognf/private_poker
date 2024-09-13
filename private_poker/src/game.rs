@@ -101,7 +101,7 @@ pub struct PlayerView {
 impl fmt::Display for PlayerView {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let cards = if self.cards.is_empty() {
-            " ???  ???".to_string()
+            " ?/??  ?/??".to_string()
         } else {
             self.cards
                 .iter()
@@ -218,7 +218,7 @@ impl GameView {
                 let hand_repr = if let Some(subhand) = hand.first() {
                     &subhand.to_string()
                 } else {
-                    "???"
+                    "????"
                 };
                 let player_repr = format!("{} | {}", player, hand_repr);
                 repr.push(player_repr);
@@ -1651,7 +1651,7 @@ impl fmt::Display for PokerState {
                 let big_blind_username = &game.data.players[game.data.big_blind_idx].user.name;
                 let small_blind = game.data.small_blind;
                 let small_blind_username = &game.data.players[game.data.small_blind_idx].user.name;
-                &format!("collecting ${big_blind} from {big_blind_username} and ${small_blind} from {small_blind_username}")
+                &format!("collecting ${big_blind}/${small_blind} from {big_blind_username}/{small_blind_username}")
             }
             PokerState::Deal(_) => "dealing cards",
             PokerState::TakeAction(ref game) => {
@@ -1672,10 +1672,10 @@ impl fmt::Display for PokerState {
                 let num_pots = game.get_num_pots();
                 &format!("distributing pot #{num_pots}")
             }
-            PokerState::RemovePlayers(_) => "removing players that joined spectators or left",
+            PokerState::RemovePlayers(_) => "updating players that joined spectators or left",
             PokerState::DivideDonations(_) => "dividing donations",
             PokerState::UpdateBlinds(_) => "updating blinds",
-            PokerState::BootPlayers(_) => "moving players that can't afford the big blind",
+            PokerState::BootPlayers(_) => "spectating players that can't afford the big blind",
         };
         write!(f, "{repr}")
     }

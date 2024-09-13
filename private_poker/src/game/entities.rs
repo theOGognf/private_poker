@@ -22,11 +22,11 @@ pub enum Suit {
 impl fmt::Display for Suit {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let repr = match self {
-            Suit::Club => "C",
-            Suit::Spade => "S",
-            Suit::Diamond => "D",
-            Suit::Heart => "H",
-            Suit::Wild => "W",
+            Suit::Club => "CL",
+            Suit::Spade => "SP",
+            Suit::Diamond => "DI",
+            Suit::Heart => "HE",
+            Suit::Wild => "WI",
         };
         write!(f, "{repr}")
     }
@@ -50,7 +50,7 @@ impl fmt::Display for Card {
             v => &v.to_string(),
         };
         let repr = format!("{value}/{}", self.1);
-        write!(f, "{repr:>4}")
+        write!(f, "{repr:>5}")
     }
 }
 
