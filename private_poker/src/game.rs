@@ -141,75 +141,53 @@ pub struct GameView {
     pub next_action_idx: Option<usize>,
 }
 
-impl fmt::Display for GameView {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "blinds: ${}/${}", self.big_blind, self.small_blind)?;
-
-        // Display users just spectating the game.
-        writeln!(f)?;
-        writeln!(f, "spectators:")?;
-        if self.spectators.is_empty() {
-            writeln!(f, "n/a")?
-        } else {
-            for user in self.spectators.values() {
-                writeln!(f, "{user}")?
-            }
-        };
-
-        // Display users in queue to play.
-        writeln!(f)?;
-        writeln!(f, "waitlisters:")?;
-        if self.waitlist.is_empty() {
-            writeln!(f, "n/a")?
-        } else {
-            for waitlister in self.waitlist.iter() {
-                writeln!(f, "{waitlister}")?;
-            }
-        }
-
-        // Display number of open seats.
-        writeln!(f)?;
-        writeln!(f, "open seats:")?;
-        writeln!(f, "{}", self.open_seats.len())?;
-
-        writeln!(f)?;
-        write!(f, "{}", self.table_to_string())?;
-
-        Ok(())
-    }
-}
-
 impl GameView {
     pub fn board_to_string(&self) -> String {
-        let mut repr = vec![];
         if self.board.is_empty() {
-            repr.push("n/a".to_string());
+            "n/a".to_string()
         } else {
-            for card in self.board.iter() {
-                repr.push(card.to_string());
-            }
+            self.board
+                .iter()
+                .map(|card| card.to_string())
+                .collect::<Vec<_>>()
+                .join(" ")
         }
-        repr.join(" ")
+    }
+
+    pub fn lobby_to_string(&self) -> String {
+        [
+            format!(
+                "spectators: {}",
+                GameView::users_to_string(&Vec::from_iter(self.spectators.values()))
+            ),
+            "".to_string(),
+            format!(
+                "waitlisters: {}",
+                GameView::users_to_string(&Vec::from_iter(self.waitlist.iter()))
+            ),
+            "".to_string(),
+            format!("open seats: {}", self.open_seats.len()),
+        ]
+        .join("\n")
     }
 
     pub fn pots_to_string(&self) -> String {
-        let mut repr = vec![];
         if self.pots.is_empty() {
-            repr.push("n/a".to_string());
+            "n/a".to_string()
         } else {
-            for (mut i, pot) in self.pots.iter().enumerate() {
-                i += 1;
-                repr.push(format!("#{}: {}", i, pot));
-            }
+            self.pots
+                .iter()
+                .map(|pot| pot.to_string())
+                .collect::<Vec<_>>()
+                .join(" ")
         }
-        repr.join("\n")
     }
 
     pub fn players_to_string(&self) -> String {
         if self.players.is_empty() {
-            "n/a".to_string()
+            "".to_string()
         } else {
-            let mut repr = vec![];
+            let mut repr = vec!["".to_string()];
             for player in self.players.iter() {
                 let mut cards = self.board.clone();
                 cards.extend(player.cards.clone());
@@ -227,18 +205,20 @@ impl GameView {
         }
     }
 
-    pub fn table_to_string(&self) -> String {
-        [
-            "pots:",
-            &self.pots_to_string(),
-            "",
-            "board:",
-            &self.board_to_string(),
-            "",
-            "players:",
-            &self.players_to_string(),
-        ]
-        .join("\n")
+    pub fn users_to_string(users: &[&UserView]) -> String {
+        if users.is_empty() {
+            "n/a".to_string()
+        } else {
+            format!(
+                "{}{}",
+                "\n",
+                users
+                    .iter()
+                    .map(|pot| pot.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            )
+        }
     }
 }
 

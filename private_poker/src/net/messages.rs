@@ -86,7 +86,7 @@ impl fmt::Display for ServerResponse {
         let repr = match &self {
             ServerResponse::Ack(msg) => msg.to_string(),
             ServerResponse::ClientError(error) => error.to_string(),
-            ServerResponse::GameView(view) => view.to_string(),
+            ServerResponse::GameView(view) => view.lobby_to_string(),
             ServerResponse::Status(status) => status.to_string(),
             ServerResponse::TurnSignal(action_options) => {
                 Game::<TakeAction>::action_options_to_string(action_options)

@@ -15,13 +15,13 @@ use private_poker::{
 use ratatui::{
     self,
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
-    layout::{Constraint, Layout, Margin, Position},
+    layout::{Alignment, Constraint, Flex, Layout, Margin, Position},
     style::{Style, Stylize},
     symbols::scrollbar,
     text::{Line, Span, Text},
     widgets::{
-        Block, List, ListDirection, ListItem, ListState, Paragraph, ScrollDirection, Scrollbar,
-        ScrollbarOrientation, ScrollbarState,
+        block, Clear, List, ListDirection, ListItem, ListState, Paragraph, ScrollDirection,
+        Scrollbar, ScrollbarOrientation, ScrollbarState,
     },
     DefaultTerminal, Frame,
 };
@@ -301,6 +301,8 @@ pub struct App {
     log_handle: LogHandle,
     /// Current value of the input box
     user_input: UserInput,
+    /// Whether to display the table state window
+    show_table: bool,
 }
 
 impl App {
@@ -330,11 +332,6 @@ impl App {
                                     Record::new(RecordKind::Error, "can't all-in now".to_string());
                                 self.log_handle.push(record.into());
                             }
-                        }
-                        "board" => {
-                            let content = view.board_to_string();
-                            let line = Line::raw(content);
-                            self.log_handle.push(line.into());
                         }
                         "call" => {
                             // Actions use their variant for comparisons,
@@ -384,8 +381,8 @@ impl App {
                                 self.log_handle.push(record.into());
                             }
                         }
-                        "game" => {
-                            let content = view.to_string();
+                        "lobby" => {
+                            let content = view.lobby_to_string();
                             self.log_handle.push_multiline_string(content);
                         }
                         "play" => {
@@ -395,14 +392,6 @@ impl App {
                             };
                             tx_client.send(msg)?;
                             waker.wake()?;
-                        }
-                        "players" => {
-                            let content = view.players_to_string();
-                            self.log_handle.push_multiline_string(content);
-                        }
-                        "pots" => {
-                            let content = view.pots_to_string();
-                            self.log_handle.push_multiline_string(content);
                         }
                         "raise" => {
                             // Actions use their variant for comparisons,
@@ -461,10 +450,6 @@ impl App {
                             tx_client.send(msg)?;
                             waker.wake()?;
                         }
-                        "table" => {
-                            let content = view.table_to_string();
-                            self.log_handle.push_multiline_string(content);
-                        }
                         _ => unreachable!("always a subcommand"),
                     }
                 }
@@ -488,19 +473,14 @@ impl App {
 
     pub fn new(username: String, addr: String) -> Self {
         let all_in = Command::new("all-in").about("Go all-in, betting all your money on the hand.");
-        let board = Command::new("board").about("Display community cards.");
         let call = Command::new("call").about("Match the investment required to stay in the hand.");
         let check =
             Command::new("check").about("Check, voting to move to the next card reveal(s).");
         let clear = Command::new("clear").about("Clear command outputs.");
         let exit = Command::new("exit").about("Exit the poker client.");
         let fold = Command::new("fold").about("Fold, forfeiting your hand.");
-        let game = Command::new("game").about("Display all game entities.");
+        let lobby = Command::new("lobby").about("Display users in the lobby.");
         let play = Command::new("play").about("Join the playing waitlist.");
-        let players = Command::new("players")
-            .about("Display all players (and their hands if they're showing).");
-        let pots =
-            Command::new("pots").about("Display the pots and the investments players have made.");
         let raise_about = [
             "Raise the investment required to stay in the hand. Entering `raise` without a value",
             "defaults to the min raise amount. Entering `raise AMOUNT` will raise by AMOUNT, but",
@@ -518,14 +498,12 @@ impl App {
             "Join spectators. If you're a player, you won't spectate until the game is over.",
         );
         let start = Command::new("start").about("Start the game.");
-        let table = Command::new("table")
-            .about("Display all entities at the table (cards, pots, and players).");
         let usage = [
             "Enter any of the following to interact with the poker server or render game states.\n",
             "The typical flow is:",
             "- Two or more users prepare to play with `play`",
             "- A player starts the game with `start`",
-            "- Users view the game state with `game` and `table`",
+            "- Users view the game state with Tab or `game`",
             "- Players make actions with `all-in`, `call`, `check`, `fold`, and `raise`",
             "- Players show hands with `show`",
             "- Users spectate with `spectate` or leave with `exit`",
@@ -538,27 +516,24 @@ impl App {
             .no_binary_name(true)
             .override_usage(usage)
             .subcommand(all_in)
-            .subcommand(board)
             .subcommand(call)
             .subcommand(check)
             .subcommand(clear)
             .subcommand(exit)
             .subcommand(fold)
-            .subcommand(game)
+            .subcommand(lobby)
             .subcommand(play)
-            .subcommand(players)
-            .subcommand(pots)
             .subcommand(raise)
             .subcommand(show)
             .subcommand(spectate)
-            .subcommand(start)
-            .subcommand(table);
+            .subcommand(start);
         Self {
             username,
             addr,
             commands,
             log_handle: LogHandle::new(),
             user_input: UserInput::new(),
+            show_table: false,
         }
     }
 
@@ -696,7 +671,7 @@ impl App {
         let mut action_options = HashSet::new();
         let mut turn_warnings = TurnWarnings::new();
         loop {
-            terminal.draw(|frame| self.draw(frame))?;
+            terminal.draw(|frame| self.draw(&view, frame))?;
 
             if event::poll(POLL_TIMEOUT)? {
                 if let Event::Key(KeyEvent {
@@ -735,6 +710,7 @@ impl App {
                                 KeyCode::Down => self.log_handle.move_down(),
                                 KeyCode::Home => self.user_input.jump_to_first(),
                                 KeyCode::End => self.user_input.jump_to_last(),
+                                KeyCode::Tab => self.show_table = !self.show_table,
                                 _ => {}
                             },
                             _ => {}
@@ -769,11 +745,6 @@ impl App {
                         turn_warnings.reset();
                         let record = Record::new(RecordKind::Alert, "it's your turn!".to_string());
                         self.log_handle.push(record.into());
-
-                        // Push the table state to the terminal so the player
-                        // doesn't have to enter a new command.
-                        let content = view.table_to_string();
-                        self.log_handle.push_multiline_string(content);
                     }
                     ServerResponse::UserError(error) => {
                         let record = Record::new(RecordKind::Error, error.to_string());
@@ -790,7 +761,7 @@ impl App {
         }
     }
 
-    fn draw(&mut self, frame: &mut Frame) {
+    fn draw(&mut self, view: &GameView, frame: &mut Frame) {
         let vertical = Layout::vertical([
             Constraint::Min(1),
             Constraint::Length(3),
@@ -802,7 +773,7 @@ impl App {
         let log_records = self.log_handle.list_items.clone();
         let log_records = List::new(log_records)
             .direction(ListDirection::BottomToTop)
-            .block(Block::bordered());
+            .block(block::Block::bordered().title("log"));
         frame.render_stateful_widget(log_records, log_area, &mut self.log_handle.list_state);
 
         // Render log window scrollbar.
@@ -823,7 +794,7 @@ impl App {
         let addr = self.addr.clone();
         let user_input = Paragraph::new(self.user_input.value.as_str())
             .style(Style::default())
-            .block(Block::bordered().title(format!("{username}@{addr}").light_green()));
+            .block(block::Block::bordered().title(format!("{username}@{addr}").light_green()));
         frame.render_widget(user_input, user_input_area);
         frame.set_cursor_position(Position::new(
             // Draw the cursor at the current position in the input field.
@@ -835,18 +806,52 @@ impl App {
 
         // Render user input help message.
         let help_message = vec![
-            "Press ".into(),
+            "press ".into(),
+            "Tab".bold(),
+            " to toggle the table state, press ".into(),
             "Enter".bold(),
             " to record a command, enter ".into(),
             "help".bold(),
-            " to view commands,".into(),
-            " or enter ".into(),
+            " to view commands, or enter ".into(),
             "exit".bold(),
-            " to exit.".into(),
+            " to exit".into(),
         ];
         let help_style = Style::default();
         let help_message = Text::from(Line::from(help_message)).patch_style(help_style);
         let help_message = Paragraph::new(help_message);
         frame.render_widget(help_message, help_area);
+
+        // Render table state.
+        if self.show_table {
+            let board = format!("board: {}", view.board_to_string());
+            let blinds = format!("blinds: ${}/${}", view.big_blind, view.small_blind);
+            let pots = format!("pot(s): {}", view.pots_to_string());
+            let table = Paragraph::new(view.players_to_string())
+                .style(Style::default().bold().light_green())
+                .block(
+                    block::Block::bordered()
+                        .title(
+                            block::Title::from(board)
+                                .position(block::Position::Top)
+                                .alignment(Alignment::Left),
+                        )
+                        .title(
+                            block::Title::from(blinds)
+                                .position(block::Position::Bottom)
+                                .alignment(Alignment::Right),
+                        )
+                        .title(
+                            block::Title::from(pots)
+                                .position(block::Position::Bottom)
+                                .alignment(Alignment::Left),
+                        ),
+                );
+            let vertical = Layout::vertical([Constraint::Percentage(70)]).flex(Flex::Center);
+            let horizontal = Layout::horizontal([Constraint::Percentage(55)]).flex(Flex::Center);
+            let [log_area] = vertical.areas(log_area);
+            let [log_area] = horizontal.areas(log_area);
+            frame.render_widget(Clear, log_area); // clears out the background
+            frame.render_widget(table, log_area);
+        }
     }
 }
