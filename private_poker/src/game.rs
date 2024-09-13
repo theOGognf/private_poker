@@ -1643,12 +1643,7 @@ impl Default for PokerState {
 impl fmt::Display for PokerState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let repr = match &self {
-            PokerState::Lobby(ref game) => {
-                let num_users = game.get_num_users();
-                let num_potential_players = game.get_num_potential_players();
-                let big_blind = game.data.big_blind;
-                &format!("in lobby with {num_users} user(s), {num_potential_players} potential player(s), and a ${big_blind} big blind")
-            }
+            PokerState::Lobby(_) => "in lobby",
             PokerState::SeatPlayers(_) => "seating players",
             PokerState::MoveButton(_) => "moving button",
             PokerState::CollectBlinds(ref game) => {
@@ -1671,7 +1666,7 @@ impl fmt::Display for PokerState {
             PokerState::River(_) => "the river",
             PokerState::ShowHands(ref game) => {
                 let num_pots = game.get_num_pots();
-                &format!("showing hands for pot #{num_pots}")
+                &format!("showing pot #{num_pots}")
             }
             PokerState::DistributePot(ref game) => {
                 let num_pots = game.get_num_pots();
@@ -1680,7 +1675,7 @@ impl fmt::Display for PokerState {
             PokerState::RemovePlayers(_) => "removing players that joined spectators or left",
             PokerState::DivideDonations(_) => "dividing donations",
             PokerState::UpdateBlinds(_) => "updating blinds",
-            PokerState::BootPlayers(_) => "booting players that can't afford the big blind",
+            PokerState::BootPlayers(_) => "moving players that can't afford the big blind",
         };
         write!(f, "{repr}")
     }

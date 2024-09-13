@@ -371,8 +371,8 @@ pub fn prepare_hand(cards: &mut Vec<Card>) {
     cards.sort_unstable();
     // Add ace highs to the hand for evaluation.
     for card_idx in 0..4 {
-        if let Card(1, suit) = cards[card_idx] {
-            cards.push(Card(14, suit));
+        if let Some(Card(1, suit)) = cards.get(card_idx) {
+            cards.push(Card(14, *suit));
         }
     }
 }
