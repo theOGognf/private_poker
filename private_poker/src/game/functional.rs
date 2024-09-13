@@ -179,33 +179,41 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                 // Check if a pair also occurs, then both pairs
                 // make a two pair.
                 if let Some(next_best_one_pair) = one_pairs.iter().nth_back(1) {
-                    let mut two_pair_cards = vec![*value; 2];
-                    two_pair_cards.extend(next_best_one_pair.values.clone());
-                    let two_pair_subhand = SubHand {
-                        rank: Rank::TwoPair,
-                        values: two_pair_cards,
-                    };
-                    subhands_per_rank
-                        .entry(Rank::TwoPair)
-                        .or_default()
-                        .insert(two_pair_subhand);
+                    // Ignore the case where a high ace and low ace get counted together
+                    // as a two pair.
+                    if *value != 14 || next_best_one_pair.values != vec![1, 1] {
+                        let mut two_pair_cards = vec![*value; 2];
+                        two_pair_cards.extend(next_best_one_pair.values.clone());
+                        let two_pair_subhand = SubHand {
+                            rank: Rank::TwoPair,
+                            values: two_pair_cards,
+                        };
+                        subhands_per_rank
+                            .entry(Rank::TwoPair)
+                            .or_default()
+                            .insert(two_pair_subhand);
+                    }
                 }
 
                 // Check if a three of a kind also occurs, then the pair
                 // and three of a kind make a full house.
                 if let Some(three_of_a_kinds) = subhands_per_rank.get(&Rank::ThreeOfAKind) {
                     if let Some(best_three_of_a_kind) = three_of_a_kinds.iter().next() {
-                        let mut full_house_cards = best_three_of_a_kind.values.clone();
-                        full_house_cards.extend(vec![*value; 2]);
-                        let full_house_subhand = SubHand {
-                            rank: Rank::FullHouse,
-                            values: full_house_cards,
-                        };
+                        // Ignore the case where a high ace and low ace get counted together
+                        // as a full house.
+                        if *value != 14 || best_three_of_a_kind.values != vec![1, 1, 1] {
+                            let mut full_house_cards = best_three_of_a_kind.values.clone();
+                            full_house_cards.extend(vec![*value; 2]);
+                            let full_house_subhand = SubHand {
+                                rank: Rank::FullHouse,
+                                values: full_house_cards,
+                            };
 
-                        subhands_per_rank
-                            .entry(Rank::FullHouse)
-                            .or_default()
-                            .insert(full_house_subhand);
+                            subhands_per_rank
+                                .entry(Rank::FullHouse)
+                                .or_default()
+                                .insert(full_house_subhand);
+                        }
                     }
                 }
             }
@@ -231,16 +239,20 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                 // and the pair make a full house.
                 if let Some(one_pairs) = subhands_per_rank.get(&Rank::OnePair) {
                     if let Some(best_one_pair) = one_pairs.iter().next_back() {
-                        let mut full_house_cards = vec![*value; 3];
-                        full_house_cards.extend(best_one_pair.values.clone());
-                        let full_house_subhand = SubHand {
-                            rank: Rank::FullHouse,
-                            values: full_house_cards,
-                        };
-                        subhands_per_rank
-                            .entry(Rank::FullHouse)
-                            .or_default()
-                            .insert(full_house_subhand);
+                        // Ignore the case where a high ace and low ace get counted together
+                        // as a full house.
+                        if *value != 14 || best_one_pair.values != vec![1, 1] {
+                            let mut full_house_cards = vec![*value; 3];
+                            full_house_cards.extend(best_one_pair.values.clone());
+                            let full_house_subhand = SubHand {
+                                rank: Rank::FullHouse,
+                                values: full_house_cards,
+                            };
+                            subhands_per_rank
+                                .entry(Rank::FullHouse)
+                                .or_default()
+                                .insert(full_house_subhand);
+                        }
                     }
                 }
 
@@ -248,16 +260,20 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                 // of a kinds make a full house.
                 if let Some(three_of_a_kinds) = subhands_per_rank.get(&Rank::ThreeOfAKind) {
                     if let Some(next_best_three_of_a_kind) = three_of_a_kinds.iter().nth_back(1) {
-                        let mut full_house_cards = vec![*value; 3];
-                        full_house_cards.extend(vec![next_best_three_of_a_kind.values[0]; 2]);
-                        let full_house_subhand = SubHand {
-                            rank: Rank::FullHouse,
-                            values: full_house_cards,
-                        };
-                        subhands_per_rank
-                            .entry(Rank::FullHouse)
-                            .or_default()
-                            .insert(full_house_subhand);
+                        // Ignore the case where a high ace and low ace get counted together
+                        // as a full house.
+                        if *value != 14 || next_best_three_of_a_kind.values != vec![1, 1, 1] {
+                            let mut full_house_cards = vec![*value; 3];
+                            full_house_cards.extend(vec![next_best_three_of_a_kind.values[0]; 2]);
+                            let full_house_subhand = SubHand {
+                                rank: Rank::FullHouse,
+                                values: full_house_cards,
+                            };
+                            subhands_per_rank
+                                .entry(Rank::FullHouse)
+                                .or_default()
+                                .insert(full_house_subhand);
+                        }
                     }
                 }
             }
@@ -431,7 +447,8 @@ mod tests {
                     Card(6, Suit::Diamond),
                     Card(7, Suit::Diamond),
                 ]
-            }, vec![0]),
+            }, vec![0]
+        ),
         straight_loses_to_straight_flush: (
             TestHand{
                 expected_best_subhand: SubHand {
@@ -458,7 +475,8 @@ mod tests {
                     Card(6, Suit::Diamond),
                     Card(7, Suit::Diamond),
                 ]
-            }, vec![1]),
+            }, vec![1]
+        ),
         straight_wins_to_high_card: (
             TestHand{
                 expected_best_subhand: SubHand {
@@ -486,7 +504,8 @@ mod tests {
                     Card(8, Suit::Heart),
                     Card(10, Suit::Diamond),
                 ]
-            }, vec![0]),
+            }, vec![0]
+        ),
         flush_loses_to_straight_flush: (
             TestHand{
                 expected_best_subhand: SubHand {
@@ -515,7 +534,8 @@ mod tests {
                     Card(7, Suit::Diamond),
                     Card(8, Suit::Diamond),
                 ]
-            }, vec![1]),
+            }, vec![1]
+        ),
         flush_loses_to_flush_1: (
             TestHand{
                 expected_best_subhand: SubHand {
@@ -542,7 +562,8 @@ mod tests {
                     Card(7, Suit::Diamond),
                     Card(8, Suit::Diamond),
                 ]
-            }, vec![1]),
+            }, vec![1]
+        ),
         flush_loses_to_flush_2: (
             TestHand{
                 expected_best_subhand: SubHand {
@@ -569,7 +590,8 @@ mod tests {
                     Card(7, Suit::Diamond),
                     Card(10, Suit::Diamond),
                 ]
-            }, vec![1]),
+            }, vec![1]
+        ),
         high_card_loses_to_high_card: (
             TestHand{
                 expected_best_subhand: SubHand {
@@ -596,7 +618,8 @@ mod tests {
                     Card(10, Suit::Heart),
                     Card(12, Suit::Spade),
                 ]
-            }, vec![1]),
+            }, vec![1]
+        ),
         high_card_wins_to_high_card: (
             TestHand{
                 expected_best_subhand: SubHand {
@@ -623,7 +646,8 @@ mod tests {
                     Card(9, Suit::Heart),
                     Card(11, Suit::Spade),
                 ]
-    }, vec![0]),
+            }, vec![0]
+        ),
         high_card_ties_with_high_card: (
             TestHand{
                 expected_best_subhand: SubHand {
@@ -650,7 +674,8 @@ mod tests {
                     Card(9, Suit::Heart),
                     Card(11, Suit::Spade),
                 ]
-            }, vec![0, 1]),
+            }, vec![0, 1]
+        ),
         full_house_loses_to_full_house: (
             TestHand{
                 expected_best_subhand: SubHand {
@@ -681,7 +706,8 @@ mod tests {
                     Card(6, Suit::Diamond),
                     Card(11, Suit::Spade),
                 ]
-        }, vec![0]),
+        }   , vec![0]
+    ),
         two_pair_wins_to_two_pair: (
             TestHand{
                 expected_best_subhand: SubHand {
@@ -709,7 +735,8 @@ mod tests {
                     Card(6, Suit::Diamond),
                     Card(11, Suit::Spade),
                 ]
-            }, vec![0]),
+            }, vec![0]
+        ),
         one_pair_wins_to_one_pair: (
             TestHand{
                 expected_best_subhand: SubHand {
@@ -736,7 +763,8 @@ mod tests {
                     Card(12, Suit::Heart),
                     Card(12, Suit::Diamond),
                 ]
-            }, vec![0]),
+            }, vec![0]
+        ),
         four_of_a_kind_wins_to_two_pair: (
             TestHand{
                 expected_best_subhand: SubHand {
@@ -766,7 +794,8 @@ mod tests {
                     Card(6, Suit::Diamond),
                     Card(11, Suit::Spade),
                 ]
-            }, vec![0]),
+            }, vec![0]
+        ),
         high_card_loses_to_one_pair: (
             TestHand{
                 expected_best_subhand: SubHand {
@@ -788,7 +817,100 @@ mod tests {
                     Card(4, Suit::Heart),
                     Card(11, Suit::Spade),
                 ]
-            }, vec![1]),
+            }, vec![1]
+        ),
+        one_pair_loses_to_two_pair: (
+                TestHand{
+                    expected_best_subhand: SubHand {
+                        rank: Rank::OnePair,
+                        values: vec![14, 14]
+                    },
+                    cards: vec![
+                        Card(1, Suit::Club),
+                        Card(1, Suit::Spade),
+                        Card(14, Suit::Club),
+                        Card(14, Suit::Spade),
+                    ]
+                },
+                TestHand{
+                    expected_best_subhand: SubHand {
+                        rank: Rank::TwoPair,
+                        values: vec![14, 14, 13, 13]
+                    },
+                    cards: vec![
+                        Card(1, Suit::Club),
+                        Card(1, Suit::Spade),
+                        Card(13, Suit::Club),
+                        Card(13, Suit::Spade),
+                        Card(14, Suit::Club),
+                        Card(14, Suit::Spade),
+                    ]
+                }, vec![1]
+        ),
+        three_of_a_kind_loses_to_full_house: (
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::ThreeOfAKind,
+                    values: vec![14, 14, 14]
+                },
+                cards: vec![
+                    Card(1, Suit::Club),
+                    Card(1, Suit::Spade),
+                    Card(1, Suit::Heart),
+                    Card(14, Suit::Club),
+                    Card(14, Suit::Spade),
+                    Card(14, Suit::Heart),
+                ]
+            },
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::FullHouse,
+                    values: vec![14, 14, 14, 13, 13]
+                },
+                cards: vec![
+                    Card(1, Suit::Club),
+                    Card(1, Suit::Spade),
+                    Card(1, Suit::Heart),
+                    Card(13, Suit::Club),
+                    Card(13, Suit::Spade),
+                    Card(14, Suit::Club),
+                    Card(14, Suit::Spade),
+                    Card(14, Suit::Heart),
+                ]
+            }, vec![1]
+        ),
+        three_of_a_kind_wins_to_three_of_a_kind: (
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::ThreeOfAKind,
+                    values: vec![14, 14, 14]
+                },
+                cards: vec![
+                    Card(1, Suit::Club),
+                    Card(1, Suit::Spade),
+                    Card(1, Suit::Heart),
+                    Card(13, Suit::Club),
+                    Card(14, Suit::Club),
+                    Card(14, Suit::Spade),
+                    Card(14, Suit::Heart),
+                ]
+            },
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::ThreeOfAKind,
+                    values: vec![14, 14, 14]
+                },
+                cards: vec![
+                    Card(1, Suit::Club),
+                    Card(1, Suit::Spade),
+                    Card(1, Suit::Heart),
+                    Card(12, Suit::Club),
+                    Card(14, Suit::Club),
+                    Card(14, Suit::Spade),
+                    Card(14, Suit::Heart),
+                ]
+            }, vec![0]
+        ),
         three_of_a_kind_loses_to_three_of_a_kind: (
             TestHand{
                 expected_best_subhand: SubHand {
@@ -813,6 +935,7 @@ mod tests {
                     Card(14, Suit::Diamond),
                     Card(14, Suit::Heart),
                 ]
-            }, vec![1]),
+            }, vec![1]
+        ),
     }
 }

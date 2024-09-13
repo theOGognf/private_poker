@@ -1651,7 +1651,7 @@ impl fmt::Display for PokerState {
                 let big_blind_username = &game.data.players[game.data.big_blind_idx].user.name;
                 let small_blind = game.data.small_blind;
                 let small_blind_username = &game.data.players[game.data.small_blind_idx].user.name;
-                &format!("collecting ${big_blind}/${small_blind} from {big_blind_username}/{small_blind_username}")
+                &format!("collecting ${big_blind} from {big_blind_username} and ${small_blind} from {small_blind_username}")
             }
             PokerState::Deal(_) => "dealing cards",
             PokerState::TakeAction(ref game) => {
