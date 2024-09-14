@@ -76,7 +76,7 @@ impl From<Record> for ListItem<'_> {
         };
 
         let msg = vec![
-            format!("[{} ", val.datetime.format("%Y-%m-%d %H:%M:%S")).into(),
+            format!("[{} ", val.datetime.format("%H:%M:%S")).into(),
             Span::styled(format!("{repr:5}"), repr.style),
             format!("]: {}", val.content).into(),
         ];
@@ -366,7 +366,6 @@ impl App {
                             }
                         }
                         "clear" => self.log_handle.clear(),
-                        "exit" => bail!("exit"),
                         "fold" => {
                             if let Some(action) = action_options.get(&Action::Fold) {
                                 let msg = ClientMessage {
@@ -455,10 +454,6 @@ impl App {
                 }
             }
             Err(_) => match user_input {
-                "help" => {
-                    let help = self.commands.render_help().to_string();
-                    self.log_handle.push_multiline_string(help);
-                }
                 invalid => {
                     let record = Record::new(
                         RecordKind::Error,
@@ -477,7 +472,6 @@ impl App {
         let check =
             Command::new("check").about("Check, voting to move to the next card reveal(s).");
         let clear = Command::new("clear").about("Clear command outputs.");
-        let exit = Command::new("exit").about("Exit the poker client.");
         let fold = Command::new("fold").about("Fold, forfeiting your hand.");
         let lobby = Command::new("lobby").about("Display users in the lobby.");
         let play = Command::new("play").about("Join the playing waitlist.");
@@ -519,7 +513,6 @@ impl App {
             .subcommand(call)
             .subcommand(check)
             .subcommand(clear)
-            .subcommand(exit)
             .subcommand(fold)
             .subcommand(lobby)
             .subcommand(play)
@@ -711,6 +704,7 @@ impl App {
                                 KeyCode::Home => self.user_input.jump_to_first(),
                                 KeyCode::End => self.user_input.jump_to_last(),
                                 KeyCode::Tab => self.show_table = !self.show_table,
+                                KeyCode::Esc => return Ok(()),
                                 _ => {}
                             },
                             _ => {}
@@ -764,10 +758,46 @@ impl App {
     fn draw(&mut self, view: &GameView, frame: &mut Frame) {
         let vertical = Layout::vertical([
             Constraint::Min(1),
+            Constraint::Length(5),
             Constraint::Length(3),
             Constraint::Length(1),
         ]);
-        let [log_area, user_input_area, help_area] = vertical.areas(frame.area());
+        let [view_area, log_area, user_input_area, help_area] = vertical.areas(frame.area());
+        let [lobby_area, table_area] =
+            Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .areas(view_area);
+
+        // Render lobby area.
+        let lobby = Paragraph::new(view.lobby_to_string())
+            .style(Style::default().bold())
+            .block(block::Block::bordered().title("lobby"));
+        frame.render_widget(lobby, lobby_area);
+
+        // Render table area.
+        let board = format!("board: {}", view.board_to_string());
+        let blinds = format!("blinds: ${}/${}", view.big_blind, view.small_blind);
+        let pots = format!("pot(s): {}", view.pots_to_string());
+        let table = Paragraph::new(view.players_to_string())
+            .style(Style::default().bold().light_green())
+            .block(
+                block::Block::bordered()
+                    .title(
+                        block::Title::from(board)
+                            .position(block::Position::Top)
+                            .alignment(Alignment::Left),
+                    )
+                    .title(
+                        block::Title::from(blinds)
+                            .position(block::Position::Bottom)
+                            .alignment(Alignment::Right),
+                    )
+                    .title(
+                        block::Title::from(pots)
+                            .position(block::Position::Bottom)
+                            .alignment(Alignment::Left),
+                    ),
+            );
+        frame.render_widget(table, table_area);
 
         // Render log window.
         let log_records = self.log_handle.list_items.clone();
@@ -808,12 +838,10 @@ impl App {
         let help_message = vec![
             "press ".into(),
             "Tab".bold(),
-            " to toggle the table view, press ".into(),
+            " view help, press ".into(),
             "Enter".bold(),
-            " to record a command, enter ".into(),
-            "help".bold(),
-            " to view commands, or enter ".into(),
-            "exit".bold(),
+            " to record a command, or press ".into(),
+            "Esc".bold(),
             " to exit".into(),
         ];
         let help_style = Style::default();
@@ -822,36 +850,6 @@ impl App {
         frame.render_widget(help_message, help_area);
 
         // Render table view.
-        if self.show_table {
-            let board = format!("board: {}", view.board_to_string());
-            let blinds = format!("blinds: ${}/${}", view.big_blind, view.small_blind);
-            let pots = format!("pot(s): {}", view.pots_to_string());
-            let table = Paragraph::new(view.players_to_string())
-                .style(Style::default().bold().light_green())
-                .block(
-                    block::Block::bordered()
-                        .title(
-                            block::Title::from(board)
-                                .position(block::Position::Top)
-                                .alignment(Alignment::Left),
-                        )
-                        .title(
-                            block::Title::from(blinds)
-                                .position(block::Position::Bottom)
-                                .alignment(Alignment::Right),
-                        )
-                        .title(
-                            block::Title::from(pots)
-                                .position(block::Position::Bottom)
-                                .alignment(Alignment::Left),
-                        ),
-                );
-            let vertical = Layout::vertical([Constraint::Percentage(70)]).flex(Flex::Center);
-            let horizontal = Layout::horizontal([Constraint::Percentage(55)]).flex(Flex::Center);
-            let [log_area] = vertical.areas(log_area);
-            let [log_area] = horizontal.areas(log_area);
-            frame.render_widget(Clear, log_area); // clears out the background
-            frame.render_widget(table, log_area);
-        }
+        if self.show_table {}
     }
 }
