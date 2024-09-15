@@ -99,7 +99,7 @@ pub struct PlayerView {
 impl fmt::Display for PlayerView {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let cards = if self.cards.is_empty() {
-            " ?/??  ?/??".to_string()
+            " ?/?  ?/?".to_string()
         } else {
             self.cards
                 .iter()
@@ -188,9 +188,9 @@ impl GameView {
                 let hand_repr = if let Some(subhand) = hand.first() {
                     &subhand.to_string()
                 } else {
-                    "????"
+                    "?"
                 };
-                let player_repr = format!("{move_repr}  {button_repr}  {player}  {hand_repr}");
+                let player_repr = format!("{move_repr}  {button_repr}  {player}  ({hand_repr})");
                 repr.push(player_repr);
             }
             repr.join("\n")

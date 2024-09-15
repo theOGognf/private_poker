@@ -5,3 +5,10 @@ members = [
     "private_poker",
 ]
 resolver = "2"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"  # Optimize for size.
+panic = "abort"
+strip = true  # Automatically strip symbols from the binary.
