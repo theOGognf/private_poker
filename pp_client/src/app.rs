@@ -94,12 +94,6 @@ struct ScrollableList {
 }
 
 impl ScrollableList {
-    pub fn clear(&mut self) {
-        self.jump_to_last();
-        self.scroll_state = self.scroll_state.content_length(0);
-        self.list_items.clear();
-    }
-
     pub fn jump_to_first(&mut self) {
         self.list_state.scroll_down_by(MAX_LOG_RECORDS as u16);
         self.scroll_state.first();
@@ -139,17 +133,6 @@ impl ScrollableList {
         self.list_items.push_front(item);
         self.scroll_state = self.scroll_state.content_length(self.list_items.len());
         self.move_down();
-    }
-
-    /// Push a string that has newlines so that each line is a separate
-    /// item in the log. This makes it such that each item can be scrolled
-    /// through independently and large strings can be rendered in parts
-    /// if they can't fit within the whole terminal.
-    pub fn push_multiline_string(&mut self, item: String) {
-        for content in item.split('\n') {
-            let line = Line::raw(content.to_string());
-            self.push(line.into());
-        }
     }
 }
 
@@ -298,7 +281,7 @@ pub struct App {
     addr: String,
     commands: Command,
     /// Help menu
-    help_menu_handle: ScrollableList,
+    help_menu_text: String,
     /// Whether to display the help menu window
     show_help_menu: bool,
     /// History of recorded messages
@@ -366,7 +349,6 @@ impl App {
                                 self.log_handle.push(record.into());
                             }
                         }
-                        "clear" => self.log_handle.clear(),
                         "fold" => {
                             if let Some(action) = action_options.get(&Action::Fold) {
                                 let msg = ClientMessage {
@@ -466,13 +448,12 @@ impl App {
         let call = Command::new("call").about("Match the investment required to stay in the hand.");
         let check =
             Command::new("check").about("Check, voting to move to the next card reveal(s).");
-        let clear = Command::new("clear").about("Clear command outputs.");
         let fold = Command::new("fold").about("Fold, forfeiting your hand.");
         let play = Command::new("play").about("Join the playing waitlist.");
         let raise_about = [
-            "Raise the investment required to stay in the hand. Entering `raise` without",
-            "a value defaults to the min raise amount. Entering `raise AMOUNT` will raise",
-            "by AMOUNT, but AMOUNT must be >= the min raise.",
+            "Raise the investment required to stay in the hand. Entering without a value",
+            "defaults to the min raise amount. Entering AMOUNT will raise by AMOUNT, but",
+            "AMOUNT must be >= the min raise.",
         ]
         .join("\n");
         let raise = Command::new("raise").about(raise_about).arg(
@@ -485,17 +466,9 @@ impl App {
         let spectate = Command::new("spectate").about(
             "Join spectators. If you're a player, you won't spectate until the game is over.",
         );
-        let start = Command::new("start").about("Start the game.");
-        let usage = [
-            "",
-            "- Two or more users prepare to play with `play`",
-            "- A player starts the game with `start`",
-            "- Users view the table with Tab",
-            "- Players make actions with `all-in`, `call`, `check`, `fold`, and `raise`",
-            "- Players show hands with `show`",
-            "- Users spectate with `spectate` or leave with Esc",
-        ]
-        .join("\n");
+        let start =
+            Command::new("start").about("Start the game. Requires 2+ players or waitlisters.");
+        let usage = "Enter commands to interact with the poker server.";
         let commands = Command::new("poker")
             .disable_help_flag(true)
             .disable_help_subcommand(true)
@@ -506,21 +479,18 @@ impl App {
             .subcommand(all_in)
             .subcommand(call)
             .subcommand(check)
-            .subcommand(clear)
             .subcommand(fold)
             .subcommand(play)
             .subcommand(raise)
             .subcommand(show)
             .subcommand(spectate)
             .subcommand(start);
-        let mut help_menu_handle = ScrollableList::new();
-        help_menu_handle.push_multiline_string(commands.clone().render_help().to_string());
-        help_menu_handle.jump_to_first();
+        let help_menu_text = commands.clone().render_help().to_string();
         Self {
             username,
             addr,
             commands,
-            help_menu_handle,
+            help_menu_text,
             show_help_menu: false,
             log_handle: ScrollableList::new(),
             user_input: UserInput::new(),
@@ -674,18 +644,8 @@ impl App {
                     if kind == KeyEventKind::Press {
                         match modifiers {
                             KeyModifiers::CONTROL => match code {
-                                KeyCode::Home if !self.show_help_menu => {
-                                    self.log_handle.jump_to_first()
-                                }
-                                KeyCode::End if !self.show_help_menu => {
-                                    self.log_handle.jump_to_last()
-                                }
-                                KeyCode::Home if self.show_help_menu => {
-                                    self.help_menu_handle.jump_to_first()
-                                }
-                                KeyCode::End if self.show_help_menu => {
-                                    self.help_menu_handle.jump_to_last()
-                                }
+                                KeyCode::Home => self.log_handle.jump_to_first(),
+                                KeyCode::End => self.log_handle.jump_to_last(),
                                 _ => {}
                             },
                             KeyModifiers::NONE => match code {
@@ -705,16 +665,8 @@ impl App {
                                 KeyCode::Delete => self.user_input.delete(),
                                 KeyCode::Left => self.user_input.move_left(),
                                 KeyCode::Right => self.user_input.move_right(),
-                                KeyCode::Up if !self.show_help_menu => self.log_handle.move_up(),
-                                KeyCode::Down if !self.show_help_menu => {
-                                    self.log_handle.move_down()
-                                }
-                                KeyCode::Up if self.show_help_menu => {
-                                    self.help_menu_handle.move_up()
-                                }
-                                KeyCode::Down if self.show_help_menu => {
-                                    self.help_menu_handle.move_down()
-                                }
+                                KeyCode::Up => self.log_handle.move_up(),
+                                KeyCode::Down => self.log_handle.move_down(),
                                 KeyCode::Home => self.user_input.jump_to_first(),
                                 KeyCode::End => self.user_input.jump_to_last(),
                                 KeyCode::Tab => self.show_help_menu = !self.show_help_menu,
@@ -828,7 +780,7 @@ impl App {
         let log_records = self.log_handle.list_items.clone();
         let log_records = List::new(log_records)
             .direction(ListDirection::BottomToTop)
-            .block(block::Block::bordered().title("log"));
+            .block(block::Block::bordered().title("history"));
         frame.render_stateful_widget(log_records, log_area, &mut self.log_handle.list_state);
 
         // Render log window scrollbar.
@@ -878,33 +830,15 @@ impl App {
         if self.show_help_menu {
             let vertical = Layout::vertical([Constraint::Percentage(85)]).flex(Flex::Center);
             let horizontal = Layout::horizontal([Constraint::Percentage(80)]).flex(Flex::Center);
-            let [help_area] = vertical.areas(top_area);
-            let [help_area] = horizontal.areas(help_area);
-            frame.render_widget(Clear, help_area); // clears out the background
+            let [help_menu_area] = vertical.areas(frame.area());
+            let [help_menu_area] = horizontal.areas(help_menu_area);
+            frame.render_widget(Clear, help_menu_area); // clears out the background
 
             // Render help text.
-            let help_text = self.help_menu_handle.list_items.clone();
-            let help_text = List::new(help_text)
-                .direction(ListDirection::BottomToTop)
-                .block(block::Block::bordered().title("help"));
-            frame.render_stateful_widget(
-                help_text,
-                help_area,
-                &mut self.help_menu_handle.list_state,
-            );
-
-            // Render help menu scrollbar.
-            frame.render_stateful_widget(
-                Scrollbar::new(ScrollbarOrientation::VerticalRight)
-                    .symbols(scrollbar::VERTICAL)
-                    .begin_symbol(None)
-                    .end_symbol(None),
-                help_area.inner(Margin {
-                    vertical: 1,
-                    horizontal: 1,
-                }),
-                &mut self.help_menu_handle.scroll_state,
-            );
+            let help_text = Paragraph::new(self.help_menu_text.clone())
+                .style(Style::default())
+                .block(block::Block::bordered());
+            frame.render_widget(help_text, help_menu_area);
         }
     }
 }
