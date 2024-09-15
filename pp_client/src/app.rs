@@ -777,7 +777,8 @@ impl App {
         ]);
         let [top_area, user_input_area, help_area] = window.areas(frame.area());
         let [view_area, log_area] =
-            Layout::vertical([Constraint::Percentage(55), Constraint::Percentage(45)]).areas(top_area);
+            Layout::vertical([Constraint::Percentage(55), Constraint::Percentage(45)])
+                .areas(top_area);
         let [lobby_area, table_area] =
             Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)])
                 .areas(view_area);
