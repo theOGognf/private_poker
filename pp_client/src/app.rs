@@ -779,7 +779,7 @@ impl App {
         let [view_area, log_area] =
             Layout::vertical([Constraint::Min(1), Constraint::Length(12)]).areas(top_area);
         let [lobby_area, table_area] =
-            Layout::horizontal([Constraint::Percentage(30), Constraint::Percentage(70)])
+            Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)])
                 .areas(view_area);
         let [spectator_area, waitlister_area] =
             Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])

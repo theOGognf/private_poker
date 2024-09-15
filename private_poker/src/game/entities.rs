@@ -125,7 +125,7 @@ pub const DEFAULT_BUY_IN: Usd = 200;
 pub const DEFAULT_MIN_BIG_BLIND: Usd = DEFAULT_BUY_IN / 20;
 pub const DEFAULT_MIN_SMALL_BLIND: Usd = DEFAULT_MIN_BIG_BLIND / 2;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct User {
     pub name: String,
     pub money: Usd,
@@ -134,7 +134,7 @@ pub struct User {
 impl fmt::Display for User {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let money = format!("${}", self.money);
-        write!(f, "{:7} {:>8}", self.name, money)
+        write!(f, "{:10} {:>11}", self.name, money)
     }
 }
 

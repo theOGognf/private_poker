@@ -198,7 +198,9 @@ impl GameView {
     }
 
     pub fn spectators_to_string(&self) -> String {
-        GameView::users_to_string(&Vec::from_iter(self.spectators.values()))
+        let mut users = Vec::from_iter(self.spectators.values());
+        users.sort_unstable();
+        GameView::users_to_string(&users)
     }
 
     pub fn users_to_string(users: &[&User]) -> String {
