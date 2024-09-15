@@ -1498,9 +1498,11 @@ impl From<Game<DistributePot>> for Game<RemovePlayers> {
 impl From<Game<RemovePlayers>> for Game<DivideDonations> {
     fn from(mut value: Game<RemovePlayers>) -> Self {
         while let Some(username) = value.data.players_to_remove.pop_first() {
-            value
-                .remove_user(&username)
-                .expect("players can be removed");
+            // It is possible for a user to leave in this state but right before
+            // this state transition occurs. That'd cause this method to return
+            // an error, but it's really OK if they left since they were going
+            // to be removed anyways.
+            value.remove_user(&username).ok();
         }
         Self {
             data: value.data,
@@ -1586,9 +1588,11 @@ impl From<Game<BootPlayers>> for Game<Lobby> {
             }
         }
         while let Some(username) = value.data.players_to_spectate.pop_first() {
-            value
-                .spectate_user(&username)
-                .expect("players can be moved");
+            // It is possible for a user to leave in this state but right before
+            // this state transition occurs. That'd cause this method to return
+            // an error, but it's really OK if they left since spectating them
+            // is a softer action.
+            value.spectate_user(&username).ok();
         }
         Self {
             data: value.data,
