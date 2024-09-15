@@ -487,8 +487,7 @@ impl App {
         );
         let start = Command::new("start").about("Start the game.");
         let usage = [
-            "Enter any of the following to interact with the poker server or render game states.\n",
-            "The typical flow is:",
+            "",
             "- Two or more users prepare to play with `play`",
             "- A player starts the game with `start`",
             "- Users view the table with Tab",
@@ -499,6 +498,7 @@ impl App {
         .join("\n");
         let commands = Command::new("poker")
             .disable_help_flag(true)
+            .disable_help_subcommand(true)
             .disable_version_flag(true)
             .next_line_help(true)
             .no_binary_name(true)
