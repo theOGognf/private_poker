@@ -89,11 +89,9 @@ impl Default for GameSettings {
     }
 }
 
-type UserView = User;
-
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PlayerView {
-    user: UserView,
+    user: User,
     state: PlayerState,
     cards: Vec<Card>,
 }
@@ -109,7 +107,7 @@ impl fmt::Display for PlayerView {
                 .collect::<Vec<_>>()
                 .join(" ")
         };
-        write!(f, "{} | {} | {}", self.user, self.state, cards)
+        write!(f, "{}  {} {}", self.user, self.state, cards)
     }
 }
 
@@ -130,8 +128,8 @@ pub struct GameView {
     pub donations: Usdf,
     pub small_blind: Usd,
     pub big_blind: Usd,
-    pub spectators: HashMap<String, UserView>,
-    pub waitlist: VecDeque<UserView>,
+    pub spectators: HashMap<String, User>,
+    pub waitlist: VecDeque<User>,
     pub open_seats: VecDeque<usize>,
     pub players: Vec<PlayerView>,
     pub board: Vec<Card>,
@@ -154,23 +152,6 @@ impl GameView {
         }
     }
 
-    pub fn lobby_to_string(&self) -> String {
-        [
-            format!(
-                "spectators: {}",
-                GameView::users_to_string(&Vec::from_iter(self.spectators.values()))
-            ),
-            "".to_string(),
-            format!(
-                "waitlisters: {}",
-                GameView::users_to_string(&Vec::from_iter(self.waitlist.iter()))
-            ),
-            "".to_string(),
-            format!("open seats: {}", self.open_seats.len()),
-        ]
-        .join("\n")
-    }
-
     pub fn pots_to_string(&self) -> String {
         if self.pots.is_empty() {
             "n/a".to_string()
@@ -188,7 +169,18 @@ impl GameView {
             "".to_string()
         } else {
             let mut repr = vec!["".to_string()];
-            for player in self.players.iter() {
+            for (player_idx, player) in self.players.iter().enumerate() {
+                let move_repr = match self.next_action_idx {
+                    Some(next_action_idx) if player_idx == next_action_idx => "→",
+                    _ => " ",
+                };
+                let button_repr = if player_idx == self.big_blind_idx {
+                    "BB"
+                } else if player_idx == self.small_blind_idx {
+                    "SB"
+                } else {
+                    "  "
+                };
                 let mut cards = self.board.clone();
                 cards.extend(player.cards.clone());
                 functional::prepare_hand(&mut cards);
@@ -198,27 +190,35 @@ impl GameView {
                 } else {
                     "????"
                 };
-                let player_repr = format!("{} | {}", player, hand_repr);
+                let player_repr = format!("{move_repr}  {button_repr}  {player}  {hand_repr}");
                 repr.push(player_repr);
             }
             repr.join("\n")
         }
     }
 
-    pub fn users_to_string(users: &[&UserView]) -> String {
+    pub fn spectators_to_string(&self) -> String {
+        GameView::users_to_string(&Vec::from_iter(self.spectators.values()))
+    }
+
+    pub fn users_to_string(users: &[&User]) -> String {
         if users.is_empty() {
-            "n/a".to_string()
+            "".to_string()
         } else {
             format!(
                 "{}{}",
                 "\n",
                 users
                     .iter()
-                    .map(|pot| pot.to_string())
+                    .map(|user| user.to_string())
                     .collect::<Vec<_>>()
                     .join("\n")
             )
         }
+    }
+
+    pub fn waitlisters_to_string(&self) -> String {
+        GameView::users_to_string(&Vec::from_iter(self.waitlist.iter()))
     }
 }
 

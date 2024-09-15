@@ -87,13 +87,13 @@ impl From<Record> for ListItem<'_> {
 }
 
 /// Manages terminal messages and the terminal view position.
-struct LogHandle {
+struct ScrollableList {
     list_items: VecDeque<ListItem<'static>>,
     list_state: ListState,
     scroll_state: ScrollbarState,
 }
 
-impl LogHandle {
+impl ScrollableList {
     pub fn clear(&mut self) {
         self.jump_to_last();
         self.scroll_state = self.scroll_state.content_length(0);
@@ -297,12 +297,14 @@ pub struct App {
     username: String,
     addr: String,
     commands: Command,
+    /// Help menu
+    help_menu_handle: ScrollableList,
+    /// Whether to display the help menu window
+    show_help_menu: bool,
     /// History of recorded messages
-    log_handle: LogHandle,
+    log_handle: ScrollableList,
     /// Current value of the input box
     user_input: UserInput,
-    /// Whether to display the table view window
-    show_table: bool,
 }
 
 impl App {
@@ -310,7 +312,6 @@ impl App {
         &mut self,
         user_input: &str,
         action_options: &HashSet<Action>,
-        view: &GameView,
         tx_client: &Sender<ClientMessage>,
         waker: &Waker,
     ) -> Result<(), Error> {
@@ -379,10 +380,6 @@ impl App {
                                     Record::new(RecordKind::Error, "can't fold now".to_string());
                                 self.log_handle.push(record.into());
                             }
-                        }
-                        "lobby" => {
-                            let content = view.lobby_to_string();
-                            self.log_handle.push_multiline_string(content);
                         }
                         "play" => {
                             let msg = ClientMessage {
@@ -453,15 +450,13 @@ impl App {
                     }
                 }
             }
-            Err(_) => match user_input {
-                invalid => {
-                    let record = Record::new(
-                        RecordKind::Error,
-                        format!("unrecognized command: {invalid}"),
-                    );
-                    self.log_handle.push(record.into());
-                }
-            },
+            Err(_) => {
+                let record = Record::new(
+                    RecordKind::Error,
+                    format!("unrecognized command: {user_input}"),
+                );
+                self.log_handle.push(record.into());
+            }
         }
         Ok(())
     }
@@ -473,12 +468,11 @@ impl App {
             Command::new("check").about("Check, voting to move to the next card reveal(s).");
         let clear = Command::new("clear").about("Clear command outputs.");
         let fold = Command::new("fold").about("Fold, forfeiting your hand.");
-        let lobby = Command::new("lobby").about("Display users in the lobby.");
         let play = Command::new("play").about("Join the playing waitlist.");
         let raise_about = [
-            "Raise the investment required to stay in the hand. Entering `raise` without a value",
-            "defaults to the min raise amount. Entering `raise AMOUNT` will raise by AMOUNT, but",
-            "AMOUNT must be >= the min raise.",
+            "Raise the investment required to stay in the hand. Entering `raise` without",
+            "a value defaults to the min raise amount. Entering `raise AMOUNT` will raise",
+            "by AMOUNT, but AMOUNT must be >= the min raise.",
         ]
         .join("\n");
         let raise = Command::new("raise").about(raise_about).arg(
@@ -500,7 +494,7 @@ impl App {
             "- Users view the table with Tab",
             "- Players make actions with `all-in`, `call`, `check`, `fold`, and `raise`",
             "- Players show hands with `show`",
-            "- Users spectate with `spectate` or leave with `exit`",
+            "- Users spectate with `spectate` or leave with Esc",
         ]
         .join("\n");
         let commands = Command::new("poker")
@@ -514,19 +508,22 @@ impl App {
             .subcommand(check)
             .subcommand(clear)
             .subcommand(fold)
-            .subcommand(lobby)
             .subcommand(play)
             .subcommand(raise)
             .subcommand(show)
             .subcommand(spectate)
             .subcommand(start);
+        let mut help_menu_handle = ScrollableList::new();
+        help_menu_handle.push_multiline_string(commands.clone().render_help().to_string());
+        help_menu_handle.jump_to_first();
         Self {
             username,
             addr,
             commands,
-            log_handle: LogHandle::new(),
+            help_menu_handle,
+            show_help_menu: false,
+            log_handle: ScrollableList::new(),
             user_input: UserInput::new(),
-            show_table: false,
         }
     }
 
@@ -677,8 +674,18 @@ impl App {
                     if kind == KeyEventKind::Press {
                         match modifiers {
                             KeyModifiers::CONTROL => match code {
-                                KeyCode::Home => self.log_handle.jump_to_first(),
-                                KeyCode::End => self.log_handle.jump_to_last(),
+                                KeyCode::Home if !self.show_help_menu => {
+                                    self.log_handle.jump_to_first()
+                                }
+                                KeyCode::End if !self.show_help_menu => {
+                                    self.log_handle.jump_to_last()
+                                }
+                                KeyCode::Home if self.show_help_menu => {
+                                    self.help_menu_handle.jump_to_first()
+                                }
+                                KeyCode::End if self.show_help_menu => {
+                                    self.help_menu_handle.jump_to_last()
+                                }
                                 _ => {}
                             },
                             KeyModifiers::NONE => match code {
@@ -689,7 +696,6 @@ impl App {
                                     self.handle_command(
                                         &user_input,
                                         &action_options,
-                                        &view,
                                         &tx_client,
                                         &waker,
                                     )?;
@@ -699,11 +705,19 @@ impl App {
                                 KeyCode::Delete => self.user_input.delete(),
                                 KeyCode::Left => self.user_input.move_left(),
                                 KeyCode::Right => self.user_input.move_right(),
-                                KeyCode::Up => self.log_handle.move_up(),
-                                KeyCode::Down => self.log_handle.move_down(),
+                                KeyCode::Up if !self.show_help_menu => self.log_handle.move_up(),
+                                KeyCode::Down if !self.show_help_menu => {
+                                    self.log_handle.move_down()
+                                }
+                                KeyCode::Up if self.show_help_menu => {
+                                    self.help_menu_handle.move_up()
+                                }
+                                KeyCode::Down if self.show_help_menu => {
+                                    self.help_menu_handle.move_down()
+                                }
                                 KeyCode::Home => self.user_input.jump_to_first(),
                                 KeyCode::End => self.user_input.jump_to_last(),
-                                KeyCode::Tab => self.show_table = !self.show_table,
+                                KeyCode::Tab => self.show_help_menu = !self.show_help_menu,
                                 KeyCode::Esc => return Ok(()),
                                 _ => {}
                             },
@@ -756,22 +770,32 @@ impl App {
     }
 
     fn draw(&mut self, view: &GameView, frame: &mut Frame) {
-        let vertical = Layout::vertical([
+        let window = Layout::vertical([
             Constraint::Min(1),
-            Constraint::Length(5),
             Constraint::Length(3),
             Constraint::Length(1),
         ]);
-        let [view_area, log_area, user_input_area, help_area] = vertical.areas(frame.area());
+        let [top_area, user_input_area, help_area] = window.areas(frame.area());
+        let [view_area, log_area] =
+            Layout::vertical([Constraint::Min(1), Constraint::Length(12)]).areas(top_area);
         let [lobby_area, table_area] =
-            Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+            Layout::horizontal([Constraint::Percentage(30), Constraint::Percentage(70)])
                 .areas(view_area);
+        let [spectator_area, waitlister_area] =
+            Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .areas(lobby_area);
 
-        // Render lobby area.
-        let lobby = Paragraph::new(view.lobby_to_string())
-            .style(Style::default().bold())
-            .block(block::Block::bordered().title("lobby"));
-        frame.render_widget(lobby, lobby_area);
+        // Render spectators area.
+        let spectators = Paragraph::new(view.spectators_to_string())
+            .style(Style::default())
+            .block(block::Block::bordered().title("spectators"));
+        frame.render_widget(spectators, spectator_area);
+
+        // Render waitlisters area.
+        let waitlisters = Paragraph::new(view.waitlisters_to_string())
+            .style(Style::default())
+            .block(block::Block::bordered().title("waitlisters"));
+        frame.render_widget(waitlisters, waitlister_area);
 
         // Render table area.
         let board = format!("board: {}", view.board_to_string());
@@ -838,7 +862,7 @@ impl App {
         let help_message = vec![
             "press ".into(),
             "Tab".bold(),
-            " view help, press ".into(),
+            " to view help, press ".into(),
             "Enter".bold(),
             " to record a command, or press ".into(),
             "Esc".bold(),
@@ -849,7 +873,37 @@ impl App {
         let help_message = Paragraph::new(help_message);
         frame.render_widget(help_message, help_area);
 
-        // Render table view.
-        if self.show_table {}
+        // Render the help menu.
+        if self.show_help_menu {
+            let vertical = Layout::vertical([Constraint::Percentage(85)]).flex(Flex::Center);
+            let horizontal = Layout::horizontal([Constraint::Percentage(80)]).flex(Flex::Center);
+            let [help_area] = vertical.areas(top_area);
+            let [help_area] = horizontal.areas(help_area);
+            frame.render_widget(Clear, help_area); // clears out the background
+
+            // Render help text.
+            let help_text = self.help_menu_handle.list_items.clone();
+            let help_text = List::new(help_text)
+                .direction(ListDirection::BottomToTop)
+                .block(block::Block::bordered().title("help"));
+            frame.render_stateful_widget(
+                help_text,
+                help_area,
+                &mut self.help_menu_handle.list_state,
+            );
+
+            // Render help menu scrollbar.
+            frame.render_stateful_widget(
+                Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                    .symbols(scrollbar::VERTICAL)
+                    .begin_symbol(None)
+                    .end_symbol(None),
+                help_area.inner(Margin {
+                    vertical: 1,
+                    horizontal: 1,
+                }),
+                &mut self.help_menu_handle.scroll_state,
+            );
+        }
     }
 }
