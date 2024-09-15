@@ -1,7 +1,7 @@
 use anyhow::Error;
 
 use clap::{Arg, Command};
-use private_poker::Client;
+use private_poker::{constants::MAX_USERNAME_LENGTH, Client};
 
 mod app;
 use app::App;
@@ -25,9 +25,11 @@ fn main() -> Result<(), Error> {
         .arg(username)
         .get_matches();
 
-    let username = matches
+    let mut username = matches
         .get_one::<String>("username")
-        .expect("username is an invalid string");
+        .expect("username is an invalid string")
+        .to_string();
+    username.truncate(MAX_USERNAME_LENGTH);
 
     let addr = matches
         .get_one::<String>("connect")
@@ -37,7 +39,7 @@ fn main() -> Result<(), Error> {
     // for connecting to the poker server, so we try to connect with
     // a blocking client instead. The client is then eventually
     // converted to a non-blocking stream and polled for events.
-    let (client, view) = Client::connect(username, addr)?;
+    let (client, view) = Client::connect(&username, addr)?;
     let Client {
         username,
         addr,

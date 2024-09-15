@@ -134,7 +134,7 @@ pub struct User {
 impl fmt::Display for User {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let money = format!("${}", self.money);
-        write!(f, "{:10} {:>11}", self.name, money)
+        write!(f, "{:16} {:>5}", self.name, money)
     }
 }
 

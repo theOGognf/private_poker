@@ -13,7 +13,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::game::{entities::Action, GameSettings, PokerState};
+use crate::{
+    constants::MAX_USERNAME_LENGTH,
+    game::{entities::Action, GameSettings, PokerState},
+};
 
 use super::{
     messages::{
@@ -528,7 +531,8 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                 // We can (maybe) read from the connection.
                                 loop {
                                     match read_prefixed::<ClientMessage, TcpStream>(stream) {
-                                        Ok(msg) => {
+                                        Ok(mut msg) => {
+                                            msg.username.truncate(MAX_USERNAME_LENGTH);
                                             let messages =
                                                 messages_to_process.entry(token).or_default();
                                             messages.push_back(msg);
