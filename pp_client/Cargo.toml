@@ -10,3 +10,4 @@ clap = "4.5.16"
 mio = { version = "1.0.2", features = ["net", "os-poll"] }
 private_poker = { path = "../private_poker" }
 ratatui = "0.28.0"
+whoami = "1.5.2"

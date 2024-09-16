@@ -1,0 +1,8 @@
+ChallengeResponseAuthentication no
+ForceCommand pp_client
+LogLevel INFO
+PasswordAuthentication no
+PermitRootLogin no
+PubkeyAuthentication yes
+SyslogFacility AUTH
+UseDNS no

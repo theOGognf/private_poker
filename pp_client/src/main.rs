@@ -9,7 +9,6 @@ use app::App;
 fn main() -> Result<(), Error> {
     let username = Arg::new("username")
         .help("client username")
-        .required(true)
         .value_name("USERNAME");
 
     let addr = Arg::new("connect")
@@ -25,10 +24,10 @@ fn main() -> Result<(), Error> {
         .arg(username)
         .get_matches();
 
-    let mut username = matches
-        .get_one::<String>("username")
-        .expect("username is an invalid string")
-        .to_string();
+    let mut username = match matches.get_one::<String>("username") {
+        Some(username) => username.to_string(),
+        None => whoami::username(),
+    };
     username.truncate(MAX_USERNAME_LENGTH);
 
     let addr = matches
