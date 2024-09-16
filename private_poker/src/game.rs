@@ -189,7 +189,7 @@ impl GameView {
                     functional::prepare_hand(&mut cards);
                     let hand = functional::eval(&cards);
                     if let Some(subhand) = hand.first() {
-                        &subhand.to_string()
+                        &subhand.rank.to_string()
                     } else {
                         "??"
                     }
