@@ -181,14 +181,18 @@ impl GameView {
                 } else {
                     "  "
                 };
-                let mut cards = self.board.clone();
-                cards.extend(player.cards.clone());
-                functional::prepare_hand(&mut cards);
-                let hand = functional::eval(&cards);
-                let hand_repr = if let Some(subhand) = hand.first() {
-                    &subhand.to_string()
+                let hand_repr = if player.cards.is_empty() {
+                    "??"
                 } else {
-                    "?"
+                    let mut cards = self.board.clone();
+                    cards.extend(player.cards.clone());
+                    functional::prepare_hand(&mut cards);
+                    let hand = functional::eval(&cards);
+                    if let Some(subhand) = hand.first() {
+                        &subhand.to_string()
+                    } else {
+                        "??"
+                    }
                 };
                 let player_repr = format!("{move_repr}  {button_repr}  {player}  ({hand_repr})");
                 repr.push(player_repr);

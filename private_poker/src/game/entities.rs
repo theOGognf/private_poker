@@ -71,14 +71,14 @@ impl fmt::Display for Rank {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let repr = match self {
             Rank::HighCard => "hi",
-            Rank::OnePair => "1pr",
-            Rank::TwoPair => "2pr",
+            Rank::OnePair => "1p",
+            Rank::TwoPair => "2p",
             Rank::ThreeOfAKind => "3k",
             Rank::Straight => "s8",
             Rank::Flush => "fs",
-            Rank::FullHouse => "full",
+            Rank::FullHouse => "fh",
             Rank::FourOfAKind => "4k",
-            Rank::StraightFlush => "s8fs",
+            Rank::StraightFlush => "sf",
         };
         write!(f, "{repr}")
     }
@@ -104,7 +104,7 @@ impl fmt::Display for SubHand {
             })
             .collect::<Vec<_>>()
             .join(" ");
-        write!(f, "{repr} {}", self.rank)
+        write!(f, "{} {repr}", self.rank)
     }
 }
 
