@@ -937,5 +937,37 @@ mod tests {
                 ]
             }, vec![1]
         ),
+        two_pair_ties_with_two_pair: (
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::TwoPair,
+                    values: vec![12, 12, 10, 10]
+                },
+                cards: vec![
+                    Card(6, Suit::Heart),
+                    Card(7, Suit::Diamond),
+                    Card(7, Suit::Spade),
+                    Card(10, Suit::Diamond),
+                    Card(10, Suit::Spade),
+                    Card(12, Suit::Diamond),
+                    Card(12, Suit::Heart),
+                ]
+            },
+            TestHand{
+                expected_best_subhand: SubHand {
+                    rank: Rank::TwoPair,
+                    values: vec![12, 12, 10, 10]
+                },
+                cards: vec![
+                    Card(5, Suit::Diamond),
+                    Card(6, Suit::Heart),
+                    Card(7, Suit::Spade),
+                    Card(10, Suit::Diamond),
+                    Card(10, Suit::Spade),
+                    Card(12, Suit::Diamond),
+                    Card(12, Suit::Heart),
+                ]
+            }, vec![0, 1]
+        ),
     }
 }
