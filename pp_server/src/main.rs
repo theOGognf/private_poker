@@ -6,6 +6,11 @@ use private_poker::{
     server::{self, PokerConfig},
     GameSettings, DEFAULT_MAX_USERS, MAX_PLAYERS,
 };
+use signal_hook::{
+    consts::{SIGINT, SIGQUIT, SIGTERM},
+    iterator::Signals,
+};
+use std::{process, thread};
 
 fn main() -> Result<(), Error> {
     let addr = Arg::new("bind")
@@ -37,6 +42,14 @@ fn main() -> Result<(), Error> {
 
     let game_settings = GameSettings::new(MAX_PLAYERS, DEFAULT_MAX_USERS, *buy_in);
     let config: PokerConfig = game_settings.into();
+
+    // Catching signals for exit.
+    let mut signals = Signals::new([SIGINT, SIGTERM, SIGQUIT])?;
+    thread::spawn(move || {
+        if let Some(sig) = signals.forever().next() {
+            process::exit(sig);
+        }
+    });
 
     env_logger::builder().format_target(false).init();
     info!("starting at {addr}");

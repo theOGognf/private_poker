@@ -517,6 +517,7 @@ dependencies = [
  "env_logger",
  "log",
  "private_poker",
+ "signal-hook",
 ]
 
 [[package]]
