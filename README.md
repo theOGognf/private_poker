@@ -8,10 +8,10 @@
 # 🃟 pri♦ate_p♡ker 🃏︎
 
 - Do you want to play poker but only have a computer and no deck of cards?
-- Are you having a slow day at work and looking for a way to pass the time
+- Are you having a slow day at work and in need of something to pass the time
   with your coworkers?
-- Are you managing a family-friendly and entirely legal poker game and need
-  a secure, private, and easy-to-use solution for running it?
+- Are you managing an entirely legal poker game and in need of a secure,
+  private, and easy-to-use solution for running it?
 
 If you answered "yes" to any of these rhetorical questions, then this project
 is for you! Host and manage a poker game from the comfort of your computer with
