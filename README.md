@@ -8,7 +8,7 @@
 
 If you answered "yes" to any of these rhetorical questions, then this project
 is for you! Host and manage a poker game from the comfort of your computer with
-**p**ri♦ate_**p**♡ker (**pp** short)!
+**p**ri♦ate_**p**♡ker (**pp** for short)!
 
 ![TUI][0]
 
