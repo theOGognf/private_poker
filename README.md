@@ -1,4 +1,10 @@
-# 🃟 pri♦ate_p♡ker 🂿
+<div align="center">
+    <i>A poker library, server, client, and TUI</i>
+</div>
+
+![TUI][0]
+
+# 🃟 pri♦ate_p♡ker 🃟
 
 - Do you want to play poker, and you have a computer but no deck of cards?
 - Is it a slow day at work and you're looking to kill some time with coworkers?
@@ -9,12 +15,6 @@
 If you answered "yes" to any of these rhetorical questions, then this project
 is for you! Host and manage a poker game from the comfort of your computer with
 **p**ri♦ate_**p**♡ker (**pp** for short)!
-
-![TUI][0]
-
-<div align="center">
-    <i>A poker library, server, client, and TUI</i>
-</div>
 
 # Poker over `ssh`
 
@@ -83,7 +83,7 @@ See each subdirectory's `README.md` for more specific info.
 
 # Non-goals
 
-I use this project to learn Rust and also play poker with friends
+I use this project to learn Rust and play poker with friends
 and family. I'm probably disinterested in anything related to this
 project that doesn't fit those goals. Specifically, the following
 are ommitted from **pp** and left as an exercise to forkers:
