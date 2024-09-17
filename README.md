@@ -1,8 +1,8 @@
-![TUI][0]
-
 <div align="center">
     <i>A poker library, server, client, and TUI</i>
 </div>
+
+![TUI][0]
 
 # 🃟 pri♦ate_p♡ker 🂿
 
