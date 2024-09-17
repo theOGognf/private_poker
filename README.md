@@ -4,7 +4,7 @@
 
 ![TUI][0]
 
-# 🃟 pri♦ate_p♡ker 🃟
+# 🃟 pri♦ate_p♡ker 🃏︎
 
 - Do you want to play poker, and you have a computer but no deck of cards?
 - Is it a slow day at work and you're looking to kill some time with coworkers?
