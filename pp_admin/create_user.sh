@@ -3,7 +3,6 @@ ssh_dir=/home/$username/.ssh
 adduser -D $username
 passwd -d $username
 mkdir -p $ssh_dir
-chmod 700 $ssh_dir
 touch $ssh_dir/authorized_keys
 chmod 644 $ssh_dir/authorized_keys
 chown $username:$username -R $ssh_dir
