@@ -1,4 +1,4 @@
-# 🂿 pri♢ate_p♡ker 🃟
+# 🂿 pri♦ate_p♡ker 🃟
 
 - Do you want to play poker, and you have a computer but no deck of cards?
 - Is it a slow day at work and you're looking to kill some time with coworkers?
@@ -8,7 +8,7 @@
 
 If you answered "yes" to any of these rhetorical questions, then this project
 is for you! Host and manage a poker game from the comfort of your computer with
-**p**ri♢ate_**p**♡ker (**pp** short)!
+**p**ri♦ate_**p**♡ker (**pp** short)!
 
 # Poker over `ssh`
 
