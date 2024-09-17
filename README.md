@@ -1,5 +1,9 @@
 ![TUI][0]
 
+<div align="center">
+    A poker library, server, client, and TUI
+</div>
+
 # 🃟 pri♦ate_p♡ker 🂿
 
 - Do you want to play poker, and you have a computer but no deck of cards?
