@@ -1,5 +1,7 @@
 # 🃟 pri♦ate_p♡ker 🂿
 
+![TUI][0]
+
 - Do you want to play poker, and you have a computer but no deck of cards?
 - Is it a slow day at work and you're looking to kill some time with coworkers?
 - Are you running a family friendly and perfectly legal poker ring and you want
@@ -93,6 +95,7 @@ are ommitted from **pp** and left as an exercise to forkers:
 - [@Mac-Genius][3] for TUI feedback
 - [@shazow][4] for inspiration from [`ssh-chat`][5]
 
+[0]: https://github.com/theOGognf/private_poker/blob/39b586751eae28033b6c1e086b81bfbd6ce74729/assets/tui.png?raw=true
 [1]: https://github.com/Ilikemath642
 [2]: https://github.com/zachstruck
 [3]: https://github.com/Mac-Genius
