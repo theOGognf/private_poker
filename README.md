@@ -1,9 +1,3 @@
-<div align="center">
-    <i>A poker library, server, client, and TUI</i>
-</div>
-
-![TUI][0]
-
 # 🃟 pri♦ate_p♡ker 🂿
 
 - Do you want to play poker, and you have a computer but no deck of cards?
@@ -15,6 +9,12 @@
 If you answered "yes" to any of these rhetorical questions, then this project
 is for you! Host and manage a poker game from the comfort of your computer with
 **p**ri♦ate_**p**♡ker (**pp** short)!
+
+![TUI][0]
+
+<div align="center">
+    <i>A poker library, server, client, and TUI</i>
+</div>
 
 # Poker over `ssh`
 
