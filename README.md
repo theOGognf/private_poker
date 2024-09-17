@@ -75,6 +75,7 @@ Host and manage poker over `ssh` with the following commands:
 See each subdirectory's `README.md` for more specific info.
 
 ```bash
+.
 ├── pp_admin        # Scripts and configs for managing the server within Docker
 ├── pp_client       # Client binary source
 ├── pp_server       # Server binary source
