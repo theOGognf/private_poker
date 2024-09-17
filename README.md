@@ -14,7 +14,7 @@
 
 If you answered "yes" to any of these rhetorical questions, then this project
 is for you! Host and manage a poker game from the comfort of your computer with
-**p**ri♦ate_**p**♡ker (**pp** for short)!
+🃟 **p**ri♦ate_**p**♡ker 🃏︎ (**pp** for short)!
 
 # Poker over `ssh`
 
@@ -38,7 +38,7 @@ Host and manage poker over `ssh` with the following commands:
 
    ```bash
    # Make sure you name it "poker"
-   docker run --name poker -p 44:22 --rm poker
+   docker run --name poker -p $port:22 --rm poker
    ```
 
 3. Create a user
@@ -54,7 +54,7 @@ Host and manage poker over `ssh` with the following commands:
 4. Users can SSH into the server and play
 
    ```bash
-   ssh -i $poker_ssh_key -p 44 $username@$host
+   ssh -i $poker_ssh_key -p $port $username@$host
    ```
 
 5. Delete a user
