@@ -1,7 +1,7 @@
 ![TUI][0]
 
 <div align="center">
-    <i>A poker library, server, client, and TUI</i>
+    <i>A poker library, server, client, and TUI.</i>
 </div>
 
 
