@@ -1,8 +1,7 @@
-![TUI][0]
-
-<div align="center">
-    A poker library, server, client, and TUI
-</div>
+<figure>
+  <img src="https://github.com/theOGognf/private_poker/blob/39b586751eae28033b6c1e086b81bfbd6ce74729/assets/tui.png?raw=true" alt="TUI">
+  <figcaption>A poker library, server, client, and TUI</figcaption>
+</figure>
 
 # 🃟 pri♦ate_p♡ker 🂿
 
