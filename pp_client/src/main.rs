@@ -1,7 +1,15 @@
+//! A low-level TCP poker client and TUI built with [`ratatui`].
+//!
+//! The client runs with two threads; one for managing the TCP connection
+//! and exchanging data, and another for updating the TUI at fixed
+//! intervals and in response to user commands.
+//!
+//! [`ratatui`]: https://github.com/ratatui/ratatui
+
 use anyhow::Error;
 
 use clap::{Arg, Command};
-use private_poker::{constants::MAX_USERNAME_LENGTH, Client};
+use private_poker::{constants::MAX_USERNAME_LENGTH, entities::Username, Client};
 
 mod app;
 use app::App;
@@ -24,7 +32,7 @@ fn main() -> Result<(), Error> {
         .arg(username)
         .get_matches();
 
-    let mut username = match matches.get_one::<String>("username") {
+    let mut username = match matches.get_one::<Username>("username") {
         Some(username) => username.to_string(),
         None => whoami::username(),
     };

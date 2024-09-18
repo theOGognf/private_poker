@@ -1,3 +1,9 @@
+//! A low-level TCP poker server.
+//!
+//! The server runs with two threads; one for managing TCP connections
+//! and exchanging data, and another for updating the poker game state
+//! at fixed intervals and in response to user commands.
+
 use anyhow::Error;
 use clap::{value_parser, Arg, Command};
 use log::info;

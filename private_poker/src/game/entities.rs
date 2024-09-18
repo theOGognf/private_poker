@@ -119,6 +119,9 @@ pub type Usd = u32;
 /// amongst users.
 pub type Usdf = f32;
 
+/// Type alias for poker user usernames.
+pub type Username = String;
+
 // By default, a player will be cleaned if they fold 20 rounds with the big
 // blind.
 pub const DEFAULT_BUY_IN: Usd = 200;

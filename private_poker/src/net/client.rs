@@ -1,10 +1,15 @@
+//! A low-level TCP poker client.
+//!
+//! This client is blocking and so is primarily used as a testing utility
+//! rather than an actual poker client.
+
 use anyhow::{bail, Error};
 use std::{net::TcpStream, thread, time::Duration};
 
 use crate::game::{entities::Action, UserError};
 
 use super::{
-    messages::{ClientCommand, ClientError, ClientMessage, GameView, ServerResponse, UserState},
+    messages::{ClientError, ClientMessage, GameView, ServerMessage, UserCommand, UserState},
     utils,
 };
 
@@ -21,7 +26,7 @@ impl Client {
     pub fn change_state(&mut self, state: UserState) -> Result<(), Error> {
         let msg = ClientMessage {
             username: self.username.clone(),
-            command: ClientCommand::ChangeState(state),
+            command: UserCommand::ChangeState(state),
         };
         utils::write_prefixed(&mut self.stream, &msg)?;
         Ok(())
@@ -41,7 +46,7 @@ impl Client {
                     stream.set_write_timeout(Some(WRITE_TIMEOUT))?;
                     let msg = ClientMessage {
                         username: username.to_string(),
-                        command: ClientCommand::Connect,
+                        command: UserCommand::Connect,
                     };
                     utils::write_prefixed(&mut stream, &msg)?;
                     Client::recv_ack(&mut stream)?;
@@ -66,20 +71,20 @@ impl Client {
         bail!("couldn't connect to {addr} as {username}")
     }
 
-    pub fn recv(&mut self) -> Result<ServerResponse, Error> {
-        match utils::read_prefixed::<ServerResponse, TcpStream>(&mut self.stream) {
-            Ok(ServerResponse::ClientError(error)) => bail!(error),
-            Ok(ServerResponse::UserError(error)) => bail!(error),
+    pub fn recv(&mut self) -> Result<ServerMessage, Error> {
+        match utils::read_prefixed::<ServerMessage, TcpStream>(&mut self.stream) {
+            Ok(ServerMessage::ClientError(error)) => bail!(error),
+            Ok(ServerMessage::UserError(error)) => bail!(error),
             Ok(msg) => Ok(msg),
             Err(error) => bail!(error),
         }
     }
 
     pub fn recv_ack(stream: &mut TcpStream) -> Result<(), Error> {
-        match utils::read_prefixed::<ServerResponse, TcpStream>(stream) {
-            Ok(ServerResponse::Ack(_)) => Ok(()),
-            Ok(ServerResponse::ClientError(error)) => bail!(error),
-            Ok(ServerResponse::UserError(error)) => bail!(error),
+        match utils::read_prefixed::<ServerMessage, TcpStream>(stream) {
+            Ok(ServerMessage::Ack(_)) => Ok(()),
+            Ok(ServerMessage::ClientError(error)) => bail!(error),
+            Ok(ServerMessage::UserError(error)) => bail!(error),
             Ok(response) => {
                 bail!("invalid server response: {response}")
             }
@@ -88,8 +93,8 @@ impl Client {
     }
 
     pub fn recv_client_error(stream: &mut TcpStream) -> Result<ClientError, Error> {
-        match utils::read_prefixed::<ServerResponse, TcpStream>(stream) {
-            Ok(ServerResponse::ClientError(error)) => Ok(error),
+        match utils::read_prefixed::<ServerMessage, TcpStream>(stream) {
+            Ok(ServerMessage::ClientError(error)) => Ok(error),
             Ok(response) => {
                 bail!("invalid server response: {response}")
             }
@@ -98,8 +103,8 @@ impl Client {
     }
 
     pub fn recv_user_error(stream: &mut TcpStream) -> Result<UserError, Error> {
-        match utils::read_prefixed::<ServerResponse, TcpStream>(stream) {
-            Ok(ServerResponse::UserError(error)) => Ok(error),
+        match utils::read_prefixed::<ServerMessage, TcpStream>(stream) {
+            Ok(ServerMessage::UserError(error)) => Ok(error),
             Ok(response) => {
                 bail!("invalid server response: {response}")
             }
@@ -108,10 +113,10 @@ impl Client {
     }
 
     pub fn recv_view(stream: &mut TcpStream) -> Result<GameView, Error> {
-        match utils::read_prefixed::<ServerResponse, TcpStream>(stream) {
-            Ok(ServerResponse::ClientError(error)) => bail!(error),
-            Ok(ServerResponse::GameView(view)) => Ok(view),
-            Ok(ServerResponse::UserError(error)) => bail!(error),
+        match utils::read_prefixed::<ServerMessage, TcpStream>(stream) {
+            Ok(ServerMessage::ClientError(error)) => bail!(error),
+            Ok(ServerMessage::GameView(view)) => Ok(view),
+            Ok(ServerMessage::UserError(error)) => bail!(error),
             Ok(response) => {
                 bail!("invalid server response: {response}")
             }
@@ -122,7 +127,7 @@ impl Client {
     pub fn show_hand(&mut self) -> Result<(), Error> {
         let msg = ClientMessage {
             username: self.username.to_string(),
-            command: ClientCommand::ShowHand,
+            command: UserCommand::ShowHand,
         };
         utils::write_prefixed(&mut self.stream, &msg)?;
         Ok(())
@@ -131,7 +136,7 @@ impl Client {
     pub fn start_game(&mut self) -> Result<(), Error> {
         let msg = ClientMessage {
             username: self.username.to_string(),
-            command: ClientCommand::StartGame,
+            command: UserCommand::StartGame,
         };
         utils::write_prefixed(&mut self.stream, &msg)?;
         Ok(())
@@ -140,7 +145,7 @@ impl Client {
     pub fn take_action(&mut self, action: Action) -> Result<(), Error> {
         let msg = ClientMessage {
             username: self.username.to_string(),
-            command: ClientCommand::TakeAction(action),
+            command: UserCommand::TakeAction(action),
         };
         utils::write_prefixed(&mut self.stream, &msg)?;
         Ok(())

@@ -4,6 +4,7 @@ use mio::{
     net::{TcpListener, TcpStream},
     Events, Interest, Poll, Token, Waker,
 };
+use serde::{Deserialize, Serialize};
 use std::{
     cmp::max,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
@@ -15,13 +16,14 @@ use std::{
 
 use crate::{
     constants::MAX_USERNAME_LENGTH,
-    game::{entities::Action, GameSettings, PokerState},
+    game::{
+        entities::{Action, Username},
+        GameSettings, GameView, PokerState,
+    },
 };
 
 use super::{
-    messages::{
-        ClientCommand, ClientError, ClientMessage, ServerMessage, ServerResponse, UserState,
-    },
+    messages::{ClientError, ClientMessage, ServerMessage, UserCommand, UserState},
     utils::{read_prefixed, write_prefixed},
 };
 
@@ -32,6 +34,25 @@ pub const DEFAULT_STEP_TIMEOUT: Duration = Duration::from_secs(5);
 pub const MAX_NETWORK_EVENTS_PER_USER: usize = 6;
 pub const SERVER: Token = Token(0);
 pub const WAKER: Token = Token(1);
+
+/// A server message for communication between poker server threads. This
+/// message is never sent directly to poker clients, but fields within the
+/// underlying variants are.
+#[derive(Debug, Deserialize, Serialize)]
+enum ServerData {
+    /// An acknowledgement of a client message, signaling that the client's
+    /// command was successfully processed by the game thread.
+    Ack(ClientMessage),
+    /// A server message sent to a specific client.
+    Response {
+        username: Username,
+        data: Box<ServerMessage>,
+    },
+    /// Game state represented as a string.
+    Status(String),
+    /// Mapping of usernames to their game views.
+    Views(HashMap<Username, GameView>),
+}
 
 fn token_to_string(token: &Token) -> String {
     let id = token.0;
@@ -111,12 +132,12 @@ impl UnconfirmedClient {
 ///   been confirmed by the poker game.
 struct TokenManager {
     pub confirmed_tokens: BTreeMap<Token, TcpStream>,
-    confirmed_usernames_to_tokens: HashMap<String, Token>,
+    confirmed_usernames_to_tokens: HashMap<Username, Token>,
     recycled_tokens: BTreeSet<Token>,
     token_association_timeout: Duration,
-    tokens_to_usernames: BTreeMap<Token, String>,
+    tokens_to_usernames: BTreeMap<Token, Username>,
     unconfirmed_tokens: BTreeMap<Token, UnconfirmedClient>,
-    unconfirmed_usernames_to_tokens: HashMap<String, Token>,
+    unconfirmed_usernames_to_tokens: HashMap<Username, Token>,
 }
 
 impl TokenManager {
@@ -141,7 +162,7 @@ impl TokenManager {
     pub fn associate_token_and_username(
         &mut self,
         token: Token,
-        username: String,
+        username: Username,
     ) -> Result<(), ClientError> {
         if self.tokens_to_usernames.contains_key(&token)
             || self.unconfirmed_usernames_to_tokens.contains_key(&username)
@@ -180,7 +201,10 @@ impl TokenManager {
         }
     }
 
-    pub fn get_confirmed_username_with_token(&self, token: &Token) -> Result<String, ClientError> {
+    pub fn get_confirmed_username_with_token(
+        &self,
+        token: &Token,
+    ) -> Result<Username, ClientError> {
         match (
             self.confirmed_tokens.contains_key(token),
             self.tokens_to_usernames.get(token),
@@ -307,7 +331,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
     let max_network_events = MAX_NETWORK_EVENTS_PER_USER * config.game_settings.max_users;
 
     let (tx_client, rx_client): (Sender<ClientMessage>, Receiver<ClientMessage>) = channel();
-    let (tx_server, rx_server): (Sender<ServerMessage>, Receiver<ServerMessage>) = channel();
+    let (tx_server, rx_server): (Sender<ServerData>, Receiver<ServerData>) = channel();
 
     let mut poll = Poll::new()?;
     let waker = Waker::new(poll.registry(), WAKER)?;
@@ -319,7 +343,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
     thread::spawn(move || -> Result<(), Error> {
         let mut events = Events::with_capacity(max_network_events);
         let mut messages_to_process: HashMap<Token, VecDeque<ClientMessage>> = HashMap::new();
-        let mut messages_to_write: HashMap<Token, VecDeque<ServerResponse>> = HashMap::new();
+        let mut messages_to_write: HashMap<Token, VecDeque<ServerMessage>> = HashMap::new();
         let mut server = TcpListener::bind(addr)?;
         let mut token_manager = TokenManager::new(config.server_timeouts.connect);
         let mut tokens_to_remove: HashSet<Token> = HashSet::new();
@@ -370,12 +394,12 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             match msg {
                                 // Acks are effectively successful responses to client
                                 // messages and are relayed to all clients.
-                                ServerMessage::Ack(msg) => {
+                                ServerData::Ack(msg) => {
                                     // We only need to check this connect edge case because all other
                                     // client commands can only go through to the parent thread if the
                                     // client's username has already been confirmed by the parent
                                     // thread.
-                                    if msg.command == ClientCommand::Connect {
+                                    if msg.command == UserCommand::Connect {
                                         let disconnected = token_manager
                                             .get_token_with_username(&msg.username)
                                             .map_or(true, |token| {
@@ -389,13 +413,13 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                         if disconnected {
                                             let msg = ClientMessage {
                                                 username: msg.username.clone(),
-                                                command: ClientCommand::Leave,
+                                                command: UserCommand::Leave,
                                             };
                                             tx_client.send(msg)?;
                                         }
                                     }
                                     for token in token_manager.confirmed_tokens.keys() {
-                                        let msg = ServerResponse::Ack(msg.clone());
+                                        let msg = ServerMessage::Ack(msg.clone());
                                         messages_to_write.entry(*token).or_default().push_back(msg);
                                         tokens_to_reregister.insert(*token);
                                     }
@@ -403,7 +427,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                 // A response goes to a single client. We can safely ignore cases where a
                                 // client no longer exists to receive a response because the response
                                 // is meant just for the client.
-                                ServerMessage::Response { username, data } => {
+                                ServerData::Response { username, data } => {
                                     if let Ok(token) =
                                         token_manager.get_token_with_username(&username)
                                     {
@@ -415,9 +439,9 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                     }
                                 }
                                 // Server status is a game status update to all clients.
-                                ServerMessage::Status(msg) => {
+                                ServerData::Status(msg) => {
                                     for token in token_manager.confirmed_tokens.keys() {
-                                        let msg = ServerResponse::Status(msg.clone());
+                                        let msg = ServerMessage::Status(msg.clone());
                                         messages_to_write.entry(*token).or_default().push_back(msg);
                                         tokens_to_reregister.insert(*token);
                                     }
@@ -425,12 +449,12 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                 // Views go to all clients. We can safely ignore cases where a client
                                 // no longer exists to receive a view because the view is specific
                                 // to the client.
-                                ServerMessage::Views(views) => {
+                                ServerData::Views(views) => {
                                     for (username, view) in views {
                                         if let Ok(token) =
                                             token_manager.get_token_with_username(&username)
                                         {
-                                            let msg = ServerResponse::GameView(view);
+                                            let msg = ServerMessage::GameView(view);
                                             messages_to_write
                                                 .entry(token)
                                                 .or_default()
@@ -471,12 +495,12 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                         continue;
                                     }
                                     while let Some(msg) = messages.pop_front() {
-                                        match write_prefixed::<ServerResponse, TcpStream>(
+                                        match write_prefixed::<ServerMessage, TcpStream>(
                                             stream, &msg,
                                         ) {
                                             Ok(_) => {
                                                 // Client errors are strict and result in the removal of a connection.
-                                                if let ServerResponse::ClientError(_) = msg {
+                                                if let ServerMessage::ClientError(_) = msg {
                                                     let repr = token_to_string(&token);
                                                     debug!("{repr}: {msg}");
                                                     tokens_to_remove.insert(token);
@@ -589,7 +613,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                     let result = match msg.command {
                         // Check if the client wasn't able to associate its token with a username
                         // in time, or if that username is already taken.
-                        ClientCommand::Connect => {
+                        UserCommand::Connect => {
                             token_manager.associate_token_and_username(token, msg.username.clone())
                         }
                         // Check if the client is being faithful and sending messages with
@@ -613,7 +637,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                         }
                         Err(error) => {
                             debug!("{repr}: {error}");
-                            let msg = ServerResponse::ClientError(error);
+                            let msg = ServerMessage::ClientError(error);
                             messages_to_write.entry(token).or_default().push_back(msg);
                         }
                     }
@@ -628,7 +652,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                 if let Ok(username) = token_manager.get_confirmed_username_with_token(&token) {
                     let msg = ClientMessage {
                         username,
-                        command: ClientCommand::Leave,
+                        command: UserCommand::Leave,
                     };
                     tx_client.send(msg)?;
                 }
@@ -658,14 +682,14 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
         if status != repr {
             info!("{repr}");
             status = repr;
-            let msg = ServerMessage::Status(status.clone());
+            let msg = ServerData::Status(status.clone());
             tx_server.send(msg)?;
             waker.wake()?;
         }
         state = state.step();
 
         let views = state.get_views();
-        let msg = ServerMessage::Views(views);
+        let msg = ServerData::Views(views);
         tx_server.send(msg)?;
         waker.wake()?;
 
@@ -688,8 +712,8 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             // Ack that they will fold (the poker state will
                             // fold for them).
                             warn!("{username} ran out of time and will be forced to fold");
-                            let command = ClientCommand::TakeAction(Action::Fold);
-                            let msg = ServerMessage::Ack(ClientMessage {
+                            let command = UserCommand::TakeAction(Action::Fold);
+                            let msg = ServerData::Ack(ClientMessage {
                                 username: username.clone(),
                                 command,
                             });
@@ -700,24 +724,24 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             // future games and ack it.
                             warn!("{username} will be removed at the end of the game");
                             state.remove_user(&username)?;
-                            let command = ClientCommand::Leave;
-                            let msg = ServerMessage::Ack(ClientMessage { username, command });
+                            let command = UserCommand::Leave;
+                            let msg = ServerData::Ack(ClientMessage { username, command });
                             tx_server.send(msg)?;
                             waker.wake()?;
 
                             break 'command;
                         } else {
                             // Let all users know whose turn it is.
-                            let turn_signal = ServerResponse::TurnSignal(action_options);
+                            let turn_signal = ServerMessage::TurnSignal(action_options);
                             let status =
                                 format!("it's {username}'s turn and they can {turn_signal}");
-                            let msg = ServerMessage::Status(status.clone());
+                            let msg = ServerData::Status(status.clone());
                             tx_server.send(msg)?;
                             waker.wake()?;
 
                             // Let player know it's their turn.
                             info!("{status}");
-                            let msg = ServerMessage::Response {
+                            let msg = ServerData::Response {
                                 username: username.clone(),
                                 data: Box::new(turn_signal),
                             };
@@ -744,15 +768,15 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                 let start = Instant::now();
                 if let Ok(mut msg) = rx_client.recv_timeout(timeout) {
                     let result = match msg.command {
-                        ClientCommand::ChangeState(ref new_user_state) => match new_user_state {
+                        UserCommand::ChangeState(ref new_user_state) => match new_user_state {
                             UserState::Play => state.waitlist_user(&msg.username),
                             UserState::Spectate => state.spectate_user(&msg.username),
                         },
-                        ClientCommand::Connect => state.new_user(&msg.username),
-                        ClientCommand::Leave => state.remove_user(&msg.username),
-                        ClientCommand::ShowHand => state.show_hand(&msg.username),
-                        ClientCommand::StartGame => state.init_start(&msg.username),
-                        ClientCommand::TakeAction(ref mut action) => state
+                        UserCommand::Connect => state.new_user(&msg.username),
+                        UserCommand::Leave => state.remove_user(&msg.username),
+                        UserCommand::ShowHand => state.show_hand(&msg.username),
+                        UserCommand::StartGame => state.init_start(&msg.username),
+                        UserCommand::TakeAction(ref mut action) => state
                             .take_action(&msg.username, action.clone())
                             .map(|new_action| {
                                 timeout = Duration::ZERO;
@@ -767,19 +791,19 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                     match result {
                         Ok(()) => {
                             info!("{msg}");
-                            let msg = ServerMessage::Ack(msg);
+                            let msg = ServerData::Ack(msg);
                             tx_server.send(msg)?;
                             waker.wake()?;
 
-                            let msg = ServerMessage::Views(state.get_views());
+                            let msg = ServerData::Views(state.get_views());
                             tx_server.send(msg)?;
                             waker.wake()?;
                         }
                         Err(error) => {
                             error!("{error}: {msg}");
-                            let msg = ServerMessage::Response {
+                            let msg = ServerData::Response {
                                 username: msg.username,
-                                data: Box::new(ServerResponse::UserError(error)),
+                                data: Box::new(ServerMessage::UserError(error)),
                             };
                             tx_server.send(msg)?;
                             waker.wake()?;

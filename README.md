@@ -4,7 +4,6 @@
     <i>A poker library, server, client, and TUI.</i>
 </div>
 
-
 # 🃟 pri♦ate_p♡ker 🃏︎
 
 - Wanting to play poker but only have a computer and no playing cards?
@@ -70,9 +69,31 @@ Host and manage poker over `ssh` with the following commands:
    docker stop poker
    ```
 
-# Organization
+# Poker without Docker
 
-See each subdirectory's `README.md` for more specific info.
+The poker over `ssh` Docker image is < 40MB, but requires some additional
+user management on the host's part. If you're playing a poker game in a
+local or private network, and all your users are familiar with `cargo`,
+it's less work to just use the poker binaries directly rather than using
+Docker and `ssh`.
+
+## From source
+
+1. For the host, run the server binary:
+   
+   ```bash
+   RUST_LOG=info cargo run --bin pp_server -r -- --bind $host
+   ```
+
+2. For users, run the client binary:
+
+   ```bash
+   cargo run --bin pp_client -r -- $username --connect $host
+   ```
+
+# Project structure
+
+See each subdirectory's docs or `README.md`s for more specific info.
 
 ```bash
 .

@@ -3,11 +3,11 @@ use chrono::{DateTime, Utc};
 use clap::{Arg, Command};
 use mio::{Events, Interest, Poll, Waker};
 use private_poker::{
-    entities::{Action, Usd},
+    entities::{Action, Usd, Username},
     game::GameView,
     messages::UserState,
     net::{
-        messages::{ClientCommand, ClientMessage, ServerResponse},
+        messages::{ClientMessage, ServerMessage, UserCommand},
         server::{DEFAULT_POLL_TIMEOUT, SERVER, WAKER},
         utils::{read_prefixed, write_prefixed},
     },
@@ -277,7 +277,7 @@ impl TurnWarnings {
 
 /// App holds the application state.
 pub struct App {
-    username: String,
+    username: Username,
     addr: String,
     commands: Command,
     /// Help menu
@@ -307,7 +307,7 @@ impl App {
                             if let Some(action) = action_options.get(&Action::AllIn) {
                                 let msg = ClientMessage {
                                     username: self.username.to_string(),
-                                    command: ClientCommand::TakeAction(action.clone()),
+                                    command: UserCommand::TakeAction(action.clone()),
                                 };
                                 tx_client.send(msg)?;
                                 waker.wake()?;
@@ -325,7 +325,7 @@ impl App {
                             if let Some(action) = action_options.get(&Action::Call(0)) {
                                 let msg = ClientMessage {
                                     username: self.username.to_string(),
-                                    command: ClientCommand::TakeAction(action.clone()),
+                                    command: UserCommand::TakeAction(action.clone()),
                                 };
                                 tx_client.send(msg)?;
                                 waker.wake()?;
@@ -339,7 +339,7 @@ impl App {
                             if let Some(action) = action_options.get(&Action::Check) {
                                 let msg = ClientMessage {
                                     username: self.username.to_string(),
-                                    command: ClientCommand::TakeAction(action.clone()),
+                                    command: UserCommand::TakeAction(action.clone()),
                                 };
                                 tx_client.send(msg)?;
                                 waker.wake()?;
@@ -353,7 +353,7 @@ impl App {
                             if let Some(action) = action_options.get(&Action::Fold) {
                                 let msg = ClientMessage {
                                     username: self.username.clone(),
-                                    command: ClientCommand::TakeAction(action.clone()),
+                                    command: UserCommand::TakeAction(action.clone()),
                                 };
                                 tx_client.send(msg)?;
                                 waker.wake()?;
@@ -366,7 +366,7 @@ impl App {
                         "play" => {
                             let msg = ClientMessage {
                                 username: self.username.clone(),
-                                command: ClientCommand::ChangeState(UserState::Play),
+                                command: UserCommand::ChangeState(UserState::Play),
                             };
                             tx_client.send(msg)?;
                             waker.wake()?;
@@ -387,7 +387,7 @@ impl App {
                                             };
                                             let msg = ClientMessage {
                                                 username: self.username.to_string(),
-                                                command: ClientCommand::TakeAction(action),
+                                                command: UserCommand::TakeAction(action),
                                             };
                                             tx_client.send(msg)?;
                                             waker.wake()?;
@@ -407,7 +407,7 @@ impl App {
                         "show" => {
                             let msg = ClientMessage {
                                 username: self.username.clone(),
-                                command: ClientCommand::ShowHand,
+                                command: UserCommand::ShowHand,
                             };
                             tx_client.send(msg)?;
                             waker.wake()?;
@@ -415,7 +415,7 @@ impl App {
                         "spectate" => {
                             let msg = ClientMessage {
                                 username: self.username.clone(),
-                                command: ClientCommand::ChangeState(UserState::Spectate),
+                                command: UserCommand::ChangeState(UserState::Spectate),
                             };
                             tx_client.send(msg)?;
                             waker.wake()?;
@@ -423,7 +423,7 @@ impl App {
                         "start" => {
                             let msg = ClientMessage {
                                 username: self.username.clone(),
-                                command: ClientCommand::StartGame,
+                                command: UserCommand::StartGame,
                             };
                             tx_client.send(msg)?;
                             waker.wake()?;
@@ -443,7 +443,7 @@ impl App {
         Ok(())
     }
 
-    pub fn new(username: String, addr: String) -> Self {
+    pub fn new(username: Username, addr: String) -> Self {
         let all_in = Command::new("all-in").about("Go all-in, betting all your money on the hand.");
         let call = Command::new("call").about("Match the investment required to stay in the hand.");
         let check =
@@ -504,7 +504,7 @@ impl App {
         mut terminal: DefaultTerminal,
     ) -> Result<(), Error> {
         let (tx_client, rx_client): (Sender<ClientMessage>, Receiver<ClientMessage>) = channel();
-        let (tx_server, rx_server): (Sender<ServerResponse>, Receiver<ServerResponse>) = channel();
+        let (tx_server, rx_server): (Sender<ServerMessage>, Receiver<ServerMessage>) = channel();
 
         let mut poll = Poll::new()?;
         let waker = Waker::new(poll.registry(), WAKER)?;
@@ -580,7 +580,7 @@ impl App {
                             if event.is_readable() {
                                 // We can (maybe) read from the connection.
                                 loop {
-                                    match read_prefixed::<ServerResponse, mio::net::TcpStream>(
+                                    match read_prefixed::<ServerMessage, mio::net::TcpStream>(
                                         &mut stream,
                                     ) {
                                         Ok(msg) => {
@@ -681,9 +681,9 @@ impl App {
 
             if let Ok(msg) = rx_server.try_recv() {
                 match msg {
-                    ServerResponse::Ack(msg) => {
+                    ServerMessage::Ack(msg) => {
                         // Our action was acknowledged, so we don't need warnings anymore.
-                        if let ClientCommand::TakeAction(_) = msg.command {
+                        if let UserCommand::TakeAction(_) = msg.command {
                             if msg.username == self.username {
                                 turn_warnings.clear();
                             }
@@ -691,22 +691,22 @@ impl App {
                         let record = Record::new(RecordKind::Ack, msg.to_string());
                         self.log_handle.push(record.into());
                     }
-                    ServerResponse::ClientError(error) => {
+                    ServerMessage::ClientError(error) => {
                         let record = Record::new(RecordKind::Error, error.to_string());
                         self.log_handle.push(record.into());
                     }
-                    ServerResponse::GameView(new_view) => view = new_view,
-                    ServerResponse::Status(msg) => {
+                    ServerMessage::GameView(new_view) => view = new_view,
+                    ServerMessage::Status(msg) => {
                         let record = Record::new(RecordKind::Game, msg);
                         self.log_handle.push(record.into());
                     }
-                    ServerResponse::TurnSignal(new_action_options) => {
+                    ServerMessage::TurnSignal(new_action_options) => {
                         action_options = new_action_options;
                         turn_warnings.reset();
                         let record = Record::new(RecordKind::Alert, "it's your turn!".to_string());
                         self.log_handle.push(record.into());
                     }
-                    ServerResponse::UserError(error) => {
+                    ServerMessage::UserError(error) => {
                         let record = Record::new(RecordKind::Error, error.to_string());
                         self.log_handle.push(record.into());
                     }
