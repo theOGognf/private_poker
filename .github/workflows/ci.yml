@@ -15,10 +15,10 @@ jobs:
           toolchain: stable
           components: clippy rustfmt
   
-      - name: Linting
+      - name: Lint
         run: |
           cargo clippy -- -D warnings
           cargo fmt --all -- --check
   
-      - name: Debug builds
+      - name: Debug build
         run: cargo build
