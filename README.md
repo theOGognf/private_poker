@@ -31,7 +31,7 @@ Host and manage poker over `ssh` with the following commands:
 1. Build the image:
    
    ```bash
-   docker build . -t poker
+   docker build -t poker .
    ```
 
 2. Run the container:
