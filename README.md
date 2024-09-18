@@ -69,6 +69,9 @@ Host and manage poker over `ssh` with the following commands:
    docker stop poker
    ```
 
+You can run the Docker image without building it from source using
+[the official Docker image][1].
+
 # Poker without Docker
 
 The poker over `ssh` Docker image is < 40MB, but requires some additional
@@ -115,14 +118,15 @@ exercise to forkers:
 
 # Acknowledgements
 
-- [@Ilikemath642][1] for inspiration for poker
-- [@zachstruck][2] for teaching me a lot about Rust
-- [@Mac-Genius][3] for TUI feedback
-- [@shazow][4] for inspiration from [`ssh-chat`][5]
+- [@Ilikemath642][2] for inspiration for poker
+- [@zachstruck][3] for teaching me a lot about Rust
+- [@Mac-Genius][4] for TUI feedback
+- [@shazow][5] for inspiration from [`ssh-chat`][6]
 
 [0]: https://github.com/theOGognf/private_poker/blob/39b586751eae28033b6c1e086b81bfbd6ce74729/assets/tui.png?raw=true
-[1]: https://github.com/Ilikemath642
-[2]: https://github.com/zachstruck
-[3]: https://github.com/Mac-Genius
-[4]: https://github.com/shazow
-[5]: https://github.com/shazow/ssh-chat
+[1]: https://hub.docker.com/r/ognf/poker
+[2]: https://github.com/Ilikemath642
+[3]: https://github.com/zachstruck
+[4]: https://github.com/Mac-Genius
+[5]: https://github.com/shazow
+[6]: https://github.com/shazow/ssh-chat
