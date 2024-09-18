@@ -28,19 +28,22 @@ benefits:
 
 Host and manage poker over `ssh` with the following commands:
 
-1. Build the image:
-   
-   ```bash
-   docker build -t poker .
-   ```
+1. Run the container (two options):
 
-2. Run the container:
+   - From source:
+         
+     ```bash
+     docker build -t poker .
+     docker run --name poker -p $port:22 --rm poker
+     ```
 
-   ```bash
-   docker run --name poker -p $port:22 --rm poker
-   ```
+   - From [the official Docker image][1]:
 
-3. Create a user:
+     ```bash
+     docker run --name poker -p $port:22 --rm ognf/poker:latest
+     ```
+
+2. Create a user:
 
    ```bash
    docker exec -it poker sh ./bin/create_user.sh $username
@@ -51,26 +54,23 @@ Host and manage poker over `ssh` with the following commands:
    their private key to the host. Send the user their key so they
    can SSH into the server and start playing.
 
-4. Users can SSH into the server and play:
+3. Users can SSH into the server and play:
 
    ```bash
    ssh -i $poker_ssh_key -p $port $username@$host
    ```
 
-5. Delete a user:
+4. Delete a user:
 
    ```bash
    docker exec -it poker deluser --remove-home $username
    ```
 
-6. Stop the server:
+5. Stop the server:
 
    ```bash
    docker stop poker
    ```
-
-You can run the Docker image without building it from source using
-[the official Docker image][1].
 
 # Poker without Docker
 
