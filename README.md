@@ -7,64 +7,67 @@
 
 # 🃟 pri♦ate_p♡ker 🃏︎
 
-- Do you want to play poker but only have a computer and no deck of cards?
-- Are you having a slow day at work and in need of something to pass the time
+- Wanting to play poker but only have a computer and no playing cards?
+- Having a slow day at work and in need of something to pass the time
   with your coworkers?
-- Are you managing an entirely legal gambling ring and in need of a secure,
+- Managing an entirely legal gambling ring and in need of a secure,
   private, and easy-to-use solution for running poker games?
 
 If you answered "yes" to any of these rhetorical questions, then this project
 is for you! Host and manage a poker game from the comfort of your computer
-with 🃟 **p**ri♦ate_**p**♡ker 🃏︎ (**pp** for short)!
+with **p**ri♦ate_**p**♡ker (or **pp** for short)!
 
 # Poker over `ssh`
 
-One can host the server using the provided `Dockerfile` for the following
+One can host a server with the provided `Dockerfile` for the following
 benefits:
 
 - The server is ephemeral and more isolated from the host system
 - Client binaries don't need to be distributed to users
 - Server connections are entirely managed with `ssh`
-- Users are entirely managed by the OS and a couple of utility scripts
+- Users are entirely managed by the container's user space and a couple
+  of utility scripts
 
 Host and manage poker over `ssh` with the following commands:
 
-1. Build the image
+1. Build the image:
    
    ```bash
    docker build . -t poker
    ```
 
-2. Run the container
+2. Run the container:
 
    ```bash
-   # Make sure you name it "poker"
    docker run --name poker -p $port:22 --rm poker
    ```
 
-3. Create a user
+   Make sure the container's name is `"poker"` as the utils in `./scripts`
+   make that assumption.
+
+3. Create a user:
 
    ```bash
-   # This creates the user in the OS and copies
-   # their private key to the host `./keys` directory.
-   # Send the user their key so they can SSH into the
-   # server and play.
    ./scripts/create_user.sh $username
    ```
 
-4. Users can SSH into the server and play
+   This creates a user in the container's user space and copies
+   their private key to the host's `./keys` directory. Send the
+   user their key so they can SSH into the server and start playing.
+
+4. Users can SSH into the server and play:
 
    ```bash
    ssh -i $poker_ssh_key -p $port $username@$host
    ```
 
-5. Delete a user
+5. Delete a user:
 
    ```bash
-   ./scripts/delete_user.sh $username
+   docker exec -it poker deluser --remove-home $username
    ```
 
-6. Clean-up the server entirely
+6. Stop the server:
 
    ```bash
    docker stop poker
@@ -85,14 +88,15 @@ See each subdirectory's `README.md` for more specific info.
 
 # Non-goals
 
-I use this project to learn Rust and play poker with friends
+I use this project to learn Rust and to play poker with friends
 and family. I'm probably disinterested in anything related to this
 project that doesn't fit those goals. Specifically, the following
-are ommitted from **pp** and left as an exercise to forkers:
+features are ommitted from this project and left as an exercise to
+forkers:
 
-- Integrating or scaling servers with orchestration layers
-- Persistent storage and/or backups of game data
-- UIs besides the already-implemented TUI
+- Server orchestration or scaling
+- Persistent storage or backups of game data
+- UIs beyond the TUI
 
 # Acknowledgements
 

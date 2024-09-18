@@ -1,3 +1,7 @@
+# Create a user in the Alpine Docker container,
+# make their home directory, create an SSH key pair,
+# and put their public key within their authorized keys
+# file.
 username=$1
 ssh_dir=/home/$username/.ssh
 adduser -D $username
