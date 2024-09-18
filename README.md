@@ -77,8 +77,6 @@ local or private network, and all your users are familiar with `cargo`,
 it's less work to just use the poker binaries directly rather than using
 Docker and `ssh`.
 
-## From source
-
 1. For the host, run the server binary:
    
    ```bash
