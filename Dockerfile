@@ -32,4 +32,4 @@ COPY --from=builder /usr/app/target/release/pp_server ./bin/pp_server
 
 RUN chmod +x ./bin/create_user.sh
 
-ENTRYPOINT ["sh", "-c", "rc-status; rc-service sshd start; rc-service syslog-ng start; ./bin/pp_server"]
+CMD ["sh", "-c", "rc-status; rc-service sshd start; rc-service syslog-ng start; ./bin/pp_server"]
