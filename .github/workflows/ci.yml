@@ -6,7 +6,7 @@ on:
       - main
         
 jobs:
-  test_and_build:
+  lint_and_test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,6 +22,3 @@ jobs:
   
       - name: Test
         run: cargo test
-
-      - name: Debug build
-        run: cargo build
