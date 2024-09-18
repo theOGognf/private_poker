@@ -24,9 +24,8 @@ benefits:
 
 - The server is ephemeral and more isolated from the host system
 - Client binaries don't need to be distributed to users
-- Server connections are entirely managed with `ssh`
-- Users are entirely managed by the container's user space and a couple
-  of utility scripts
+- Server connections are managed by `ssh`
+- Users are managed by the container's user space
 
 Host and manage poker over `ssh` with the following commands:
 
@@ -42,18 +41,16 @@ Host and manage poker over `ssh` with the following commands:
    docker run --name poker -p $port:22 --rm poker
    ```
 
-   Make sure the container's name is `"poker"` as the utils in `./scripts`
-   make that assumption.
-
 3. Create a user:
 
    ```bash
-   ./scripts/create_user.sh $username
+   docker exec -it poker sh ./bin/create_user.sh $username
+   docker cp poker:/home/$username/.ssh/id_rsa $poker_ssh_key
    ```
 
    This creates a user in the container's user space and copies
-   their private key to the host's `./keys` directory. Send the
-   user their key so they can SSH into the server and start playing.
+   their private key to the host. Send the user their key so they
+   can SSH into the server and start playing.
 
 4. Users can SSH into the server and play:
 
@@ -82,17 +79,16 @@ See each subdirectory's `README.md` for more specific info.
 ├── pp_admin        # Scripts and configs for managing the server within Docker
 ├── pp_client       # Client binary source
 ├── pp_server       # Server binary source
-├── private_poker   # Library that the client and server use
-└── scripts         # Scripts for managing the server outside Docker
+└── private_poker   # Library that the client and server use
 ```
 
 # Non-goals
 
 I use this project to learn Rust and to play poker with friends
 and family. I'm probably disinterested in anything related to this
-project that doesn't fit those goals. Specifically, the following
-features are ommitted from this project and left as an exercise to
-forkers:
+project that doesn't contribute to those goals. Specifically, the
+following features are ommitted from this project and left as an
+exercise to forkers:
 
 - Server orchestration or scaling
 - Persistent storage or backups of game data
