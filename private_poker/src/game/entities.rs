@@ -22,11 +22,11 @@ pub enum Suit {
 impl fmt::Display for Suit {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let repr = match self {
-            Suit::Club => "C",
-            Suit::Spade => "S",
-            Suit::Diamond => "D",
-            Suit::Heart => "H",
-            Suit::Wild => "W",
+            Suit::Club => "c",
+            Suit::Spade => "s",
+            Suit::Diamond => "d",
+            Suit::Heart => "h",
+            Suit::Wild => "w",
         };
         write!(f, "{repr}")
     }

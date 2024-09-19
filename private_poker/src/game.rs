@@ -93,21 +93,12 @@ impl Default for GameSettings {
 pub struct PlayerView {
     user: User,
     state: PlayerState,
-    cards: Vec<Card>,
+    pub cards: Vec<Card>,
 }
 
 impl fmt::Display for PlayerView {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let cards = if self.cards.is_empty() {
-            " ?/?  ?/?".to_string()
-        } else {
-            self.cards
-                .iter()
-                .map(|card| card.to_string())
-                .collect::<Vec<_>>()
-                .join(" ")
-        };
-        write!(f, "{}  {} {}", self.user, self.state, cards)
+        write!(f, "{}  {}", self.user, self.state)
     }
 }
 
@@ -137,95 +128,6 @@ pub struct GameView {
     pub small_blind_idx: usize,
     pub big_blind_idx: usize,
     pub next_action_idx: Option<usize>,
-}
-
-impl GameView {
-    pub fn board_to_string(&self) -> String {
-        if self.board.is_empty() {
-            "n/a".to_string()
-        } else {
-            self.board
-                .iter()
-                .map(|card| card.to_string())
-                .collect::<Vec<_>>()
-                .join(" ")
-        }
-    }
-
-    pub fn pots_to_string(&self) -> String {
-        if self.pots.is_empty() {
-            "n/a".to_string()
-        } else {
-            self.pots
-                .iter()
-                .map(|pot| pot.to_string())
-                .collect::<Vec<_>>()
-                .join(" ")
-        }
-    }
-
-    pub fn players_to_string(&self) -> String {
-        if self.players.is_empty() {
-            "".to_string()
-        } else {
-            let mut repr = vec!["".to_string()];
-            for (player_idx, player) in self.players.iter().enumerate() {
-                let move_repr = match self.next_action_idx {
-                    Some(next_action_idx) if player_idx == next_action_idx => "→",
-                    _ => " ",
-                };
-                let button_repr = if player_idx == self.big_blind_idx {
-                    "BB"
-                } else if player_idx == self.small_blind_idx {
-                    "SB"
-                } else {
-                    "  "
-                };
-                let hand_repr = if player.cards.is_empty() {
-                    "??"
-                } else {
-                    let mut cards = self.board.clone();
-                    cards.extend(player.cards.clone());
-                    functional::prepare_hand(&mut cards);
-                    let hand = functional::eval(&cards);
-                    if let Some(subhand) = hand.first() {
-                        &subhand.rank.to_string()
-                    } else {
-                        "??"
-                    }
-                };
-                let player_repr = format!("{move_repr}  {button_repr}  {player}  ({hand_repr})");
-                repr.push(player_repr);
-            }
-            repr.join("\n")
-        }
-    }
-
-    pub fn spectators_to_string(&self) -> String {
-        let mut users = Vec::from_iter(self.spectators.values());
-        users.sort_unstable();
-        GameView::users_to_string(&users)
-    }
-
-    pub fn users_to_string(users: &[&User]) -> String {
-        if users.is_empty() {
-            "".to_string()
-        } else {
-            format!(
-                "{}{}",
-                "\n",
-                users
-                    .iter()
-                    .map(|user| user.to_string())
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            )
-        }
-    }
-
-    pub fn waitlisters_to_string(&self) -> String {
-        GameView::users_to_string(&Vec::from_iter(self.waitlist.iter()))
-    }
 }
 
 pub type GameViews = HashMap<String, GameView>;

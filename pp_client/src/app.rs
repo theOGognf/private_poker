@@ -3,7 +3,8 @@ use chrono::{DateTime, Utc};
 use clap::{Arg, Command};
 use mio::{Events, Interest, Poll, Waker};
 use private_poker::{
-    entities::{Action, Usd, Username},
+    entities::{Action, Card, Suit, Usd, User, Username},
+    functional,
     game::GameView,
     messages::UserState,
     net::{
@@ -36,6 +37,150 @@ use std::{
 
 pub const MAX_LOG_RECORDS: usize = 1024;
 pub const POLL_TIMEOUT: Duration = Duration::from_millis(100);
+
+fn board_to_vec_of_spans(view: &GameView) -> Vec<Span<'_>> {
+    let mut span = vec![" board: ".into()];
+    if view.board.is_empty() {
+        span.push("n/a  ".into());
+    } else {
+        for card in view.board.iter() {
+            let card_repr = card_to_span(card);
+            span.push(card_repr);
+            span.push("  ".into());
+        }
+    }
+    span
+}
+
+fn blinds_to_span(view: &GameView) -> Span<'_> {
+    format!(" blinds: ${}/${}  ", view.big_blind, view.small_blind).into()
+}
+
+fn card_to_span(card: &Card) -> Span<'_> {
+    let Card(value, suit) = card;
+    let value = match value {
+        1 | 14 => "A",
+        11 => "J",
+        12 => "Q",
+        13 => "K",
+        v => &v.to_string(),
+    };
+    match suit {
+        Suit::Club => format!("{value:>2}/c").light_green(),
+        Suit::Diamond => format!("{value:>2}/d").light_blue(),
+        Suit::Heart => format!("{value:>2}/h").light_red(),
+        Suit::Spade => format!("{value:>2}/s").into(),
+        Suit::Wild => format!("{value:>2}/w").light_magenta(),
+    }
+}
+
+fn pots_to_span(view: &GameView) -> Span<'_> {
+    let pots_repr = if view.pots.is_empty() {
+        "n/a".to_string()
+    } else {
+        view.pots
+            .iter()
+            .map(|pot| pot.to_string())
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    format!(" pot(s): {pots_repr}  ").into()
+}
+
+fn players_to_paragraph(view: &GameView) -> Paragraph<'_> {
+    if view.players.is_empty() {
+        Paragraph::new("")
+    } else {
+        let mut lines: Vec<Line<'_>> = vec!["".into()];
+        for (player_idx, player) in view.players.iter().enumerate() {
+            let mut line = vec![];
+
+            // Indicator if it's the player's move.
+            let move_repr = match view.next_action_idx {
+                Some(next_action_idx) if player_idx == next_action_idx => "→",
+                _ => " ",
+            };
+            line.push(move_repr.into());
+            line.push(" ".into());
+
+            // Indicator what blind the player pays.
+            let button_repr = if player_idx == view.big_blind_idx {
+                "BB"
+            } else if player_idx == view.small_blind_idx {
+                "SB"
+            } else {
+                "  "
+            };
+            line.push(button_repr.into());
+            line.push("  ".into());
+
+            // Player name and money.
+            line.push(player.to_string().into());
+            line.push("  ".into());
+
+            // Player cards styled.
+            if player.cards.is_empty() {
+                line.push(" ?/?   ?/?  ".into())
+            } else {
+                for card in player.cards.iter() {
+                    let card_repr = card_to_span(card);
+                    line.push(card_repr);
+                    line.push("  ".into());
+                }
+            }
+
+            // Player's highest subhand representation.
+            let hand_repr = if player.cards.is_empty() {
+                "??"
+            } else {
+                let mut cards = view.board.clone();
+                cards.extend(player.cards.clone());
+                functional::prepare_hand(&mut cards);
+                let hand = functional::eval(&cards);
+                if let Some(subhand) = hand.first() {
+                    &subhand.rank.to_string()
+                } else {
+                    "??"
+                }
+            };
+            line.push(format!("({hand_repr})").into());
+            lines.push(line.into());
+        }
+        Paragraph::new(lines)
+    }
+}
+
+fn spectators_to_paragraph(view: &GameView) -> Paragraph<'_> {
+    let mut spectators = Vec::from_iter(view.spectators.values());
+    spectators.sort_unstable();
+    let spectators = users_to_string(&spectators);
+    Paragraph::new(spectators)
+        .style(Style::default())
+        .block(block::Block::bordered().title(" spectators  "))
+}
+
+fn users_to_string(users: &[&User]) -> String {
+    if users.is_empty() {
+        "".to_string()
+    } else {
+        format!(
+            "{}{}",
+            "\n",
+            users
+                .iter()
+                .map(|user| user.to_string())
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    }
+}
+
+fn waitlisters_to_paragraph(view: &GameView) -> Paragraph<'_> {
+    let waitlisters = users_to_string(&Vec::from_iter(view.waitlist.iter()));
+    Paragraph::new(waitlisters)
+        .style(Style::default())
+        .block(block::Block::bordered().title(" waitlisters  "))
+}
 
 #[derive(Clone)]
 enum RecordKind {
@@ -739,48 +884,42 @@ impl App {
                 .areas(lobby_area);
 
         // Render spectators area.
-        let spectators = Paragraph::new(view.spectators_to_string())
-            .style(Style::default())
-            .block(block::Block::bordered().title("spectators"));
+        let spectators = spectators_to_paragraph(view);
         frame.render_widget(spectators, spectator_area);
 
         // Render waitlisters area.
-        let waitlisters = Paragraph::new(view.waitlisters_to_string())
-            .style(Style::default())
-            .block(block::Block::bordered().title("waitlisters"));
+        let waitlisters = waitlisters_to_paragraph(view);
         frame.render_widget(waitlisters, waitlister_area);
 
         // Render table area.
-        let board = format!("board: {}", view.board_to_string());
-        let blinds = format!("blinds: ${}/${}", view.big_blind, view.small_blind);
-        let pots = format!("pot(s): {}", view.pots_to_string());
-        let table = Paragraph::new(view.players_to_string())
-            .style(Style::default().bold().light_green())
-            .block(
-                block::Block::bordered()
-                    .title(
-                        block::Title::from(board)
-                            .position(block::Position::Top)
-                            .alignment(Alignment::Left),
-                    )
-                    .title(
-                        block::Title::from(blinds)
-                            .position(block::Position::Bottom)
-                            .alignment(Alignment::Right),
-                    )
-                    .title(
-                        block::Title::from(pots)
-                            .position(block::Position::Bottom)
-                            .alignment(Alignment::Left),
-                    ),
-            );
+        let board = board_to_vec_of_spans(view);
+        let blinds = blinds_to_span(view);
+        let pots = pots_to_span(view);
+        let table = players_to_paragraph(view).style(Style::default()).block(
+            block::Block::bordered()
+                .title(
+                    block::Title::from(board)
+                        .position(block::Position::Top)
+                        .alignment(Alignment::Left),
+                )
+                .title(
+                    block::Title::from(blinds)
+                        .position(block::Position::Bottom)
+                        .alignment(Alignment::Right),
+                )
+                .title(
+                    block::Title::from(pots)
+                        .position(block::Position::Bottom)
+                        .alignment(Alignment::Left),
+                ),
+        );
         frame.render_widget(table, table_area);
 
         // Render log window.
         let log_records = self.log_handle.list_items.clone();
         let log_records = List::new(log_records)
             .direction(ListDirection::BottomToTop)
-            .block(block::Block::bordered().title("history"));
+            .block(block::Block::bordered().title(" history  "));
         frame.render_stateful_widget(log_records, log_area, &mut self.log_handle.list_state);
 
         // Render log window scrollbar.
@@ -801,7 +940,7 @@ impl App {
         let addr = self.addr.clone();
         let user_input = Paragraph::new(self.user_input.value.as_str())
             .style(Style::default())
-            .block(block::Block::bordered().title(format!("{username}@{addr}").light_green()));
+            .block(block::Block::bordered().title(format!(" {username}@{addr}  ").light_green()));
         frame.render_widget(user_input, user_input_area);
         frame.set_cursor_position(Position::new(
             // Draw the cursor at the current position in the input field.

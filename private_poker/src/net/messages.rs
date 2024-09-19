@@ -117,7 +117,7 @@ impl fmt::Display for ServerMessage {
         let repr = match &self {
             ServerMessage::Ack(msg) => msg.to_string(),
             ServerMessage::ClientError(error) => error.to_string(),
-            ServerMessage::GameView(view) => view.players_to_string(),
+            ServerMessage::GameView(_) => "game view".to_string(),
             ServerMessage::Status(status) => status.to_string(),
             ServerMessage::TurnSignal(action_options) => {
                 Game::<TakeAction>::action_options_to_string(action_options)
