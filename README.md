@@ -123,7 +123,7 @@ exercise to forkers:
 - [@Mac-Genius][4] for TUI feedback
 - [@shazow][5] for inspiring me with [`ssh-chat`][6]
 
-[0]: https://github.com/theOGognf/private_poker/blob/39b586751eae28033b6c1e086b81bfbd6ce74729/assets/tui.png?raw=true
+[0]: assets/tui.png?raw=true
 [1]: https://hub.docker.com/r/ognf/poker
 [2]: https://github.com/Ilikemath642
 [3]: https://github.com/zachstruck
