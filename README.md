@@ -118,10 +118,10 @@ exercise to forkers:
 
 # Acknowledgements
 
-- [@Ilikemath642][2] for inspiration for poker
+- [@Ilikemath642][2] for inspiring me to work on a poker game
 - [@zachstruck][3] for teaching me a lot about Rust
 - [@Mac-Genius][4] for TUI feedback
-- [@shazow][5] for inspiration from [`ssh-chat`][6]
+- [@shazow][5] for inspiring me with [`ssh-chat`][6]
 
 [0]: https://github.com/theOGognf/private_poker/blob/39b586751eae28033b6c1e086b81bfbd6ce74729/assets/tui.png?raw=true
 [1]: https://hub.docker.com/r/ognf/poker
