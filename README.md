@@ -52,18 +52,20 @@ Host and manage poker over `ssh` with the following commands:
 
    This creates a user in the container's user space and copies
    their private key to the host. Send the user their key so they
-   can SSH into the server and start playing.
+   can `ssh` into the server and start playing.
 
-3. Users can SSH into the server and play:
+3. Users can `ssh` into the server and play:
 
    ```bash
    ssh -i $poker_ssh_key -p $port $username@$host
    ```
 
+   Users are greeted by the poker TUI if their `ssh` is successful.
+
 4. Delete a user:
 
    ```bash
-   docker exec -it poker deluser --remove-home $username
+   docker exec -it poker sh ./bin/delete_user.sh $username
    ```
 
 5. Stop the server:
