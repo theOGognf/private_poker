@@ -91,15 +91,9 @@ impl Default for GameSettings {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PlayerView {
-    user: User,
-    state: PlayerState,
+    pub user: User,
+    pub state: PlayerState,
     pub cards: Vec<Card>,
-}
-
-impl fmt::Display for PlayerView {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}  {}", self.user, self.state)
-    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]

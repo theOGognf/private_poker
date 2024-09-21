@@ -21,8 +21,8 @@ use ratatui::{
     symbols::scrollbar,
     text::{Line, Span, Text},
     widgets::{
-        block, Clear, List, ListDirection, ListItem, ListState, Paragraph, ScrollDirection,
-        Scrollbar, ScrollbarOrientation, ScrollbarState,
+        block, Block, Cell, Clear, List, ListDirection, ListItem, ListState, Padding, Paragraph,
+        Row, ScrollDirection, Scrollbar, ScrollbarOrientation, ScrollbarState, Table,
     },
     DefaultTerminal, Frame,
 };
@@ -52,10 +52,6 @@ fn board_to_vec_of_spans(view: &GameView) -> Vec<Span<'_>> {
     span
 }
 
-fn blinds_to_span(view: &GameView) -> Span<'_> {
-    format!(" blinds: ${}/${}  ", view.big_blind, view.small_blind).into()
-}
-
 fn card_to_span(card: &Card) -> Span<'_> {
     let Card(value, suit) = card;
     let value = match value {
@@ -74,7 +70,7 @@ fn card_to_span(card: &Card) -> Span<'_> {
     }
 }
 
-fn pots_to_span(view: &GameView) -> Span<'_> {
+fn pots_to_string(view: &GameView) -> String {
     let pots_repr = if view.pots.is_empty() {
         "n/a".to_string()
     } else {
@@ -84,102 +80,14 @@ fn pots_to_span(view: &GameView) -> Span<'_> {
             .collect::<Vec<_>>()
             .join(" ")
     };
-    format!(" pot(s): {pots_repr}  ").into()
+    format!(" pot(s): {pots_repr}  ")
 }
 
-fn players_to_paragraph(view: &GameView) -> Paragraph<'_> {
-    if view.players.is_empty() {
-        Paragraph::new("")
-    } else {
-        let mut lines: Vec<Line<'_>> = vec!["".into()];
-        for (player_idx, player) in view.players.iter().enumerate() {
-            let mut line = vec![];
-
-            // Indicator if it's the player's move.
-            let move_repr = match view.next_action_idx {
-                Some(next_action_idx) if player_idx == next_action_idx => "→",
-                _ => " ",
-            };
-            line.push(move_repr.into());
-            line.push(" ".into());
-
-            // Indicator what blind the player pays.
-            let button_repr = if player_idx == view.big_blind_idx {
-                "BB"
-            } else if player_idx == view.small_blind_idx {
-                "SB"
-            } else {
-                "  "
-            };
-            line.push(button_repr.into());
-            line.push("  ".into());
-
-            // Player name and money.
-            line.push(player.to_string().into());
-            line.push("  ".into());
-
-            // Player cards styled.
-            if player.cards.is_empty() {
-                line.push(" ?/?   ?/?  ".into())
-            } else {
-                for card in player.cards.iter() {
-                    let card_repr = card_to_span(card);
-                    line.push(card_repr);
-                    line.push("  ".into());
-                }
-            }
-
-            // Player's highest subhand representation.
-            let hand_repr = if player.cards.is_empty() {
-                "??"
-            } else {
-                let mut cards = view.board.clone();
-                cards.extend(player.cards.clone());
-                functional::prepare_hand(&mut cards);
-                let hand = functional::eval(&cards);
-                if let Some(subhand) = hand.first() {
-                    &subhand.rank.to_string()
-                } else {
-                    "??"
-                }
-            };
-            line.push(format!("({hand_repr})").into());
-            lines.push(line.into());
-        }
-        Paragraph::new(lines)
-    }
-}
-
-fn spectators_to_paragraph(view: &GameView) -> Paragraph<'_> {
-    let mut spectators = Vec::from_iter(view.spectators.values());
-    spectators.sort_unstable();
-    let spectators = users_to_string(&spectators);
-    Paragraph::new(spectators)
-        .style(Style::default())
-        .block(block::Block::bordered().title(" spectators  "))
-}
-
-fn users_to_string(users: &[&User]) -> String {
-    if users.is_empty() {
-        "".to_string()
-    } else {
-        format!(
-            "{}{}",
-            "\n",
-            users
-                .iter()
-                .map(|user| user.to_string())
-                .collect::<Vec<_>>()
-                .join("\n")
-        )
-    }
-}
-
-fn waitlisters_to_paragraph(view: &GameView) -> Paragraph<'_> {
-    let waitlisters = users_to_string(&Vec::from_iter(view.waitlist.iter()));
-    Paragraph::new(waitlisters)
-        .style(Style::default())
-        .block(block::Block::bordered().title(" waitlisters  "))
+fn user_to_row(user: &User) -> Row {
+    Row::new(vec![
+        Cell::new(Text::from(user.name.clone()).alignment(Alignment::Left)),
+        Cell::new(Text::from(format!("${}", user.money)).alignment(Alignment::Right)),
+    ])
 }
 
 #[derive(Clone)]
@@ -884,31 +792,117 @@ impl App {
                 .areas(lobby_area);
 
         // Render spectators area.
-        let spectators = spectators_to_paragraph(view);
+        let mut spectators = Vec::from_iter(view.spectators.values());
+        spectators.sort_unstable();
+        let spectators = Table::new(
+            spectators.iter().map(|user| user_to_row(user)),
+            [Constraint::Percentage(50), Constraint::Percentage(50)],
+        )
+        .block(
+            Block::bordered()
+                .padding(Padding::uniform(1))
+                .title(" spectators  "),
+        );
         frame.render_widget(spectators, spectator_area);
 
         // Render waitlisters area.
-        let waitlisters = waitlisters_to_paragraph(view);
+        let waitlisters = Table::new(
+            view.waitlist.iter().map(|user| user_to_row(user)),
+            [Constraint::Percentage(50), Constraint::Percentage(50)],
+        )
+        .block(
+            Block::bordered()
+                .padding(Padding::uniform(1))
+                .title(" waitlisters  "),
+        );
         frame.render_widget(waitlisters, waitlister_area);
 
         // Render table area.
-        let board = board_to_vec_of_spans(view);
-        let blinds = blinds_to_span(view);
-        let pots = pots_to_span(view);
-        let table = players_to_paragraph(view).style(Style::default()).block(
+        let table = Table::new(
+            view.players.iter().enumerate().map(|(player_idx, player)| {
+                // Indicator if it's the player's move.
+                let move_repr = match view.next_action_idx {
+                    Some(next_action_idx) if player_idx == next_action_idx => "→",
+                    _ => " ",
+                };
+                let move_repr = Text::from(move_repr);
+
+                // Indicator for what blind each player pays.
+                let button_repr = if player_idx == view.big_blind_idx {
+                    "BB"
+                } else if player_idx == view.small_blind_idx {
+                    "SB"
+                } else {
+                    "  "
+                };
+                let button_repr = Text::from(button_repr);
+
+                // Player cards styled according to suit.
+                let (card1, card2) = if player.cards.is_empty() {
+                    (Text::from(" ?/?"), Text::from(" ?/?"))
+                } else {
+                    (
+                        Text::from(card_to_span(&player.cards[0])),
+                        Text::from(card_to_span(&player.cards[1])),
+                    )
+                };
+
+                // Player's highest subhand displayed.
+                let hand_repr = if player.cards.is_empty() {
+                    "??"
+                } else {
+                    let mut cards = view.board.clone();
+                    cards.extend(player.cards.clone());
+                    functional::prepare_hand(&mut cards);
+                    let hand = functional::eval(&cards);
+                    if let Some(subhand) = hand.first() {
+                        &subhand.rank.to_string()
+                    } else {
+                        "??"
+                    }
+                };
+                let hand_repr = Text::from(format!("({hand_repr})"));
+
+                Row::new(vec![
+                    Cell::new(move_repr.alignment(Alignment::Center)),
+                    Cell::new(button_repr.alignment(Alignment::Left)),
+                    Cell::new(Text::from(player.user.name.clone()).alignment(Alignment::Left)),
+                    Cell::new(
+                        Text::from(format!("${}", player.user.money)).alignment(Alignment::Right),
+                    ),
+                    Cell::new(card1.alignment(Alignment::Right)),
+                    Cell::new(card2.alignment(Alignment::Right)),
+                    Cell::new(hand_repr.alignment(Alignment::Right)),
+                ])
+            }),
+            [
+                Constraint::Max(3),
+                Constraint::Max(4),
+                Constraint::Fill(2),
+                Constraint::Fill(2),
+                Constraint::Fill(1),
+                Constraint::Fill(1),
+                Constraint::Fill(1),
+            ],
+        )
+        .block(
             block::Block::bordered()
+                .padding(Padding::uniform(1))
                 .title(
-                    block::Title::from(board)
+                    block::Title::from(board_to_vec_of_spans(view))
                         .position(block::Position::Top)
                         .alignment(Alignment::Left),
                 )
                 .title(
-                    block::Title::from(blinds)
-                        .position(block::Position::Bottom)
-                        .alignment(Alignment::Right),
+                    block::Title::from(format!(
+                        " blinds: ${}/${}  ",
+                        view.big_blind, view.small_blind
+                    ))
+                    .position(block::Position::Bottom)
+                    .alignment(Alignment::Right),
                 )
                 .title(
-                    block::Title::from(pots)
+                    block::Title::from(pots_to_string(view))
                         .position(block::Position::Bottom)
                         .alignment(Alignment::Left),
                 ),
@@ -967,8 +961,8 @@ impl App {
 
         // Render the help menu.
         if self.show_help_menu {
-            let vertical = Layout::vertical([Constraint::Percentage(85)]).flex(Flex::Center);
-            let horizontal = Layout::horizontal([Constraint::Percentage(80)]).flex(Flex::Center);
+            let vertical = Layout::vertical([Constraint::Max(25)]).flex(Flex::Center);
+            let horizontal = Layout::horizontal([Constraint::Max(95)]).flex(Flex::Center);
             let [help_menu_area] = vertical.areas(frame.area());
             let [help_menu_area] = horizontal.areas(help_menu_area);
             frame.render_widget(Clear, help_menu_area); // clears out the background
@@ -976,7 +970,7 @@ impl App {
             // Render help text.
             let help_text = Paragraph::new(self.help_menu_text.clone())
                 .style(Style::default())
-                .block(block::Block::bordered());
+                .block(block::Block::bordered().padding(Padding::uniform(1)));
             frame.render_widget(help_text, help_menu_area);
         }
     }
