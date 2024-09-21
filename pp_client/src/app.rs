@@ -66,11 +66,11 @@ fn card_to_span(card: &Card) -> Span<'_> {
         v => &v.to_string(),
     };
     match suit {
-        Suit::Club => format!("{value:>2}/c").light_green(),
-        Suit::Diamond => format!("{value:>2}/d").light_blue(),
-        Suit::Heart => format!("{value:>2}/h").light_red(),
-        Suit::Spade => format!("{value:>2}/s").into(),
-        Suit::Wild => format!("{value:>2}/w").light_magenta(),
+        Suit::Club => format!("{value}/c").light_green(),
+        Suit::Diamond => format!("{value}/d").light_blue(),
+        Suit::Heart => format!("{value}/h").light_red(),
+        Suit::Spade => format!("{value}/s").into(),
+        Suit::Wild => format!("{value}/w").light_magenta(),
     }
 }
 
