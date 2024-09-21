@@ -46,7 +46,7 @@ Host and manage poker over `ssh` with the following commands:
 2. Create a user:
 
    ```bash
-   docker exec -it poker sh ./bin/create_user.sh $username
+   docker exec -it poker ./create_user $username
    docker cp poker:/home/$username/.ssh/id_rsa $poker_ssh_key
    ```
 
@@ -65,7 +65,7 @@ Host and manage poker over `ssh` with the following commands:
 4. Delete a user:
 
    ```bash
-   docker exec -it poker sh ./bin/delete_user.sh $username
+   docker exec -it poker ./delete_user $username
    ```
 
 5. Stop the server:
