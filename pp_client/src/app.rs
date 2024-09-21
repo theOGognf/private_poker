@@ -38,6 +38,10 @@ use std::{
 pub const MAX_LOG_RECORDS: usize = 1024;
 pub const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
+fn blinds_to_string(view: &GameView) -> String {
+    format!(" blinds: ${}/${}  ", view.big_blind, view.small_blind)
+}
+
 fn board_to_vec_of_spans(view: &GameView) -> Vec<Span<'_>> {
     let mut span = vec![" board: ".into()];
     if view.board.is_empty() {
@@ -735,10 +739,15 @@ impl App {
             if let Ok(msg) = rx_server.try_recv() {
                 match msg {
                     ServerMessage::Ack(msg) => {
-                        // Our action was acknowledged, so we don't need warnings anymore.
-                        if let UserCommand::TakeAction(_) = msg.command {
-                            if msg.username == self.username {
-                                turn_warnings.clear();
+                        if msg.username == self.username {
+                            match msg.command {
+                                // Our action was acknowledged, so we don't need warnings anymore.
+                                UserCommand::TakeAction(_) => {
+                                    turn_warnings.clear();
+                                }
+                                // Our action timed-out and so the server booted us; let's exit.
+                                UserCommand::Leave => return Ok(()),
+                                _ => {}
                             }
                         }
                         let record = Record::new(RecordKind::Ack, msg.to_string());
@@ -837,15 +846,31 @@ impl App {
                 };
                 let button_repr = Text::from(button_repr);
 
+                // Username column.
+                let username_repr = player.user.name.clone();
+                let username_repr = Text::from(username_repr);
+
+                // Money column.
+                let money_repr = format!("${}", player.user.money);
+                let money_repr = Text::from(money_repr);
+
+                // This is the final row representation for the table entry.
+                let mut row = vec![
+                    Cell::new(move_repr.alignment(Alignment::Center)),
+                    Cell::new(button_repr.alignment(Alignment::Left)),
+                    Cell::new(username_repr.alignment(Alignment::Left)),
+                    Cell::new(money_repr.alignment(Alignment::Right)),
+                ];
+
                 // Player cards styled according to suit.
-                let (card1, card2) = if player.cards.is_empty() {
-                    (Text::from(" ?/?"), Text::from(" ?/?"))
-                } else {
-                    (
-                        Text::from(card_to_span(&player.cards[0])),
-                        Text::from(card_to_span(&player.cards[1])),
-                    )
-                };
+                for card_idx in 0..2 {
+                    let card_repr = match player.cards.get(card_idx) {
+                        Some(card) => Text::from(card_to_span(card)),
+                        None => Text::from(" ?/?"),
+                    };
+                    let card_cell = Cell::new(card_repr.alignment(Alignment::Right));
+                    row.push(card_cell);
+                }
 
                 // Player's highest subhand displayed.
                 let hand_repr = if player.cards.is_empty() {
@@ -861,25 +886,18 @@ impl App {
                         "??"
                     }
                 };
-                let hand_repr = Text::from(format!("({hand_repr})"));
+                let hand_repr = format!("({hand_repr})");
+                let hand_repr = Text::from(hand_repr).alignment(Alignment::Right);
+                let hand_cell = Cell::new(hand_repr);
+                row.push(hand_cell);
 
-                Row::new(vec![
-                    Cell::new(move_repr.alignment(Alignment::Center)),
-                    Cell::new(button_repr.alignment(Alignment::Left)),
-                    Cell::new(Text::from(player.user.name.clone()).alignment(Alignment::Left)),
-                    Cell::new(
-                        Text::from(format!("${}", player.user.money)).alignment(Alignment::Right),
-                    ),
-                    Cell::new(card1.alignment(Alignment::Right)),
-                    Cell::new(card2.alignment(Alignment::Right)),
-                    Cell::new(hand_repr.alignment(Alignment::Right)),
-                ])
+                Row::new(row)
             }),
             [
                 Constraint::Max(3),
-                Constraint::Max(4),
+                Constraint::Fill(1),
                 Constraint::Fill(2),
-                Constraint::Fill(2),
+                Constraint::Fill(1),
                 Constraint::Fill(1),
                 Constraint::Fill(1),
                 Constraint::Fill(1),
@@ -894,12 +912,9 @@ impl App {
                         .alignment(Alignment::Left),
                 )
                 .title(
-                    block::Title::from(format!(
-                        " blinds: ${}/${}  ",
-                        view.big_blind, view.small_blind
-                    ))
-                    .position(block::Position::Bottom)
-                    .alignment(Alignment::Right),
+                    block::Title::from(blinds_to_string(view))
+                        .position(block::Position::Bottom)
+                        .alignment(Alignment::Right),
                 )
                 .title(
                     block::Title::from(pots_to_string(view))
