@@ -13,11 +13,13 @@ use private_poker::{
     GameSettings, DEFAULT_MAX_USERS, MAX_PLAYERS,
 };
 #[cfg(target_os = "linux")]
-use signal_hook::{
-    consts::{SIGINT, SIGQUIT, SIGTERM},
-    iterator::Signals,
+use {
+    signal_hook::{
+        consts::{SIGINT, SIGQUIT, SIGTERM},
+        iterator::Signals,
+    },
+    std::{process, thread},
 };
-use std::{process, thread};
 
 fn main() -> Result<(), Error> {
     let addr = Arg::new("bind")
