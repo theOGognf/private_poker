@@ -439,7 +439,17 @@ impl<T> Game<T> {
     /// showing player hands and distributing the pots, or whether
     /// to move on to other post-game phases.
     pub fn get_num_pots(&self) -> usize {
-        let unique_investments: HashSet<_> = self.data.pot.investments.values().collect();
+        let unique_investments: HashSet<_> = self
+            .data
+            .pot
+            .investments
+            .iter()
+            .filter(|(player_idx, _)| {
+                let player = &self.data.players[**player_idx];
+                player.state != PlayerState::Fold
+            })
+            .map(|(_, investment)| *investment)
+            .collect();
         unique_investments.len()
     }
 
@@ -1114,26 +1124,38 @@ impl From<Game<River>> for Game<ShowHands> {
     }
 }
 
-impl Game<ShowHands> {
-    pub fn show_hand(&mut self, username: &str) -> Result<(), UserError> {
-        match self
-            .data
-            .players
-            .iter_mut()
-            .find(|p| p.user.name == username)
-        {
-            Some(player) => {
-                if player.state != PlayerState::Show {
-                    player.state = PlayerState::Show;
-                    Ok(())
-                } else {
-                    Err(UserError::UserAlreadyShowingHand)
+macro_rules! impl_show_hands {
+    ($($t:ty),+) => {
+        $(impl $t {
+            pub fn show_hand(&mut self, username: &str) -> Result<(), UserError> {
+                match self
+                    .data
+                    .players
+                    .iter_mut()
+                    .find(|p| p.user.name == username)
+                {
+                    Some(player) => {
+                        if player.state != PlayerState::Show {
+                            player.state = PlayerState::Show;
+                            Ok(())
+                        } else {
+                            Err(UserError::UserAlreadyShowingHand)
+                        }
+                    }
+                    None => Err(UserError::UserNotPlaying),
                 }
             }
-            None => Err(UserError::UserNotPlaying),
-        }
+        })*
     }
 }
+
+impl_show_hands!(
+    Game<ShowHands>,
+    Game<DistributePot>,
+    Game<RemovePlayers>,
+    Game<DivideDonations>,
+    Game<UpdateBlinds>
+);
 
 impl From<Game<ShowHands>> for Game<DistributePot> {
     fn from(mut value: Game<ShowHands>) -> Self {
@@ -1172,10 +1194,11 @@ impl Game<DistributePot> {
         if let Some((_, largest_call)) = investments.last() {
             // Get the pot size and the player indices in the pot.
             let mut pot_idx = investments.len() - 1;
-            let mut call = **largest_call;
-            for (idx, (_, investment)) in investments.iter().enumerate().rev() {
-                if investment < largest_call {
-                    call = **largest_call - **investment;
+            let mut pot_call = **largest_call;
+            for (idx, (player_idx, investment)) in investments.iter().enumerate().rev() {
+                let player = &self.data.players[**player_idx];
+                if player.state != PlayerState::Fold && investment < largest_call {
+                    pot_call = **largest_call - **investment;
                     break;
                 }
                 pot_idx = idx;
@@ -1183,12 +1206,15 @@ impl Game<DistributePot> {
 
             // Evaluate the hands in the pot and get the winners.
             let mut pot_size: Usd = 0;
+            let mut seats_in_pot = Vec::with_capacity(self.data.settings.max_players);
             let mut hands_in_pot = Vec::with_capacity(self.data.settings.max_players);
             for (player_idx, investment) in investments[pot_idx..].as_mut() {
-                pot_size += call;
-                **investment -= call;
+                let pot_investment = min(pot_call, **investment);
+                pot_size += pot_investment;
+                **investment -= pot_investment;
                 let player = &mut self.data.players[**player_idx];
                 if player.state != PlayerState::Fold {
+                    seats_in_pot.push(*player_idx);
                     let hand_eval = || {
                         let mut cards = player.cards.clone();
                         cards.extend(self.data.board.clone());
@@ -1216,8 +1242,8 @@ impl Game<DistributePot> {
             let pot_split = pot_size / num_winners as Usd;
             let mut pot_remainder = pot_size as Usdf;
             for winner_idx in winner_indices {
-                let (winner_player_idx, _) = &mut investments[pot_idx..][winner_idx];
-                let player = &mut self.data.players[**winner_player_idx];
+                let winner_player_idx = seats_in_pot[winner_idx];
+                let player = &mut self.data.players[*winner_player_idx];
                 player.user.money += pot_split;
                 pot_remainder -= pot_split as Usdf;
             }
@@ -1229,25 +1255,6 @@ impl Game<DistributePot> {
             .pot
             .investments
             .retain(|_, investment| *investment > 0);
-    }
-
-    pub fn show_hand(&mut self, username: &str) -> Result<(), UserError> {
-        match self
-            .data
-            .players
-            .iter_mut()
-            .find(|p| p.user.name == username)
-        {
-            Some(player) => {
-                if player.state != PlayerState::Show {
-                    player.state = PlayerState::Show;
-                    Ok(())
-                } else {
-                    Err(UserError::UserAlreadyShowingHand)
-                }
-            }
-            None => Err(UserError::UserNotPlaying),
-        }
     }
 }
 
@@ -1431,11 +1438,17 @@ impl fmt::Display for PokerState {
             PokerState::River(_) => "the river",
             PokerState::ShowHands(ref game) => {
                 let num_pots = game.get_num_pots();
-                &format!("showing pot #{num_pots}")
+                match num_pots {
+                    1 => "showing the main pot",
+                    i => &format!("showing side pot #{i}"),
+                }
             }
             PokerState::DistributePot(ref game) => {
                 let num_pots = game.get_num_pots();
-                &format!("distributing pot #{num_pots}")
+                match num_pots {
+                    1 => "distributing the main pot",
+                    i => &format!("distributing side pot #{i}"),
+                }
             }
             PokerState::RemovePlayers(_) => "updating players that joined spectators or left",
             PokerState::DivideDonations(_) => "dividing donations",
@@ -1515,11 +1528,19 @@ impl PokerState {
 
     pub fn show_hand(&mut self, username: &str) -> Result<(), UserError> {
         match self {
+            PokerState::ShowHands(ref mut game) => {
+                game.show_hand(username)?;
+                Ok(())
+            }
             PokerState::DistributePot(ref mut game) => {
                 game.show_hand(username)?;
                 Ok(())
             }
-            PokerState::ShowHands(ref mut game) => {
+            PokerState::RemovePlayers(ref mut game) => {
+                game.show_hand(username)?;
+                Ok(())
+            }
+            PokerState::UpdateBlinds(ref mut game) => {
                 game.show_hand(username)?;
                 Ok(())
             }
@@ -1725,6 +1746,18 @@ mod game_tests {
         game
     }
 
+    fn init_game_at_showdown_with_1_all_in() -> Game<ShowHands> {
+        let mut game = init_game_at_deal();
+        game.act(Action::AllIn).unwrap();
+        game.act(Action::Fold).unwrap();
+        game.act(Action::Fold).unwrap();
+        let game: Game<Flop> = game.into();
+        let game: Game<Turn> = game.into();
+        let game: Game<River> = game.into();
+        let game: Game<ShowHands> = game.into();
+        game
+    }
+
     fn init_game_at_showdown_with_2_all_ins() -> Game<ShowHands> {
         let mut game = init_game_at_deal();
         game.act(Action::Fold).unwrap();
@@ -1790,6 +1823,24 @@ mod game_tests {
         assert_eq!(game.get_num_community_cards(), 4);
         let game: Game<ShowHands> = game.into();
         assert_eq!(game.get_num_community_cards(), 5);
+    }
+
+    #[test]
+    fn early_showdown_1_all_in_2_folds() {
+        let game = init_game_at_showdown_with_1_all_in();
+        let game: Game<DistributePot> = game.into();
+        let game: Game<ShowHands> = game.into();
+        assert!(game.is_pot_empty());
+        for (i, money) in [
+            game.data.settings.buy_in + game.data.small_blind + game.data.big_blind,
+            game.data.settings.buy_in - game.data.small_blind,
+            game.data.settings.buy_in - game.data.big_blind,
+        ]
+        .iter()
+        .enumerate()
+        {
+            assert_eq!(game.data.players[i].user.money, *money);
+        }
     }
 
     #[test]
@@ -2296,55 +2347,38 @@ mod state_tests {
         assert_eq!(state.init_start("0"), Ok(()));
         // SeatPlayers
         state = state.step();
-        println!("{state}");
         // MoveButton
         state = state.step();
-        println!("{state}");
         // CollectBlinds
         state = state.step();
-        println!("{state}");
         // Deal
         state = state.step();
-        println!("{state}");
         // TakeAction
         state = state.step();
-        println!("{state}");
         // 1st fold
         state = state.step();
-        println!("{state}");
         // 2nd fold
         state = state.step();
-        println!("{state}");
         // Flop
         state = state.step();
-        println!("{state}");
         // Turn
         state = state.step();
-        println!("{state}");
         // River
         state = state.step();
-        println!("{state}");
         // ShowHands
         state = state.step();
-        println!("{state}");
         // DistributePot
         state = state.step();
-        println!("{state}");
         // RemovePlayers
         state = state.step();
-        println!("{state}");
         // DivideDonations
         state = state.step();
-        println!("{state}");
         // UpdateBlinds
         state = state.step();
-        println!("{state}");
         // BootPlayers
         state = state.step();
-        println!("{state}");
         // Lobby
         state = state.step();
-        println!("{state}");
         assert_eq!(state.init_start("0"), Ok(()));
     }
 

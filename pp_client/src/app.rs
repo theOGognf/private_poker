@@ -69,11 +69,11 @@ fn card_to_span(card: &Card) -> Span<'_> {
         v => &v.to_string(),
     };
     match suit {
-        Suit::Club => format!("{value}/c").light_green(),
-        Suit::Diamond => format!("{value}/d").light_blue(),
-        Suit::Heart => format!("{value}/h").light_red(),
-        Suit::Spade => format!("{value}/s").into(),
-        Suit::Wild => format!("{value}/w").light_magenta(),
+        Suit::Club => format!("{value:>2}/c").light_green(),
+        Suit::Diamond => format!("{value:>2}/d").light_blue(),
+        Suit::Heart => format!("{value:>2}/h").light_red(),
+        Suit::Spade => format!("{value:>2}/s").into(),
+        Suit::Wild => format!("{value:>2}/w").light_magenta(),
     }
 }
 
@@ -701,12 +701,17 @@ impl App {
                 let money_repr = format!("${}", player.user.money);
                 let money_repr = Text::from(money_repr);
 
+                // State column.
+                let state_repr = player.state.to_string();
+                let state_repr = Text::from(state_repr);
+
                 // This is the final row representation for the table entry.
                 let mut row = vec![
                     Cell::new(move_repr.alignment(Alignment::Center)),
                     Cell::new(button_repr.alignment(Alignment::Left)),
                     Cell::new(username_repr.alignment(Alignment::Left)),
                     Cell::new(money_repr.alignment(Alignment::Right)),
+                    Cell::new(state_repr.alignment(Alignment::Center)),
                 ];
 
                 // Player cards styled according to suit.
@@ -744,7 +749,8 @@ impl App {
                 Constraint::Max(3),
                 Constraint::Fill(1),
                 Constraint::Fill(2),
-                Constraint::Fill(1),
+                Constraint::Fill(2),
+                Constraint::Fill(2),
                 Constraint::Fill(1),
                 Constraint::Fill(1),
                 Constraint::Fill(1),
