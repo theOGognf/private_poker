@@ -313,6 +313,12 @@ impl<T> Game<T> {
             };
             players.push(player_view);
         }
+        // Action index doesn't matter if the turn is being transitioned.
+        let next_action_idx = if self.is_ready_for_next_phase() {
+            None
+        } else {
+            self.data.next_action_idx
+        };
         GameView {
             donations: self.data.donations,
             small_blind: self.data.small_blind,
@@ -327,7 +333,7 @@ impl<T> Game<T> {
             },
             small_blind_idx: self.data.small_blind_idx,
             big_blind_idx: self.data.big_blind_idx,
-            next_action_idx: self.data.next_action_idx,
+            next_action_idx,
         }
     }
 
@@ -382,16 +388,19 @@ impl<T> Game<T> {
         }
         match self.data.next_action_idx {
             Some(action_idx) => {
-                let mut action_options = HashSet::from([Action::AllIn, Action::Fold]);
+                let mut action_options = HashSet::from([Action::Fold]);
                 let user = &self.data.players[action_idx].user;
                 let raise = self.data.pot.get_min_raise_by_player_idx(action_idx);
                 let call = self.data.pot.get_call_by_player_idx(action_idx);
+                if self.data.num_players_active > 1 || call >= user.money {
+                    action_options.insert(Action::AllIn);
+                }
                 if call > 0 && call < user.money {
                     action_options.insert(Action::Call(call));
                 } else if call == 0 {
                     action_options.insert(Action::Check);
                 }
-                if user.money > raise {
+                if self.data.num_players_active > 1 && user.money > raise {
                     action_options.insert(Action::Raise(raise));
                 }
                 Some(action_options)
@@ -846,6 +855,7 @@ impl From<Game<CollectBlinds>> for Game<Deal> {
             let bet = match player.user.money.cmp(&blind) {
                 Ordering::Equal => {
                     player.state = PlayerState::AllIn;
+                    value.data.num_players_active -= 1;
                     Bet {
                         action: BetAction::AllIn,
                         amount: player.user.money,
@@ -1701,7 +1711,18 @@ mod game_tests {
         UserError,
     };
 
-    fn init_game() -> Game<SeatPlayers> {
+    fn init_2_player_game() -> Game<SeatPlayers> {
+        let game = Game::<Lobby>::new();
+        let mut game: Game<SeatPlayers> = game.into();
+        for i in 0..2 {
+            let username = i.to_string();
+            game.new_user(&username).unwrap();
+            game.waitlist_user(&username).unwrap();
+        }
+        game
+    }
+
+    fn init_3_player_game() -> Game<SeatPlayers> {
         let game = Game::<Lobby>::new();
         let mut game: Game<SeatPlayers> = game.into();
         for i in 0..3 {
@@ -1713,7 +1734,7 @@ mod game_tests {
     }
 
     fn init_game_at_collect_blinds() -> Game<Deal> {
-        let game = init_game();
+        let game = init_3_player_game();
         let game: Game<MoveButton> = game.into();
         let game: Game<CollectBlinds> = game.into();
         let game: Game<Deal> = game.into();
@@ -1721,7 +1742,7 @@ mod game_tests {
     }
 
     fn init_game_at_deal() -> Game<TakeAction> {
-        let game = init_game();
+        let game = init_3_player_game();
         let game: Game<MoveButton> = game.into();
         let game: Game<CollectBlinds> = game.into();
         let game: Game<Deal> = game.into();
@@ -1730,14 +1751,14 @@ mod game_tests {
     }
 
     fn init_game_at_move_button() -> Game<CollectBlinds> {
-        let game = init_game();
+        let game = init_3_player_game();
         let game: Game<MoveButton> = game.into();
         let game: Game<CollectBlinds> = game.into();
         game
     }
 
     fn init_game_at_seat_players() -> Game<MoveButton> {
-        let game = init_game();
+        let game = init_3_player_game();
         let game: Game<MoveButton> = game.into();
         game
     }
@@ -1840,6 +1861,52 @@ mod game_tests {
     }
 
     #[test]
+    fn early_showdown_1_forced_all_in_and_1_call() {
+        let game = init_2_player_game();
+        let mut game: Game<MoveButton> = game.into();
+        // Want to force two players to all-in
+        for i in 0..2 {
+            if i == 0 {
+                game.data.players[i].user.money = game.data.settings.min_big_blind;
+            }
+        }
+        let game: Game<CollectBlinds> = game.into();
+        let game: Game<Deal> = game.into();
+        let mut game: Game<TakeAction> = game.into();
+        assert_eq!(game.act(Action::Call(5)), Ok(Action::Call(5)));
+        assert_eq!(game.get_next_action_options(), None);
+        let game: Game<Flop> = game.into();
+        let game: Game<Turn> = game.into();
+        let game: Game<River> = game.into();
+        let mut game: Game<ShowHands> = game.into();
+        game.data.board = vec![
+            Card(1, Suit::Spade),
+            Card(4, Suit::Diamond),
+            Card(5, Suit::Diamond),
+            Card(6, Suit::Diamond),
+            Card(7, Suit::Diamond),
+        ];
+        game.data.players[0].cards = vec![Card(3, Suit::Heart), Card(1, Suit::Diamond)];
+        game.data.players[1].cards = vec![Card(1, Suit::Heart), Card(10, Suit::Diamond)];
+        let game: Game<DistributePot> = game.into();
+        let game: Game<ShowHands> = game.into();
+        let game: Game<DistributePot> = game.into();
+        let game: Game<ShowHands> = game.into();
+        let game: Game<DistributePot> = game.into();
+        let game: Game<ShowHands> = game.into();
+        assert!(game.is_pot_empty());
+        for (i, money) in [
+            2 * game.data.settings.min_big_blind,
+            game.data.settings.buy_in - game.data.settings.min_big_blind,
+        ]
+        .iter()
+        .enumerate()
+        {
+            assert_eq!(game.data.players[i].user.money, *money);
+        }
+    }
+
+    #[test]
     fn early_showdown_1_winner() {
         let mut game = init_game_at_showdown_with_2_all_ins();
         // Gotta replace all the cards to make the showdown result
@@ -1887,7 +1954,7 @@ mod game_tests {
 
     #[test]
     fn early_showdown_3_decreasing_all_ins() {
-        let game = init_game();
+        let game = init_3_player_game();
         let mut game: Game<MoveButton> = game.into();
         for i in 0..3 {
             game.data.players[i].user.money = game.data.settings.buy_in * (3 - i as u32);
@@ -1934,7 +2001,7 @@ mod game_tests {
 
     #[test]
     fn early_showdown_3_increasing_all_ins() {
-        let game = init_game();
+        let game = init_3_player_game();
         let mut game: Game<MoveButton> = game.into();
         for i in 0..3 {
             game.data.players[i].user.money = game.data.settings.buy_in * (i as u32 + 1);
@@ -1954,13 +2021,9 @@ mod game_tests {
         assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         assert_eq!(
             game.get_next_action_options(),
-            Some(HashSet::from([
-                Action::AllIn,
-                Action::Call(395),
-                Action::Fold,
-            ]))
+            Some(HashSet::from([Action::Call(390), Action::Fold,]))
         );
-        assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
+        assert_eq!(game.act(Action::Call(390)), Ok(Action::Call(390)));
         let game: Game<Flop> = game.into();
         let game: Game<Turn> = game.into();
         let game: Game<River> = game.into();

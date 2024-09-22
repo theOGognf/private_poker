@@ -46,15 +46,15 @@ fn blinds_to_string(view: &GameView) -> String {
 }
 
 fn board_to_vec_of_spans(view: &GameView) -> Vec<Span<'_>> {
-    let mut span = vec![" board: ".into()];
-    // Player cards styled according to suit.
-    for card_idx in 0..5 {
-        let card_repr = match view.board.get(card_idx) {
-            Some(card) => card_to_span(card),
-            None => Span::raw(" ?/?"),
-        };
-        span.push(card_repr);
-        span.push("  ".into());
+    let mut span = vec![];
+    if !view.board.is_empty() {
+        span.push(" board: ".into());
+        // Player cards styled according to suit.
+        for card in view.board.iter() {
+            let card_repr = card_to_span(card);
+            span.push(card_repr);
+            span.push("  ".into());
+        }
     }
     span
 }
@@ -718,7 +718,7 @@ impl App {
                 for card_idx in 0..2 {
                     let card_repr = match player.cards.get(card_idx) {
                         Some(card) => Text::from(card_to_span(card)),
-                        None => Text::from(" ?/?"),
+                        None => Text::from("    "),
                     };
                     let card_cell = Cell::new(card_repr.alignment(Alignment::Right));
                     row.push(card_cell);
@@ -726,19 +726,18 @@ impl App {
 
                 // Player's highest subhand displayed.
                 let hand_repr = if player.cards.is_empty() {
-                    "??"
+                    "  ".to_string()
                 } else {
                     let mut cards = view.board.clone();
                     cards.extend(player.cards.clone());
                     functional::prepare_hand(&mut cards);
                     let hand = functional::eval(&cards);
                     if let Some(subhand) = hand.first() {
-                        &subhand.rank.to_string()
+                        format!("({})", subhand.rank)
                     } else {
-                        "??"
+                        "  ".to_string()
                     }
                 };
-                let hand_repr = format!("({hand_repr})");
                 let hand_repr = Text::from(hand_repr).alignment(Alignment::Right);
                 let hand_cell = Cell::new(hand_repr);
                 row.push(hand_cell);
