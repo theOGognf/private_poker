@@ -12,7 +12,7 @@ pub mod constants;
 pub mod entities;
 pub mod functional;
 
-use constants::{DEFAULT_MAX_USERS, MAX_PLAYERS, MAX_POTS};
+use constants::{DEFAULT_MAX_USERS, MAX_PLAYERS};
 use entities::{
     Action, Bet, BetAction, Card, GameView, GameViews, Player, PlayerState, PlayerView, Pot,
     PotView, SubHand, Usd, Usdf, User, DEFAULT_BUY_IN, DEFAULT_MIN_BIG_BLIND,
@@ -58,21 +58,18 @@ pub struct GameSettings {
     pub min_small_blind: Usd,
     pub max_players: usize,
     pub max_users: usize,
-    pub max_pots: usize,
 }
 
 impl GameSettings {
     pub fn new(max_players: usize, max_users: usize, buy_in: Usd) -> Self {
         let min_big_blind = buy_in / 20;
         let min_small_blind = min_big_blind / 2;
-        let max_pots = max_players / 2 + 1;
         Self {
             buy_in,
             min_big_blind,
             min_small_blind,
             max_players,
             max_users,
-            max_pots,
         }
     }
 }
@@ -85,7 +82,6 @@ impl Default for GameSettings {
             min_small_blind: DEFAULT_MIN_SMALL_BLIND,
             max_players: MAX_PLAYERS,
             max_users: DEFAULT_MAX_USERS,
-            max_pots: MAX_POTS,
         }
     }
 }
