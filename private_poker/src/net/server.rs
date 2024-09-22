@@ -720,14 +720,9 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             tx_server.send(msg)?;
                             waker.wake()?;
 
-                            // Force remove them so they don't disrupt
-                            // future games and ack it.
+                            // Force remove them so they don't disrupt future games.
                             warn!("{username} will be removed at the end of the game");
                             state.remove_user(&username)?;
-                            let command = UserCommand::Leave;
-                            let msg = ServerData::Ack(ClientMessage { username, command });
-                            tx_server.send(msg)?;
-                            waker.wake()?;
 
                             break 'command;
                         } else {
