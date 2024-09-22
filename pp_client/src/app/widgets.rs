@@ -1,25 +1,9 @@
 use ratatui::{
     self,
-    crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
-    layout::{Alignment, Constraint, Flex, Layout, Margin, Position},
-    style::{Style, Stylize},
-    symbols::scrollbar,
-    text::{Line, Span, Text},
-    widgets::{
-        block, Block, Cell, Clear, List, ListDirection, ListItem, ListState, Padding, Paragraph,
-        Row, ScrollDirection, Scrollbar, ScrollbarOrientation, ScrollbarState, Table,
-    },
-    DefaultTerminal, Frame,
+    widgets::{ListItem, ListState, ScrollDirection, ScrollbarState},
 };
 
-use std::{
-    collections::{HashSet, VecDeque},
-    io,
-    net::TcpStream,
-    sync::mpsc::{channel, Receiver, Sender},
-    thread,
-    time::{Duration, Instant},
-};
+use std::collections::VecDeque;
 
 /// Manages terminal messages and the terminal view position.
 pub struct ScrollableList {

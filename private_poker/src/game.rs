@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     cmp::{max, min, Ordering},
     collections::{BTreeSet, HashMap, HashSet, VecDeque},
-    fmt,
+    fmt, ops::SubAssign,
 };
 use thiserror::Error;
 
@@ -14,8 +14,9 @@ pub mod functional;
 
 use constants::{DEFAULT_MAX_USERS, MAX_PLAYERS, MAX_POTS};
 use entities::{
-    Action, Bet, BetAction, Card, Player, PlayerState, Pot, SubHand, Usd, Usdf, User,
-    DEFAULT_BUY_IN, DEFAULT_MIN_BIG_BLIND, DEFAULT_MIN_SMALL_BLIND,
+    Action, Bet, BetAction, Card, GameView, GameViews, Player, PlayerState, PlayerView, Pot,
+    PotView, SubHand, Usd, Usdf, User, DEFAULT_BUY_IN, DEFAULT_MIN_BIG_BLIND,
+    DEFAULT_MIN_SMALL_BLIND,
 };
 
 #[derive(Debug, Deserialize, Eq, Error, PartialEq, Serialize)]
@@ -89,43 +90,6 @@ impl Default for GameSettings {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct PlayerView {
-    pub user: User,
-    pub state: PlayerState,
-    pub cards: Vec<Card>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct PotView {
-    call: Usd,
-    size: Usd,
-}
-
-impl fmt::Display for PotView {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "${}", self.size)
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct GameView {
-    pub donations: Usdf,
-    pub small_blind: Usd,
-    pub big_blind: Usd,
-    pub spectators: HashMap<String, User>,
-    pub waitlist: VecDeque<User>,
-    pub open_seats: VecDeque<usize>,
-    pub players: Vec<PlayerView>,
-    pub board: Vec<Card>,
-    pub pots: Vec<PotView>,
-    pub small_blind_idx: usize,
-    pub big_blind_idx: usize,
-    pub next_action_idx: Option<usize>,
-}
-
-pub type GameViews = HashMap<String, GameView>;
-
 #[derive(Debug)]
 pub struct GameData {
     /// Deck of cards. This is instantiated once and reshuffled
@@ -155,11 +119,7 @@ pub struct GameData {
     /// at the beginning of each betting round and whenever a player
     /// raises (since they've increased the minimum call).
     num_players_called: usize,
-    /// All pots used in the current hand. A side pot is created
-    /// and pushed to this vector anytime a player raises an all-in.
-    /// The call a player must make is the sum of all calls from all
-    /// pots within this vector.
-    pub pots: Vec<Pot>,
+    pub pot: Pot,
     /// Queue of users that're playing the game but have opted
     /// to spectate. We can't safely remove them from the game mid gameplay,
     /// so we instead queue them for removal.
@@ -191,7 +151,7 @@ impl GameData {
             board: Vec::with_capacity(5),
             num_players_active: 0,
             num_players_called: 0,
-            pots: Vec::with_capacity(settings.max_pots),
+            pot: Pot::new(settings.max_players),
             players_to_remove: BTreeSet::new(),
             players_to_spectate: BTreeSet::new(),
             deck_idx: 0,
@@ -218,7 +178,7 @@ impl From<GameSettings> for GameData {
             board: Vec::with_capacity(5),
             num_players_active: 0,
             num_players_called: 0,
-            pots: Vec::with_capacity(value.max_pots),
+            pot: Pot::new(value.max_players),
             players_to_remove: BTreeSet::new(),
             players_to_spectate: BTreeSet::new(),
             deck_idx: 0,
@@ -366,15 +326,7 @@ impl<T> Game<T> {
             open_seats: self.data.open_seats.clone(),
             players,
             board: self.data.board.clone(),
-            pots: self
-                .data
-                .pots
-                .iter()
-                .map(|pot| PotView {
-                    call: pot.call,
-                    size: pot.size,
-                })
-                .collect(),
+            pot: PotView{size: self.data.pot.get_size()},
             small_blind_idx: self.data.small_blind_idx,
             big_blind_idx: self.data.big_blind_idx,
             next_action_idx: self.data.next_action_idx,
@@ -434,8 +386,8 @@ impl<T> Game<T> {
             Some(action_idx) => {
                 let mut action_options = HashSet::from([Action::AllIn, Action::Fold]);
                 let user = &self.data.players[action_idx].user;
-                let raise = self.get_total_min_raise_by_player_idx(action_idx);
-                let call = self.get_total_call_by_player_idx(action_idx);
+                let raise = self.data.pot.get_min_raise_by_player_idx(action_idx);
+                let call = self.data.pot.get_call_by_player_idx(action_idx);
                 if call > 0 && call < user.money {
                     action_options.insert(Action::Call(call));
                 } else if call == 0 {
@@ -485,42 +437,12 @@ impl<T> Game<T> {
     /// showing player hands and distributing the pots, or whether
     /// to move on to other post-game phases.
     pub fn get_num_pots(&self) -> usize {
-        self.data.pots.len()
+        let unique_investments: HashSet<_> = self.data.pot.investments.values().collect();
+        unique_investments.len()
     }
 
     fn get_num_users(&self) -> usize {
         self.data.spectators.len() + self.data.waitlist.len() + self.data.players.len()
-    }
-
-    /// Return the sum of all calls for all pots. A player's total investment
-    /// must match this amount in order to stay in the pot(s).
-    fn get_total_call(&self) -> Usd {
-        self.data.pots.iter().map(|p| p.call).sum()
-    }
-
-    /// Return the remaining amount a player has to bet in order to stay
-    /// in the pot(s).
-    fn get_total_call_by_player_idx(&self, player_idx: usize) -> Usd {
-        self.data
-            .pots
-            .iter()
-            .map(|p| p.get_call_by_player_idx(player_idx))
-            .sum()
-    }
-
-    /// Return the total amount a player has invested in the pot(s).
-    fn get_total_investment_by_player_idx(&self, player_idx: usize) -> Usd {
-        self.data
-            .pots
-            .iter()
-            .map(|p| p.get_investment_by_player_idx(player_idx))
-            .sum()
-    }
-
-    /// Return the minimum amount a player has to bet in order for their
-    /// raise to be considered a valid raise.
-    fn get_total_min_raise_by_player_idx(&self, player_idx: usize) -> Usd {
-        2 * self.get_total_call() - self.get_total_investment_by_player_idx(player_idx)
     }
 
     /// Return independent views of the game for each user. For non-players,
@@ -547,7 +469,7 @@ impl<T> Game<T> {
     }
 
     pub fn is_pot_empty(&self) -> bool {
-        self.data.pots.is_empty()
+        self.data.pot.is_empty()
     }
 
     /// Return whether the betting round is over and the game can continue
@@ -562,7 +484,7 @@ impl<T> Game<T> {
         match self.data.next_action_idx {
             Some(action_idx) => {
                 self.data.num_players_active <= 1
-                    && self.get_total_call_by_player_idx(action_idx) == 0
+                    && self.data.pot.get_call_by_player_idx(action_idx) == 0
             }
             None => self.data.num_players_active <= 1,
         }
@@ -907,8 +829,7 @@ impl From<Game<MoveButton>> for Game<CollectBlinds> {
 /// Collect blinds, initializing the main pot.
 impl From<Game<CollectBlinds>> for Game<Deal> {
     fn from(mut value: Game<CollectBlinds>) -> Self {
-        value.data.pots.push(Pot::new());
-        let pot = &mut value.data.pots[0];
+        value.data.pot = Pot::new(value.data.settings.max_players);
         for (player_idx, blind) in [
             (value.data.small_blind_idx, value.data.small_blind),
             (value.data.big_blind_idx, value.data.big_blind),
@@ -935,7 +856,7 @@ impl From<Game<CollectBlinds>> for Game<Deal> {
             };
             // Impossible for a side pot to be created from the blinds, so
             // we don't even need to check.
-            pot.bet(player_idx, &bet);
+            value.data.pot.bet(player_idx, &bet);
             player.user.money -= blind;
         }
         value.data.num_players_called = 0;
@@ -1017,24 +938,24 @@ impl Game<TakeAction> {
                     player.state = PlayerState::AllIn;
                 }
                 // Do some additional bet validation based on the bet's amount.
-                let total_call = self.get_total_call();
-                let total_investment = self.get_total_investment_by_player_idx(player_idx);
-                let new_total_investment = total_investment + bet.amount;
+                let call = self.data.pot.get_call();
+                let investment = self.data.pot.get_investment_by_player_idx(player_idx);
+                let new_investment = investment + bet.amount;
                 match bet.action {
                     BetAction::AllIn => {
                         self.data.num_players_active -= 1;
-                        if new_total_investment > total_call {
+                        if new_investment > call {
                             self.data.num_players_called = 0;
                         }
                     }
                     BetAction::Call => {
-                        if new_total_investment != total_call {
+                        if new_investment != call {
                             return Err(UserError::InvalidBet { bet });
                         }
                         self.data.num_players_called += 1;
                     }
                     BetAction::Raise => {
-                        if new_total_investment < (2 * total_call) {
+                        if new_investment < (2 * call) {
                             return Err(UserError::InvalidBet { bet });
                         }
                         self.data.num_players_called = 1;
@@ -1044,35 +965,7 @@ impl Game<TakeAction> {
                 // stack and start distributing it appropriately amongst all the pots.
                 let player = &mut self.data.players[player_idx];
                 player.user.money -= bet.amount;
-                // Place bets for all pots except for the last. If the player's bet
-                // is too small, it's considered an all-in (though this really should've
-                // been caught earlier during bet sanitization).
-                let num_pots = self.data.pots.len();
-                for pot in self.data.pots.iter_mut().take(num_pots - 1) {
-                    let call = pot.get_call_by_player_idx(player_idx);
-                    let pot_bet = if bet.amount <= call {
-                        Bet {
-                            action: BetAction::AllIn,
-                            amount: bet.amount,
-                        }
-                    } else {
-                        Bet {
-                            action: BetAction::Call,
-                            amount: call,
-                        }
-                    };
-                    pot.bet(player_idx, &pot_bet);
-                    bet.amount -= pot_bet.amount;
-                }
-                // Can only continue betting for the final pot if the player
-                // still has money to bet with.
-                if bet.amount > 0 {
-                    let pot = &mut self.data.pots[num_pots - 1];
-                    // Make sure we catch the side pot if one was created.
-                    if let Some(side_pot) = pot.bet(player_idx, &bet) {
-                        self.data.pots.push(side_pot);
-                    }
-                }
+                self.data.pot.bet(player_idx, &bet);
                 // Return the santized action.
                 Ok(bet.into())
             }
@@ -1249,13 +1142,11 @@ impl From<Game<ShowHands>> for Game<DistributePot> {
             .map(|p| if p.state == PlayerState::Fold { 0 } else { 1 })
             .sum();
         if num_players_remaining > 1 {
-            if let Some(pot) = value.data.pots.last() {
-                for (player_idx, _) in pot.investments.iter() {
-                    let player = &mut value.data.players[*player_idx];
-                    match player.state {
-                        PlayerState::AllIn | PlayerState::Wait => player.state = PlayerState::Show,
-                        _ => {}
-                    }
+            for player_idx in value.data.pot.investments.keys() {
+                let player = &mut value.data.players[*player_idx];
+                match player.state {
+                    PlayerState::AllIn | PlayerState::Wait => player.state = PlayerState::Show,
+                    _ => {}
                 }
             }
         }
@@ -1271,20 +1162,28 @@ impl From<Game<ShowHands>> for Game<DistributePot> {
 impl Game<DistributePot> {
     /// Get all players in the pot that haven't folded and compare their
     /// hands to one another. Get the winning indices and distribute
-    /// the pot accordingly. If there's a tie, winners are given their
-    /// original investments and then split the remainder. Everyone
-    /// can only lose as much as they had originally invested or as much
-    /// as a winner had invested, whichever is lower. This prevents folks
-    /// that went all-in, but have much more money than the winner, from
-    /// losing the extra money.
+    /// the pot accordingly.
     fn distribute(&mut self) {
-        if let Some(mut pot) = self.data.pots.pop() {
-            let mut seats_in_pot = Vec::with_capacity(self.data.settings.max_players);
+        let mut investments = Vec::from_iter(self.data.pot.investments.iter_mut());
+        investments.sort_unstable_by(|(_, investment1), (_, investment2)| investment1.cmp(investment2));
+        if let Some((_, largest_pot_size)) = investments.last() {
+            // Get the pot size and the player indices in the pot.
+            let mut next_pot_idx = investments.len() - 1;
+            let mut pot_size = **largest_pot_size;
+            for (idx, (_, investment)) in investments.iter().enumerate().rev() {
+                if investment < largest_pot_size {
+                    next_pot_idx = idx;
+                    pot_size = **largest_pot_size - **investment;
+                    break;
+                }
+            }
+
+            // Evaluate the hands in the pot and get the winners.
             let mut hands_in_pot = Vec::with_capacity(self.data.settings.max_players);
-            for (player_idx, _) in pot.investments.iter() {
-                let player = &mut self.data.players[*player_idx];
+            for (player_idx, investment) in investments[next_pot_idx + 1..].as_mut() {
+                **investment -= pot_size;
+                let player = &mut self.data.players[**player_idx];
                 if player.state != PlayerState::Fold {
-                    seats_in_pot.push(*player_idx);
                     let hand_eval = || {
                         let mut cards = player.cards.clone();
                         cards.extend(self.data.board.clone());
@@ -1294,62 +1193,35 @@ impl Game<DistributePot> {
                     let hand = self
                         .state
                         .hand_eval_cache
-                        .entry(*player_idx)
+                        .entry(**player_idx)
                         .or_insert_with(hand_eval);
                     hands_in_pot.push(hand.clone());
                 }
             }
-            // Most likely that up to four players will tie. It's possible
-            // for more players to tie, but very unlikely.
-            let mut distributions_per_player: HashMap<usize, Usd> = HashMap::with_capacity(4);
             let winner_indices = functional::argmax(&hands_in_pot);
-            let num_winners = winner_indices.len();
-            // Need to first give each winner's original investment back
-            // to them so the pot can be split fairly. The max winner
-            // investment is tracked to handle the edge case of some
-            // whale going all-in with no one else to call them.
-            let mut money_per_winner: HashMap<usize, Usd> = HashMap::with_capacity(4);
-            let mut max_winner_investment = Usd::MIN;
-            for winner_idx in winner_indices {
-                let winner_player_idx = seats_in_pot[winner_idx];
-                let winner_investment = pot
-                    .investments
-                    .remove(&winner_player_idx)
-                    .expect("winners are players");
-                if winner_investment > max_winner_investment {
-                    max_winner_investment = winner_investment;
-                }
-                money_per_winner.insert(winner_player_idx, winner_investment);
-                pot.size -= winner_investment;
-            }
-            for (player_idx, investment) in pot.investments {
-                if investment > max_winner_investment {
-                    let remainder = investment - max_winner_investment;
-                    distributions_per_player.insert(player_idx, remainder);
-                    pot.size -= remainder;
-                }
-            }
-            // Finally, split the remaining pot amongst all the winners.
-            // There's a possibility for the pot to not split perfectly
+
+            // Finally, split the pot amongst all the winners. There's
+            // a possibility for the pot to not split perfectly
             // amongst all players; in this case, the remainder is
             // put in the donations and will eventually be redistributed
             // amongst remaining users. This also encourages users to
             // stay in the game so they can be donated these breadcrumbs
             // and continue playing with them.
-            let pot_split = pot.size / num_winners as Usd;
-            let mut pot_remainder = pot.size as Usdf;
-            for (winner_player_idx, money) in money_per_winner {
-                distributions_per_player.insert(winner_player_idx, money + pot_split);
+            let num_winners = winner_indices.len();
+            let pot_split = pot_size / num_winners as Usd;
+            let mut pot_remainder = pot_size as Usdf;
+            for winner_idx in winner_indices {
+                let (winner_player_idx, winner_investment) = &mut investments[next_pot_idx + 1..][winner_idx];
+                **winner_investment -= pot_size;
+                let player = &mut self.data.players[**winner_player_idx];
+                player.user.money += pot_split;
                 pot_remainder -= pot_split as Usdf;
             }
             self.data.donations += pot_remainder;
-
-            // Give money back to players.
-            for (player_idx, distribution) in distributions_per_player {
-                let player = &mut self.data.players[player_idx];
-                player.user.money += distribution;
-            }
         }
+
+        // Remove null investments.
+        self.data.pot.investments.retain(|_, investment| *investment > 0);
     }
 
     pub fn show_hand(&mut self, username: &str) -> Result<(), UserError> {

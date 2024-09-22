@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     fmt,
     hash::{Hash, Hasher},
     mem::discriminant,
@@ -236,12 +236,6 @@ impl fmt::Display for Bet {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum SidePotState {
-    AllIn,
-    Raise,
-}
-
 /// For users that're in a pot.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum PlayerState {
@@ -293,101 +287,91 @@ impl Player {
 
 #[derive(Clone, Debug)]
 pub struct Pot {
-    // The total investment for each player to remain in the hand.
-    pub call: Usd,
-    // Size is just the sum of all investments in the pot.
-    pub size: Usd,
     // Map seat indices (players) to their investment in the pot.
     pub investments: HashMap<usize, Usd>,
-    // Used to check whether to spawn a side pot from this pot.
-    // Should be `None` if no side pot conditions are met.
-    side_pot_state: Option<SidePotState>,
 }
 
 impl Default for Pot {
     fn default() -> Self {
-        Self::new()
+        Self::new(constants::MAX_PLAYERS)
     }
 }
 
 impl Pot {
-    pub fn bet(&mut self, player_idx: usize, bet: &Bet) -> Option<Pot> {
+    pub fn bet(&mut self, player_idx: usize, bet: &Bet) {
         let investment = self.investments.entry(player_idx).or_default();
-        let mut new_call = self.call;
-        let mut new_investment = *investment + bet.amount;
-        let mut pot_increase = bet.amount;
-        match bet.action {
-            BetAction::Call => {}
-            BetAction::Raise => {
-                new_call = new_investment;
-            }
-            BetAction::AllIn => {
-                if new_investment > self.call {
-                    new_call = new_investment;
-                }
-            }
-        }
-        // Need to check whether a side pot is created. A side pot is created
-        // when a player all-ins and then a subsequent player raises (an all-in
-        // that is more than the previous all-in is considered a raise).
-        // In this case, the call for the current pot remains unchanged, and
-        // the pot is only increased by the original call. The excess
-        // is used to start a new pot.
-        let mut maybe_side_pot = None;
-        match (bet.action, self.side_pot_state) {
-            (BetAction::AllIn, None) => self.side_pot_state = Some(SidePotState::AllIn),
-            (BetAction::AllIn, Some(SidePotState::AllIn))
-            | (BetAction::Raise, Some(SidePotState::AllIn)) => {
-                if new_investment > self.call {
-                    self.side_pot_state = Some(SidePotState::Raise);
-                    let mut side_pot = Pot::new();
-                    side_pot.bet(
-                        player_idx,
-                        &Bet {
-                            action: bet.action,
-                            amount: new_investment - self.call,
-                        },
-                    );
-                    maybe_side_pot = Some(side_pot);
-                    // The call for the pot hasn't change.
-                    new_call = self.call;
-                    // The pot increase is just the pot's call remaining for the player.
-                    pot_increase = self.call - *investment;
-                    // The player has now matched the call for the pot.
-                    new_investment = self.call;
-                }
-            }
-            _ => {}
-        }
-        // Finally, update the call, the pot, and the player's investment
-        // in the current pot.
-        self.call = new_call;
-        self.size += pot_increase;
-        *investment = new_investment;
-        maybe_side_pot
+        *investment += bet.amount;
+    }
+
+    pub fn get_call(&self) -> Usd {
+        *self.investments.values().max().unwrap_or(&0)
     }
 
     /// Return the amount the player must bet to remain in the hand, and
     /// the minimum the player must raise by for it to be considered
     /// a valid raise.
     pub fn get_call_by_player_idx(&self, player_idx: usize) -> Usd {
-        self.call - self.get_investment_by_player_idx(player_idx)
+        self.get_call() - self.get_investment_by_player_idx(player_idx)
     }
 
     /// Return the amount the player has invested in the pot.
     pub fn get_investment_by_player_idx(&self, player_idx: usize) -> Usd {
-        self.investments
-            .get(&player_idx)
-            .copied()
-            .unwrap_or_default()
+        *self.investments.get(&player_idx).unwrap_or(&0)
     }
 
-    pub fn new() -> Pot {
+    /// Return the minimum amount a player has to bet in order for their
+    /// raise to be considered a valid raise.
+    pub fn get_min_raise_by_player_idx(&self, player_idx: usize) -> Usd {
+        2 * self.get_call() - self.get_investment_by_player_idx(player_idx)
+    }
+
+    pub fn get_size(&self) -> Usd {
+        self.investments.values().sum()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.get_size() == 0
+    }
+
+    pub fn new(max_players: usize) -> Pot {
         Pot {
-            call: 0,
-            size: 0,
-            investments: HashMap::with_capacity(constants::MAX_PLAYERS),
-            side_pot_state: None,
+            investments: HashMap::with_capacity(max_players),
         }
     }
 }
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct PlayerView {
+    pub user: User,
+    pub state: PlayerState,
+    pub cards: Vec<Card>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct PotView {
+    pub size: Usd,
+}
+
+impl fmt::Display for PotView {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "${}", self.size)
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct GameView {
+    pub donations: Usdf,
+    pub small_blind: Usd,
+    pub big_blind: Usd,
+    pub spectators: HashMap<String, User>,
+    pub waitlist: VecDeque<User>,
+    pub open_seats: VecDeque<usize>,
+    pub players: Vec<PlayerView>,
+    pub board: Vec<Card>,
+    pub pot: PotView,
+    pub small_blind_idx: usize,
+    pub big_blind_idx: usize,
+    pub next_action_idx: Option<usize>,
+}
+
+pub type GameViews = HashMap<String, GameView>;

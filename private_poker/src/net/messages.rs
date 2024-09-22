@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt};
 
-pub use crate::game::GameView;
+pub use crate::game::entities::GameView;
 use crate::game::{
     entities::{Action, Username},
     Game, TakeAction, UserError,

@@ -17,8 +17,8 @@ use std::{
 use crate::{
     constants::MAX_USERNAME_LENGTH,
     game::{
-        entities::{Action, Username},
-        GameSettings, GameView, PokerState,
+        entities::{Action, GameView, Username},
+        GameSettings, PokerState,
     },
 };
 
@@ -948,7 +948,7 @@ mod tests {
             token_manager.associate_token_and_username(token2, username.clone()),
             Err(ClientError::AlreadyAssociated)
         );
-        assert_eq!(token_manager.recycle_token(token1).is_ok(), true);
+        assert!(token_manager.recycle_token(token1).is_ok());
         assert_eq!(
             token_manager.associate_token_and_username(token2, username),
             Ok(())

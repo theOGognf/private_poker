@@ -3,9 +3,8 @@ use chrono::{DateTime, Utc};
 use clap::{Arg, Command};
 use mio::{Events, Interest, Poll, Waker};
 use private_poker::{
-    entities::{Action, Card, Suit, Usd, User, Username},
+    entities::{Action, Card, GameView, Suit, Usd, User, Username},
     functional,
-    game::GameView,
     messages::UserState,
     net::{
         messages::{ClientMessage, ServerMessage, UserCommand},
@@ -21,8 +20,8 @@ use ratatui::{
     symbols::scrollbar,
     text::{Line, Span, Text},
     widgets::{
-        block, Block, Cell, Clear, List, ListDirection, ListItem, ListState, Padding, Paragraph,
-        Row, ScrollDirection, Scrollbar, ScrollbarOrientation, ScrollbarState, Table,
+        block, Block, Cell, Clear, List, ListDirection, ListItem, Padding, Paragraph, Row,
+        Scrollbar, ScrollbarOrientation, Table,
     },
     DefaultTerminal, Frame,
 };
@@ -36,7 +35,8 @@ use std::{
 };
 
 mod widgets;
-use widgets::{UserInput, ScrollableList};
+
+use widgets::{ScrollableList, UserInput};
 
 pub const MAX_LOG_RECORDS: usize = 1024;
 pub const POLL_TIMEOUT: Duration = Duration::from_millis(100);
@@ -47,14 +47,14 @@ fn blinds_to_string(view: &GameView) -> String {
 
 fn board_to_vec_of_spans(view: &GameView) -> Vec<Span<'_>> {
     let mut span = vec![" board: ".into()];
-    if view.board.is_empty() {
-        span.push("n/a  ".into());
-    } else {
-        for card in view.board.iter() {
-            let card_repr = card_to_span(card);
-            span.push(card_repr);
-            span.push("  ".into());
-        }
+    // Player cards styled according to suit.
+    for card_idx in 0..5 {
+        let card_repr = match view.board.get(card_idx) {
+            Some(card) => card_to_span(card),
+            None => Span::raw(" ?/?"),
+        };
+        span.push(card_repr);
+        span.push("  ".into());
     }
     span
 }
@@ -77,17 +77,8 @@ fn card_to_span(card: &Card) -> Span<'_> {
     }
 }
 
-fn pots_to_string(view: &GameView) -> String {
-    let pots_repr = if view.pots.is_empty() {
-        "n/a".to_string()
-    } else {
-        view.pots
-            .iter()
-            .map(|pot| pot.to_string())
-            .collect::<Vec<_>>()
-            .join(" ")
-    };
-    format!(" pot(s): {pots_repr}  ")
+fn pot_to_string(view: &GameView) -> String {
+    format!(" pot: {}  ", view.pot)
 }
 
 fn user_to_row(user: &User) -> Row {
@@ -773,7 +764,7 @@ impl App {
                         .alignment(Alignment::Right),
                 )
                 .title(
-                    block::Title::from(pots_to_string(view))
+                    block::Title::from(pot_to_string(view))
                         .position(block::Position::Bottom)
                         .alignment(Alignment::Left),
                 ),
