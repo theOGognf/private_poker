@@ -1169,22 +1169,24 @@ impl Game<DistributePot> {
         let mut investments = Vec::from_iter(self.data.pot.investments.iter_mut());
         investments
             .sort_unstable_by(|(_, investment1), (_, investment2)| investment1.cmp(investment2));
-        if let Some((_, largest_pot_size)) = investments.last() {
+        if let Some((_, largest_call)) = investments.last() {
             // Get the pot size and the player indices in the pot.
-            let mut next_pot_idx = investments.len() - 1;
-            let mut pot_size = **largest_pot_size;
+            let mut pot_idx = investments.len() - 1;
+            let mut call = **largest_call;
             for (idx, (_, investment)) in investments.iter().enumerate().rev() {
-                if investment < largest_pot_size {
-                    next_pot_idx = idx;
-                    pot_size = **largest_pot_size - **investment;
+                if investment < largest_call {
+                    call = **largest_call - **investment;
                     break;
                 }
+                pot_idx = idx;
             }
 
             // Evaluate the hands in the pot and get the winners.
+            let mut pot_size: Usd = 0;
             let mut hands_in_pot = Vec::with_capacity(self.data.settings.max_players);
-            for (player_idx, investment) in investments[next_pot_idx + 1..].as_mut() {
-                **investment -= pot_size;
+            for (player_idx, investment) in investments[pot_idx..].as_mut() {
+                pot_size += call;
+                **investment -= call;
                 let player = &mut self.data.players[**player_idx];
                 if player.state != PlayerState::Fold {
                     let hand_eval = || {
@@ -1214,9 +1216,7 @@ impl Game<DistributePot> {
             let pot_split = pot_size / num_winners as Usd;
             let mut pot_remainder = pot_size as Usdf;
             for winner_idx in winner_indices {
-                let (winner_player_idx, winner_investment) =
-                    &mut investments[next_pot_idx + 1..][winner_idx];
-                **winner_investment -= pot_size;
+                let (winner_player_idx, _) = &mut investments[pot_idx..][winner_idx];
                 let player = &mut self.data.players[**winner_player_idx];
                 player.user.money += pot_split;
                 pot_remainder -= pot_split as Usdf;
@@ -1877,6 +1877,8 @@ mod game_tests {
         let game: Game<ShowHands> = game.into();
         let game: Game<DistributePot> = game.into();
         let game: Game<ShowHands> = game.into();
+        let game: Game<DistributePot> = game.into();
+        let game: Game<ShowHands> = game.into();
         assert!(game.is_pot_empty());
         for (i, money) in [6 * game.data.settings.buy_in, 0, 0].iter().enumerate() {
             assert_eq!(game.data.players[i].user.money, *money);
@@ -2294,38 +2296,55 @@ mod state_tests {
         assert_eq!(state.init_start("0"), Ok(()));
         // SeatPlayers
         state = state.step();
+        println!("{state}");
         // MoveButton
         state = state.step();
+        println!("{state}");
         // CollectBlinds
         state = state.step();
+        println!("{state}");
         // Deal
         state = state.step();
+        println!("{state}");
         // TakeAction
         state = state.step();
+        println!("{state}");
         // 1st fold
         state = state.step();
+        println!("{state}");
         // 2nd fold
         state = state.step();
+        println!("{state}");
         // Flop
         state = state.step();
+        println!("{state}");
         // Turn
         state = state.step();
+        println!("{state}");
         // River
         state = state.step();
+        println!("{state}");
         // ShowHands
         state = state.step();
+        println!("{state}");
         // DistributePot
         state = state.step();
+        println!("{state}");
         // RemovePlayers
         state = state.step();
+        println!("{state}");
         // DivideDonations
         state = state.step();
+        println!("{state}");
         // UpdateBlinds
         state = state.step();
+        println!("{state}");
         // BootPlayers
         state = state.step();
+        println!("{state}");
         // Lobby
         state = state.step();
+        println!("{state}");
         assert_eq!(state.init_start("0"), Ok(()));
     }
 
