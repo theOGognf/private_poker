@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::{
     cmp::{max, min, Ordering},
     collections::{BTreeSet, HashMap, HashSet, VecDeque},
-    fmt, ops::SubAssign,
+    fmt,
+    ops::SubAssign,
 };
 use thiserror::Error;
 
@@ -326,7 +327,9 @@ impl<T> Game<T> {
             open_seats: self.data.open_seats.clone(),
             players,
             board: self.data.board.clone(),
-            pot: PotView{size: self.data.pot.get_size()},
+            pot: PotView {
+                size: self.data.pot.get_size(),
+            },
             small_blind_idx: self.data.small_blind_idx,
             big_blind_idx: self.data.big_blind_idx,
             next_action_idx: self.data.next_action_idx,
@@ -1165,7 +1168,8 @@ impl Game<DistributePot> {
     /// the pot accordingly.
     fn distribute(&mut self) {
         let mut investments = Vec::from_iter(self.data.pot.investments.iter_mut());
-        investments.sort_unstable_by(|(_, investment1), (_, investment2)| investment1.cmp(investment2));
+        investments
+            .sort_unstable_by(|(_, investment1), (_, investment2)| investment1.cmp(investment2));
         if let Some((_, largest_pot_size)) = investments.last() {
             // Get the pot size and the player indices in the pot.
             let mut next_pot_idx = investments.len() - 1;
@@ -1211,7 +1215,8 @@ impl Game<DistributePot> {
             let pot_split = pot_size / num_winners as Usd;
             let mut pot_remainder = pot_size as Usdf;
             for winner_idx in winner_indices {
-                let (winner_player_idx, winner_investment) = &mut investments[next_pot_idx + 1..][winner_idx];
+                let (winner_player_idx, winner_investment) =
+                    &mut investments[next_pot_idx + 1..][winner_idx];
                 **winner_investment -= pot_size;
                 let player = &mut self.data.players[**winner_player_idx];
                 player.user.money += pot_split;
@@ -1221,7 +1226,10 @@ impl Game<DistributePot> {
         }
 
         // Remove null investments.
-        self.data.pot.investments.retain(|_, investment| *investment > 0);
+        self.data
+            .pot
+            .investments
+            .retain(|_, investment| *investment > 0);
     }
 
     pub fn show_hand(&mut self, username: &str) -> Result<(), UserError> {
