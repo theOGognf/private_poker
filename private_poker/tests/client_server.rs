@@ -17,6 +17,26 @@ fn get_random_open_port() -> u16 {
 }
 
 #[test]
+fn already_associated_err() {
+    let port = get_random_open_port();
+    let addr = format!("127.0.0.1:{port}");
+    thread::spawn(move || server::run(&addr, server::PokerConfig::default()));
+
+    // Connect, make sure we're spectating.
+    let addr = format!("127.0.0.1:{port}");
+    let username = "ognf";
+    let (client, view) = Client::connect(username, &addr).unwrap();
+    assert_eq!(view.spectators.len(), 1);
+    assert_eq!(view.waitlist.len(), 0);
+    assert!(view.spectators.contains_key(&client.username));
+
+    // Try to connect, but the username is already taken.
+    let addr = format!("127.0.0.1:{port}");
+    let username = "ognf";
+    assert!(Client::connect(username, &addr).is_err());
+}
+
+#[test]
 fn one_user_connects_to_lobby() {
     let port = get_random_open_port();
     let addr = format!("127.0.0.1:{port}");
