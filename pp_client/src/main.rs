@@ -9,7 +9,7 @@
 use anyhow::Error;
 
 use clap::{Arg, Command};
-use private_poker::{constants::MAX_USERNAME_LENGTH, entities::Username, Client};
+use private_poker::{constants::MAX_USER_INPUT_LENGTH, entities::Username, Client};
 
 mod app;
 use app::App;
@@ -36,7 +36,7 @@ fn main() -> Result<(), Error> {
         Some(username) => username.to_string(),
         None => whoami::username(),
     };
-    username.truncate(MAX_USERNAME_LENGTH);
+    username.truncate(MAX_USER_INPUT_LENGTH);
 
     let addr = matches
         .get_one::<String>("connect")

@@ -15,7 +15,7 @@ use std::{
 };
 
 use crate::{
-    constants::MAX_USERNAME_LENGTH,
+    constants::MAX_USER_INPUT_LENGTH,
     game::{
         entities::{Action, GameView, Username},
         GameSettings, PokerState,
@@ -556,7 +556,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                 loop {
                                     match read_prefixed::<ClientMessage, TcpStream>(stream) {
                                         Ok(mut msg) => {
-                                            msg.username.truncate(MAX_USERNAME_LENGTH);
+                                            msg.username.truncate(MAX_USER_INPUT_LENGTH);
                                             let messages =
                                                 messages_to_process.entry(token).or_default();
                                             messages.push_back(msg);
@@ -639,8 +639,19 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             debug!("{repr}: {error}");
                             let msg = ServerMessage::ClientError(error);
                             messages_to_write.entry(token).or_default().push_back(msg);
+                            tokens_to_reregister.insert(token);
                         }
                     }
+                }
+            }
+            // Make sure we allow writing errors back to the client.
+            for token in tokens_to_reregister.drain() {
+                if let Ok(stream) = token_manager.get_mut_stream_with_token(&token) {
+                    poll.registry().reregister(
+                        stream,
+                        token,
+                        Interest::READABLE | Interest::WRITABLE,
+                    )?;
                 }
             }
 

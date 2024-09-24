@@ -5,6 +5,8 @@ use ratatui::{
 
 use std::collections::VecDeque;
 
+use private_poker::constants::MAX_USER_INPUT_LENGTH;
+
 /// Manages terminal messages and the terminal view position.
 pub struct ScrollableList {
     max_items: usize,
@@ -116,9 +118,12 @@ impl UserInput {
     }
 
     pub fn input(&mut self, new_char: char) {
-        let idx = self.byte_idx();
-        self.value.insert(idx, new_char);
-        self.move_right();
+        // Username length is about the same size as the largest allowed
+        if self.value.len() < MAX_USER_INPUT_LENGTH {
+            let idx = self.byte_idx();
+            self.value.insert(idx, new_char);
+            self.move_right();
+        }
     }
 
     pub fn jump_to_first(&mut self) {
