@@ -34,16 +34,16 @@ RUN apk update \
         syslog-ng \
     && mkdir -p /run/openrc \
     && touch /run/openrc/softlevel \
-    && addgroup newbs
+    && addgroup unclaimed
 
 ENV RUST_LOG=info
 
 WORKDIR /usr/app
 
-# Copy admin helper scripts
+# Copy admin helper scripts and config
 COPY --from=builder /usr/app/pp_admin/create_user.sh ./create_user
 COPY --from=builder /usr/app/pp_admin/delete_user.sh ./delete_user
-COPY --from=builder /usr/app/pp_admin/enable_user.sh /usr/local/bin/enable_user
+COPY --from=builder /usr/app/pp_admin/claim_user.sh /usr/local/bin/claim_user
 COPY --from=builder /usr/app/pp_admin/sshd_config /etc/ssh/sshd_config
 
 # Copy poker binaries
@@ -52,6 +52,6 @@ COPY --from=builder /usr/app/target/release/pp_server ./pp_server
 
 RUN chmod +x ./create_user \
     && chmod +x ./delete_user \
-    && chmod +x /usr/local/bin/enable_user
+    && chmod +x /usr/local/bin/claim_user
 
 CMD ["sh", "-c", "rc-status; rc-service sshd start; rc-service syslog-ng start; ./pp_server"]
