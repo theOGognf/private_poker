@@ -61,9 +61,9 @@ Host and manage poker over `ssh` with the following commands:
    ssh -i ~/.ssh/poker_id_rsa -o SendEnv=PUBLIC_KEY -p $port $username@$host
    ```
 
-   If congratulated with a `"Success"` message, subsequent `ssh` commands
+   If congratulated with a `Success` message, subsequent `ssh` commands
    will result in the user being greeted by the poker TUI. Users also no
-   longer have to specify the `"SendEnv"` option in subsequent `ssh` commands:
+   longer have to specify the `SendEnv` option in subsequent `ssh` commands:
 
    ```bash
    ssh -i ~/.ssh/poker_id_rsa -p $port $username@$host
