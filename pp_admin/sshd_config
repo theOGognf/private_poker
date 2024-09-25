@@ -6,3 +6,8 @@ PermitRootLogin no
 PubkeyAuthentication yes
 SyslogFacility AUTH
 UseDNS no
+Match Group newbs
+    AcceptEnv PUBLIC_KEY
+    ForceCommand enable_user
+    PasswordAuthentication yes
+    PermitEmptyPasswords yes

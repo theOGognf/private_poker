@@ -18,13 +18,12 @@ with **p**ri♦ate_**p**♡ker (or **pp** for short)!
 
 # Poker over `ssh`
 
-One can host a server with the provided `Dockerfile` for the following
-benefits:
+One can host a server within a Docker container for the following benefits:
 
 - The server is ephemeral and more isolated from the host system
 - Client binaries don't need to be distributed to users
-- Server connections are managed by `ssh`
 - Users are managed by the container's user space
+- Server connections are managed by `ssh`
 
 Host and manage poker over `ssh` with the following commands:
 
@@ -34,38 +33,47 @@ Host and manage poker over `ssh` with the following commands:
          
      ```bash
      docker build -t poker .
-     docker run --name poker -p $port:22 --rm poker
+     docker run -d --name poker -p $port:22 --rm poker
      ```
 
    - From [the official Docker image][1]:
 
      ```bash
-     docker run --name poker -p $port:22 --rm ognf/poker:latest
+     docker run -d --name poker -p $port:22 --rm ognf/poker:latest
      ```
 
 2. Create a user:
 
    ```bash
-   docker exec -it poker ./create_user $username
-   docker cp poker:/home/$username/.ssh/id_rsa $poker_ssh_key
+   docker exec poker ./create_user $username
    ```
 
-   This creates a user in the container's user space and copies
-   their private key to the host. Send the user their key so they
-   can `ssh` into the server and start playing.
+   This creates a user in the container's user space and adds the user
+   to a group that enables the user to send their own public `ssh` key
+   to the server.
 
-3. Users can `ssh` into the server and play:
+3. Users can then create an `ssh` key pair and copy their public key to
+   the server:
 
    ```bash
-   ssh -i $poker_ssh_key -p $port $username@$host
+   ssh-keygen -q -t rsa -b 4096 -N '' -f ~/.ssh/poker_id_rsa
+   PUBLIC_KEY="$(cat ~/.ssh/poker_id_rsa)"
+   ssh -i ~/.ssh/poker_id_rsa -o SendEnv=PUBLIC_KEY -p $port $username@$host
    ```
 
-   Users are greeted by the poker TUI if their `ssh` is successful.
+   If congratulated with a `"Success"` message, subsequent successful `ssh`
+   commands will result in the user being greeted by the poker TUI. Users
+   also no longer have to specify the `"SendEnv"` option in subsequent `ssh`
+   commands:
+
+   ```bash
+   ssh -i ~/.ssh/poker_id_rsa -p $port $username@$host
+   ```
 
 4. Delete a user:
 
    ```bash
-   docker exec -it poker ./delete_user $username
+   docker exec poker ./delete_user $username
    ```
 
 5. Stop the server:
