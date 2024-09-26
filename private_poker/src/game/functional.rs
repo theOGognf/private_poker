@@ -706,8 +706,8 @@ mod tests {
                     Card(6, Suit::Diamond),
                     Card(11, Suit::Spade),
                 ]
-        }   , vec![0]
-    ),
+            }, vec![0]
+        ),
         two_pair_wins_to_two_pair: (
             TestHand{
                 expected_best_subhand: SubHand {
