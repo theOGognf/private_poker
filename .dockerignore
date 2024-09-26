@@ -1,1 +1,8 @@
-/target
+*/tests
+.dockerignore
+.git*
+assets
+Dockerfile
+LICENSE
+README.md
+target
