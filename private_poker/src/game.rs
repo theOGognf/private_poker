@@ -21,9 +21,9 @@ use entities::{
 
 #[derive(Debug, Deserialize, Eq, Error, PartialEq, Serialize)]
 pub enum UserError {
-    #[error("can't show hand now")]
+    #[error("can't show hand")]
     CannotShowHand,
-    #[error("can't start game unless you're waitlisted or playing")]
+    #[error("can't start unless you're waitlisted or a player")]
     CannotStartGame,
     #[error("game is full")]
     CapacityReached,
@@ -31,15 +31,15 @@ pub enum UserError {
     GameAlreadyInProgress,
     #[error("game already starting")]
     GameAlreadyStarting,
-    #[error("insufficient funds to satisfy the ${big_blind} big blind")]
+    #[error("need >= ${big_blind} for the big blind")]
     InsufficientFunds { big_blind: Usd },
     #[error("{action} is invalid")]
     InvalidAction { action: Action },
-    #[error("tried an illegal {bet}")]
+    #[error("illegal {bet}")]
     InvalidBet { bet: Bet },
-    #[error("need at least 2 players to start the game")]
+    #[error("need 2+ players")]
     NotEnoughPlayers,
-    #[error("tried acting out of turn")]
+    #[error("not your turn")]
     OutOfTurnAction,
     #[error("user already exists")]
     UserAlreadyExists,

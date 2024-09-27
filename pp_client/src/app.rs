@@ -38,6 +38,7 @@ mod widgets;
 
 use widgets::{ScrollableList, UserInput};
 
+pub const INVALID_ACTION_MESSAGE: &str = "can't do that now";
 pub const MAX_LOG_RECORDS: usize = 1024;
 pub const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
@@ -81,11 +82,16 @@ fn pot_to_string(view: &GameView) -> String {
     format!(" pot: {}  ", view.pot)
 }
 
-fn user_to_row(user: &User) -> Row {
-    Row::new(vec![
+fn user_to_row(username: &str, user: &User) -> Row<'static> {
+    let row = Row::new(vec![
         Cell::new(Text::from(user.name.clone()).alignment(Alignment::Left)),
         Cell::new(Text::from(format!("${}", user.money)).alignment(Alignment::Right)),
-    ])
+    ]);
+    if username == user.name {
+        row.bold().white()
+    } else {
+        row
+    }
 }
 
 #[derive(Clone)]
@@ -216,8 +222,10 @@ impl App {
                                 tx_client.send(msg)?;
                                 waker.wake()?;
                             } else {
-                                let record =
-                                    Record::new(RecordKind::Error, "can't all-in now".to_string());
+                                let record = Record::new(
+                                    RecordKind::Error,
+                                    INVALID_ACTION_MESSAGE.to_string(),
+                                );
                                 self.log_handle.push(record.into());
                             }
                         }
@@ -234,8 +242,10 @@ impl App {
                                 tx_client.send(msg)?;
                                 waker.wake()?;
                             } else {
-                                let record =
-                                    Record::new(RecordKind::Error, "can't call now".to_string());
+                                let record = Record::new(
+                                    RecordKind::Error,
+                                    INVALID_ACTION_MESSAGE.to_string(),
+                                );
                                 self.log_handle.push(record.into());
                             }
                         }
@@ -248,8 +258,10 @@ impl App {
                                 tx_client.send(msg)?;
                                 waker.wake()?;
                             } else {
-                                let record =
-                                    Record::new(RecordKind::Error, "can't check now".to_string());
+                                let record = Record::new(
+                                    RecordKind::Error,
+                                    INVALID_ACTION_MESSAGE.to_string(),
+                                );
                                 self.log_handle.push(record.into());
                             }
                         }
@@ -262,8 +274,10 @@ impl App {
                                 tx_client.send(msg)?;
                                 waker.wake()?;
                             } else {
-                                let record =
-                                    Record::new(RecordKind::Error, "can't fold now".to_string());
+                                let record = Record::new(
+                                    RecordKind::Error,
+                                    INVALID_ACTION_MESSAGE.to_string(),
+                                );
                                 self.log_handle.push(record.into());
                             }
                         }
@@ -303,8 +317,10 @@ impl App {
                                     }
                                 }
                             } else {
-                                let record =
-                                    Record::new(RecordKind::Error, "can't raise now".to_string());
+                                let record = Record::new(
+                                    RecordKind::Error,
+                                    INVALID_ACTION_MESSAGE.to_string(),
+                                );
                                 self.log_handle.push(record.into());
                             }
                         }
@@ -337,10 +353,7 @@ impl App {
                 }
             }
             Err(_) => {
-                let record = Record::new(
-                    RecordKind::Error,
-                    format!("unrecognized command: {user_input}"),
-                );
+                let record = Record::new(RecordKind::Error, "unrecognized command".to_string());
                 self.log_handle.push(record.into());
             }
         }
@@ -651,7 +664,9 @@ impl App {
         let mut spectators = Vec::from_iter(view.spectators.values());
         spectators.sort_unstable();
         let spectators = Table::new(
-            spectators.iter().map(|user| user_to_row(user)),
+            spectators
+                .iter()
+                .map(|user| user_to_row(&self.username, user)),
             [Constraint::Percentage(50), Constraint::Percentage(50)],
         )
         .block(
@@ -663,7 +678,9 @@ impl App {
 
         // Render waitlisters area.
         let waitlisters = Table::new(
-            view.waitlist.iter().map(|user| user_to_row(user)),
+            view.waitlist
+                .iter()
+                .map(|user| user_to_row(&self.username, user)),
             [Constraint::Percentage(50), Constraint::Percentage(50)],
         )
         .block(
@@ -679,7 +696,7 @@ impl App {
                 // Indicator if it's the player's move.
                 let move_repr = match view.next_action_idx {
                     Some(next_action_idx) if player_idx == next_action_idx => "→",
-                    _ => " ",
+                    _ => "",
                 };
                 let move_repr = Text::from(move_repr);
 
@@ -689,7 +706,7 @@ impl App {
                 } else if player_idx == view.small_blind_idx {
                     "SB"
                 } else {
-                    "  "
+                    ""
                 };
                 let button_repr = Text::from(button_repr);
 
@@ -718,7 +735,7 @@ impl App {
                 for card_idx in 0..2 {
                     let card_repr = match player.cards.get(card_idx) {
                         Some(card) => Text::from(card_to_span(card)),
-                        None => Text::from("    "),
+                        None => Text::from(""),
                     };
                     let card_cell = Cell::new(card_repr.alignment(Alignment::Right));
                     row.push(card_cell);
@@ -726,7 +743,7 @@ impl App {
 
                 // Player's highest subhand displayed.
                 let hand_repr = if player.cards.is_empty() {
-                    "  ".to_string()
+                    "".to_string()
                 } else {
                     let mut cards = view.board.clone();
                     cards.extend(player.cards.clone());
@@ -735,14 +752,19 @@ impl App {
                     if let Some(subhand) = hand.first() {
                         format!("({})", subhand.rank)
                     } else {
-                        "  ".to_string()
+                        "".to_string()
                     }
                 };
                 let hand_repr = Text::from(hand_repr).alignment(Alignment::Right);
                 let hand_cell = Cell::new(hand_repr);
                 row.push(hand_cell);
 
-                Row::new(row)
+                let row = Row::new(row);
+                if self.username == player.user.name {
+                    row.bold().white()
+                } else {
+                    row
+                }
             }),
             [
                 Constraint::Max(3),
@@ -814,11 +836,11 @@ impl App {
         // Render user input help message.
         let help_message = vec![
             "press ".into(),
-            "Tab".bold(),
+            "Tab".bold().white(),
             " to view help, press ".into(),
-            "Enter".bold(),
+            "Enter".bold().white(),
             " to record a command, or press ".into(),
-            "Esc".bold(),
+            "Esc".bold().white(),
             " to exit".into(),
         ];
         let help_style = Style::default();
