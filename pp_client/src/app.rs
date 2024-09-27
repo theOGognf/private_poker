@@ -850,7 +850,7 @@ impl App {
 
         // Render the help menu.
         if self.show_help_menu {
-            let vertical = Layout::vertical([Constraint::Max(25)]).flex(Flex::Center);
+            let vertical = Layout::vertical([Constraint::Max(27)]).flex(Flex::Center);
             let horizontal = Layout::horizontal([Constraint::Max(95)]).flex(Flex::Center);
             let [help_menu_area] = vertical.areas(frame.area());
             let [help_menu_area] = horizontal.areas(help_menu_area);
