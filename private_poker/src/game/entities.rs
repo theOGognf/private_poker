@@ -239,23 +239,32 @@ impl fmt::Display for Bet {
 /// For users that're in a pot.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum PlayerState {
-    // Player is in the pot but is waiting for their move.
-    Wait,
     // Player put in their whole stack.
     AllIn,
+    // Player calls.
+    Call,
+    // Player checks.
+    Check,
     // Player forfeited their stack for the pot.
     Fold,
+    // Player raises and is waiting for other player actions.
+    Raise,
     // Player shows their cards at the end of the game.
     Show,
+    // Player is in the pot but is waiting for their move.
+    Wait,
 }
 
 impl fmt::Display for PlayerState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let repr = match self {
-            PlayerState::Wait => "waiting",
             PlayerState::AllIn => "all-in",
+            PlayerState::Call => "call",
+            PlayerState::Check => "check",
             PlayerState::Fold => "folded",
+            PlayerState::Raise => "raise",
             PlayerState::Show => "showing",
+            PlayerState::Wait => "waiting",
         };
         write!(f, "{repr:7}")
     }

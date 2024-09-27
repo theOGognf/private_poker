@@ -553,6 +553,15 @@ impl<T> Game<T> {
     /// in preparation for a new round of betting.
     fn prepare_for_next_phase(&mut self) -> Option<HashSet<Action>> {
         self.data.num_players_called = 0;
+        // Reset player states for players that are still in the hand.
+        for player in self.data.players.iter_mut().filter(|player| {
+            matches!(
+                player.state,
+                PlayerState::Call | PlayerState::Check | PlayerState::Raise
+            )
+        }) {
+            player.state = PlayerState::Wait
+        }
         self.data.next_action_idx = Some(self.data.starting_action_idx);
         self.data.next_action_idx = self.get_next_action_idx(true);
         self.get_next_action_options()
@@ -938,11 +947,12 @@ impl Game<TakeAction> {
                     },
                     Action::Check => {
                         self.data.num_players_called += 1;
+                        player.state = PlayerState::Check;
                         return Ok(action);
                     }
                     Action::Fold => {
-                        player.state = PlayerState::Fold;
                         self.data.num_players_active -= 1;
+                        player.state = PlayerState::Fold;
                         return Ok(action);
                     }
                     Action::Raise(amount) => Bet {
@@ -953,7 +963,6 @@ impl Game<TakeAction> {
                 if bet.amount >= player.user.money {
                     bet.action = BetAction::AllIn;
                     bet.amount = player.user.money;
-                    player.state = PlayerState::AllIn;
                 }
                 // Do some additional bet validation based on the bet's amount.
                 let call = self.data.pot.get_call();
@@ -965,25 +974,46 @@ impl Game<TakeAction> {
                         if new_investment > call {
                             self.data.num_players_called = 0;
                         }
+                        player.state = PlayerState::AllIn;
                     }
                     BetAction::Call => {
                         if new_investment != call {
                             return Err(UserError::InvalidBet { bet });
                         }
                         self.data.num_players_called += 1;
+                        player.state = PlayerState::Call;
                     }
                     BetAction::Raise => {
                         if new_investment < (2 * call) {
                             return Err(UserError::InvalidBet { bet });
                         }
                         self.data.num_players_called = 1;
+                        player.state = PlayerState::Raise;
                     }
                 }
                 // The player's bet is OK. Remove the bet amount from the player's
                 // stack and start distributing it appropriately amongst all the pots.
-                let player = &mut self.data.players[player_idx];
                 player.user.money -= bet.amount;
                 self.data.pot.bet(player_idx, &bet);
+
+                // Reset other player states that're still in the hand based on the bet.
+                if self.data.num_players_called <= 1 {
+                    for player in self
+                        .data
+                        .players
+                        .iter_mut()
+                        .enumerate()
+                        .filter(|(idx, player)| {
+                            matches!(player.state,
+                            PlayerState::Call | PlayerState::Check | PlayerState::Raise
+                                if *idx != player_idx)
+                        })
+                        .map(|(_, player)| player)
+                    {
+                        player.state = PlayerState::Wait
+                    }
+                }
+
                 // Return the santized action.
                 Ok(bet.into())
             }
