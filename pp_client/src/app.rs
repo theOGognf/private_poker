@@ -1,6 +1,5 @@
 use anyhow::{bail, Error};
 use chrono::{DateTime, Utc};
-use clap::{Arg, Command};
 use mio::{Events, Interest, Poll, Waker};
 use private_poker::{
     entities::{Action, Card, GameView, Suit, Usd, User, Username},
@@ -25,6 +24,7 @@ use ratatui::{
     },
     DefaultTerminal, Frame,
 };
+use regex::Regex;
 use std::{
     collections::{HashSet, VecDeque},
     io,
@@ -38,9 +38,31 @@ mod widgets;
 
 use widgets::{ScrollableList, UserInput};
 
-pub const INVALID_ACTION_MESSAGE: &str = "can't do that now";
-pub const MAX_LOG_RECORDS: usize = 1024;
-pub const POLL_TIMEOUT: Duration = Duration::from_millis(100);
+const HELP: &str = "\
+all-in                                                                                 
+        Go all-in, betting all your money on the hand.                                 
+call                                                                                   
+        Match the investment required to stay in the hand.                             
+check                                                                                  
+        Check, voting to move to the next card reveal(s).                              
+fold                                                                                   
+        Fold, forfeiting your hand.                                                    
+play                                                                                   
+        Join the playing waitlist.                                                     
+raise                                                                                  
+        Raise the investment required to stay in the hand. Entering without a value    
+        defaults to the min raise amount. Entering AMOUNT will raise by AMOUNT, but    
+        AMOUNT must be >= the min raise.                                               
+show                                                                                   
+        Show your hand. Only possible during the showdown.                             
+spectate                                                                               
+        Join spectators. If you're a player, you won't spectate until the game is over.
+start                                                                                  
+        Start the game. Requires 2+ players or waitlisters.
+";
+const INVALID_ACTION_MESSAGE: &str = "can't do that now";
+const MAX_LOG_RECORDS: usize = 1024;
+const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
 fn blinds_to_string(view: &GameView) -> String {
     format!(" blinds: ${}/${}  ", view.big_blind, view.small_blind)
@@ -189,7 +211,7 @@ impl TurnWarnings {
 pub struct App {
     username: Username,
     addr: String,
-    commands: Command,
+    re: Regex,
     /// Help menu
     help_menu_text: String,
     /// Whether to display the help menu window
@@ -208,210 +230,150 @@ impl App {
         tx_client: &Sender<ClientMessage>,
         waker: &Waker,
     ) -> Result<(), Error> {
-        let cmd = user_input.split(' ');
-        match self.commands.clone().try_get_matches_from(cmd) {
-            Ok(matches) => {
-                if let Some(cmd) = matches.subcommand_name() {
-                    match cmd {
-                        "all-in" => {
-                            if let Some(action) = action_options.get(&Action::AllIn) {
-                                let msg = ClientMessage {
-                                    username: self.username.to_string(),
-                                    command: UserCommand::TakeAction(action.clone()),
-                                };
-                                tx_client.send(msg)?;
-                                waker.wake()?;
-                            } else {
-                                let record = Record::new(
-                                    RecordKind::Error,
-                                    INVALID_ACTION_MESSAGE.to_string(),
-                                );
-                                self.log_handle.push(record.into());
-                            }
-                        }
-                        "call" => {
-                            // Actions use their variant for comparisons,
-                            // so we don't need to provide the correct call
-                            // amount to see if it exists within the action
-                            // options.
-                            if let Some(action) = action_options.get(&Action::Call(0)) {
-                                let msg = ClientMessage {
-                                    username: self.username.to_string(),
-                                    command: UserCommand::TakeAction(action.clone()),
-                                };
-                                tx_client.send(msg)?;
-                                waker.wake()?;
-                            } else {
-                                let record = Record::new(
-                                    RecordKind::Error,
-                                    INVALID_ACTION_MESSAGE.to_string(),
-                                );
-                                self.log_handle.push(record.into());
-                            }
-                        }
-                        "check" => {
-                            if let Some(action) = action_options.get(&Action::Check) {
-                                let msg = ClientMessage {
-                                    username: self.username.to_string(),
-                                    command: UserCommand::TakeAction(action.clone()),
-                                };
-                                tx_client.send(msg)?;
-                                waker.wake()?;
-                            } else {
-                                let record = Record::new(
-                                    RecordKind::Error,
-                                    INVALID_ACTION_MESSAGE.to_string(),
-                                );
-                                self.log_handle.push(record.into());
-                            }
-                        }
-                        "fold" => {
-                            if let Some(action) = action_options.get(&Action::Fold) {
-                                let msg = ClientMessage {
-                                    username: self.username.clone(),
-                                    command: UserCommand::TakeAction(action.clone()),
-                                };
-                                tx_client.send(msg)?;
-                                waker.wake()?;
-                            } else {
-                                let record = Record::new(
-                                    RecordKind::Error,
-                                    INVALID_ACTION_MESSAGE.to_string(),
-                                );
-                                self.log_handle.push(record.into());
-                            }
-                        }
-                        "play" => {
-                            let msg = ClientMessage {
-                                username: self.username.clone(),
-                                command: UserCommand::ChangeState(UserState::Play),
-                            };
-                            tx_client.send(msg)?;
-                            waker.wake()?;
-                        }
-                        "raise" => {
-                            // Actions use their variant for comparisons,
-                            // so we don't need to provide the correct raise
-                            // amount to see if it exists within the action
-                            // options.
-                            if let Some(action) = action_options.get(&Action::Raise(0)) {
-                                match matches.subcommand_matches("raise") {
-                                    Some(matches) => match matches.get_one::<String>("amount") {
-                                        Some(amount) => {
-                                            let action = if let Ok(amount) = amount.parse::<Usd>() {
-                                                Action::Raise(amount)
-                                            } else {
-                                                action.clone()
-                                            };
-                                            let msg = ClientMessage {
-                                                username: self.username.to_string(),
-                                                command: UserCommand::TakeAction(action),
-                                            };
-                                            tx_client.send(msg)?;
-                                            waker.wake()?;
-                                        }
-                                        None => unreachable!("always matches"),
-                                    },
-                                    None => {
-                                        unreachable!("always matches")
-                                    }
-                                }
-                            } else {
-                                let record = Record::new(
-                                    RecordKind::Error,
-                                    INVALID_ACTION_MESSAGE.to_string(),
-                                );
-                                self.log_handle.push(record.into());
-                            }
-                        }
-                        "show" => {
-                            let msg = ClientMessage {
-                                username: self.username.clone(),
-                                command: UserCommand::ShowHand,
-                            };
-                            tx_client.send(msg)?;
-                            waker.wake()?;
-                        }
-                        "spectate" => {
-                            let msg = ClientMessage {
-                                username: self.username.clone(),
-                                command: UserCommand::ChangeState(UserState::Spectate),
-                            };
-                            tx_client.send(msg)?;
-                            waker.wake()?;
-                        }
-                        "start" => {
-                            let msg = ClientMessage {
-                                username: self.username.clone(),
-                                command: UserCommand::StartGame,
-                            };
-                            tx_client.send(msg)?;
-                            waker.wake()?;
-                        }
-                        _ => unreachable!("always a subcommand"),
-                    }
+        match user_input {
+            "all-in" => {
+                if let Some(action) = action_options.get(&Action::AllIn) {
+                    let msg = ClientMessage {
+                        username: self.username.to_string(),
+                        command: UserCommand::TakeAction(action.clone()),
+                    };
+                    tx_client.send(msg)?;
+                    waker.wake()?;
+                } else {
+                    let record = Record::new(RecordKind::Error, INVALID_ACTION_MESSAGE.to_string());
+                    self.log_handle.push(record.into());
                 }
             }
-            Err(_) => {
-                let record = Record::new(RecordKind::Error, "unrecognized command".to_string());
-                self.log_handle.push(record.into());
+            "call" => {
+                // Actions use their variant for comparisons,
+                // so we don't need to provide the correct call
+                // amount to see if it exists within the action
+                // options.
+                if let Some(action) = action_options.get(&Action::Call(0)) {
+                    let msg = ClientMessage {
+                        username: self.username.to_string(),
+                        command: UserCommand::TakeAction(action.clone()),
+                    };
+                    tx_client.send(msg)?;
+                    waker.wake()?;
+                } else {
+                    let record = Record::new(RecordKind::Error, INVALID_ACTION_MESSAGE.to_string());
+                    self.log_handle.push(record.into());
+                }
+            }
+            "check" => {
+                if let Some(action) = action_options.get(&Action::Check) {
+                    let msg = ClientMessage {
+                        username: self.username.to_string(),
+                        command: UserCommand::TakeAction(action.clone()),
+                    };
+                    tx_client.send(msg)?;
+                    waker.wake()?;
+                } else {
+                    let record = Record::new(RecordKind::Error, INVALID_ACTION_MESSAGE.to_string());
+                    self.log_handle.push(record.into());
+                }
+            }
+            "fold" => {
+                if let Some(action) = action_options.get(&Action::Fold) {
+                    let msg = ClientMessage {
+                        username: self.username.clone(),
+                        command: UserCommand::TakeAction(action.clone()),
+                    };
+                    tx_client.send(msg)?;
+                    waker.wake()?;
+                } else {
+                    let record = Record::new(RecordKind::Error, INVALID_ACTION_MESSAGE.to_string());
+                    self.log_handle.push(record.into());
+                }
+            }
+            "play" => {
+                let msg = ClientMessage {
+                    username: self.username.clone(),
+                    command: UserCommand::ChangeState(UserState::Play),
+                };
+                tx_client.send(msg)?;
+                waker.wake()?;
+            }
+            "show" => {
+                let msg = ClientMessage {
+                    username: self.username.clone(),
+                    command: UserCommand::ShowHand,
+                };
+                tx_client.send(msg)?;
+                waker.wake()?;
+            }
+            "spectate" => {
+                let msg = ClientMessage {
+                    username: self.username.clone(),
+                    command: UserCommand::ChangeState(UserState::Spectate),
+                };
+                tx_client.send(msg)?;
+                waker.wake()?;
+            }
+            "start" => {
+                let msg = ClientMessage {
+                    username: self.username.clone(),
+                    command: UserCommand::StartGame,
+                };
+                tx_client.send(msg)?;
+                waker.wake()?;
+            }
+            other => {
+                match self.re.captures(other) {
+                    Some(capture) => {
+                        // Actions use their variant for comparisons,
+                        // so we don't need to provide the correct raise
+                        // amount to see if it exists within the action
+                        // options.
+                        if let Some(action) = action_options.get(&Action::Raise(0)) {
+                            let action = if let Some(amount) = capture.get(1) {
+                                if let Ok(amount) = amount.as_str().parse::<Usd>() {
+                                    Action::Raise(amount)
+                                } else {
+                                    let record = Record::new(
+                                        RecordKind::Error,
+                                        "invalid raise amount".to_string(),
+                                    );
+                                    self.log_handle.push(record.into());
+                                    return Ok(());
+                                }
+                            } else {
+                                action.clone()
+                            };
+                            let msg = ClientMessage {
+                                username: self.username.to_string(),
+                                command: UserCommand::TakeAction(action),
+                            };
+                            tx_client.send(msg)?;
+                            waker.wake()?;
+                        } else {
+                            let record =
+                                Record::new(RecordKind::Error, INVALID_ACTION_MESSAGE.to_string());
+                            self.log_handle.push(record.into());
+                        }
+                    }
+                    None => {
+                        let record =
+                            Record::new(RecordKind::Error, "unrecognized command".to_string());
+                        self.log_handle.push(record.into());
+                    }
+                }
             }
         }
         Ok(())
     }
 
-    pub fn new(username: Username, addr: String) -> Self {
-        let all_in = Command::new("all-in").about("Go all-in, betting all your money on the hand.");
-        let call = Command::new("call").about("Match the investment required to stay in the hand.");
-        let check =
-            Command::new("check").about("Check, voting to move to the next card reveal(s).");
-        let fold = Command::new("fold").about("Fold, forfeiting your hand.");
-        let play = Command::new("play").about("Join the playing waitlist.");
-        let raise_about = [
-            "Raise the investment required to stay in the hand. Entering without a value",
-            "defaults to the min raise amount. Entering AMOUNT will raise by AMOUNT, but",
-            "AMOUNT must be >= the min raise.",
-        ]
-        .join("\n");
-        let raise = Command::new("raise").about(raise_about).arg(
-            Arg::new("amount")
-                .help("Raise amount.")
-                .default_value("")
-                .value_name("AMOUNT"),
-        );
-        let show = Command::new("show").about("Show your hand. Only possible during the showdown.");
-        let spectate = Command::new("spectate").about(
-            "Join spectators. If you're a player, you won't spectate until the game is over.",
-        );
-        let start =
-            Command::new("start").about("Start the game. Requires 2+ players or waitlisters.");
-        let usage = "Enter commands to interact with the poker server.";
-        let commands = Command::new("poker")
-            .disable_help_flag(true)
-            .disable_help_subcommand(true)
-            .disable_version_flag(true)
-            .next_line_help(true)
-            .no_binary_name(true)
-            .override_usage(usage)
-            .subcommand(all_in)
-            .subcommand(call)
-            .subcommand(check)
-            .subcommand(fold)
-            .subcommand(play)
-            .subcommand(raise)
-            .subcommand(show)
-            .subcommand(spectate)
-            .subcommand(start);
-        let help_menu_text = commands.clone().render_help().to_string();
-        Self {
+    pub fn new(username: Username, addr: String) -> Result<Self, Error> {
+        Ok(Self {
             username,
             addr,
-            commands,
-            help_menu_text,
+            re: Regex::new(r"^raise(?:\s*(\d+))?$")?,
+            help_menu_text: HELP.into(),
             show_help_menu: false,
             log_handle: ScrollableList::new(MAX_LOG_RECORDS),
             user_input: UserInput::new(),
-        }
+        })
     }
 
     pub fn run(
@@ -850,8 +812,8 @@ impl App {
 
         // Render the help menu.
         if self.show_help_menu {
-            let vertical = Layout::vertical([Constraint::Max(27)]).flex(Flex::Center);
-            let horizontal = Layout::horizontal([Constraint::Max(95)]).flex(Flex::Center);
+            let vertical = Layout::vertical([Constraint::Max(24)]).flex(Flex::Center);
+            let horizontal = Layout::horizontal([Constraint::Max(92)]).flex(Flex::Center);
             let [help_menu_area] = vertical.areas(frame.area());
             let [help_menu_area] = horizontal.areas(help_menu_area);
             frame.render_widget(Clear, help_menu_area); // clears out the background
@@ -859,7 +821,11 @@ impl App {
             // Render help text.
             let help_text = Paragraph::new(self.help_menu_text.clone())
                 .style(Style::default())
-                .block(block::Block::bordered().padding(Padding::uniform(1)));
+                .block(
+                    block::Block::bordered()
+                        .title(" commands  ")
+                        .padding(Padding::uniform(1)),
+                );
             frame.render_widget(help_text, help_menu_area);
         }
     }

@@ -5,8 +5,8 @@
 //! at fixed intervals and in response to user commands.
 
 use anyhow::Error;
-use clap::{value_parser, Arg, Command};
 use log::info;
+use pico_args::Arguments;
 use private_poker::{
     entities::Usd,
     server::{self, PokerConfig},
@@ -21,35 +21,42 @@ use {
     std::{process, thread},
 };
 
+const HELP: &str = "\
+Run a private poker server
+
+USAGE:
+  pp_server [OPTIONS]
+
+OPTIONS:
+  --bind    IP:PORT     Server socket bind address  [default: 127.0.0.1:6969]
+  --buy_in  USD         New user starting money     [default: 200]
+
+FLAGS:
+  -h, --help            Print help information
+";
+
+struct Args {
+    bind: String,
+    buy_in: Usd,
+}
+
 fn main() -> Result<(), Error> {
-    let addr = Arg::new("bind")
-        .help("server socket bind address")
-        .default_value("127.0.0.1:6969")
-        .long("bind")
-        .value_name("IP:PORT");
+    let mut pargs = Arguments::from_env();
 
-    let buy_in = Arg::new("buy_in")
-        .help("new user starting money")
-        .default_value("200")
-        .long("buy_in")
-        .value_name("USD")
-        .value_parser(value_parser!(Usd));
+    // Help has a higher priority and should be handled separately.
+    if pargs.contains(["-h", "--help"]) {
+        print!("{}", HELP);
+        std::process::exit(0);
+    }
 
-    let matches = Command::new("pp_server")
-        .about("host a centralized poker server over TCP")
-        .version("0.0.1")
-        .arg(addr)
-        .arg(buy_in)
-        .get_matches();
+    let args = Args {
+        bind: pargs
+            .value_from_str("--bind")
+            .unwrap_or("127.0.0.1:6969".into()),
+        buy_in: pargs.value_from_str("--buy_in").unwrap_or(200),
+    };
 
-    let addr = matches
-        .get_one::<String>("bind")
-        .expect("server address is an invalid string");
-    let buy_in = matches
-        .get_one::<Usd>("buy_in")
-        .expect("buy-in is an invalid integer");
-
-    let game_settings = GameSettings::new(MAX_PLAYERS, DEFAULT_MAX_USERS, *buy_in);
+    let game_settings = GameSettings::new(MAX_PLAYERS, DEFAULT_MAX_USERS, args.buy_in);
     let config: PokerConfig = game_settings.into();
 
     // Catching signals for exit.
@@ -64,8 +71,8 @@ fn main() -> Result<(), Error> {
     }
 
     env_logger::builder().format_target(false).init();
-    info!("starting at {addr}");
-    server::run(addr, config)?;
+    info!("starting at {}", args.bind);
+    server::run(&args.bind, config)?;
 
     Ok(())
 }

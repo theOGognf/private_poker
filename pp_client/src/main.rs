@@ -8,52 +8,59 @@
 
 use anyhow::Error;
 
-use clap::{Arg, Command};
+use pico_args::Arguments;
 use private_poker::{constants::MAX_USER_INPUT_LENGTH, entities::Username, Client};
 
 mod app;
 use app::App;
 
+const HELP: &str = "\
+Connect to a private poker server over TCP
+
+USAGE:
+  pp_client [OPTIONS] USERNAME
+
+OPTIONS:
+  --connect IP:PORT     Server socket connection address  [default: 127.0.0.1:6969]
+
+FLAGS:
+  -h, --help            Print help information
+";
+
+struct Args {
+    username: Username,
+    addr: String,
+}
+
 fn main() -> Result<(), Error> {
-    let username = Arg::new("username")
-        .help("client username")
-        .value_name("USERNAME");
+    let mut pargs = Arguments::from_env();
 
-    let addr = Arg::new("connect")
-        .help("server socket connection address")
-        .default_value("127.0.0.1:6969")
-        .long("connect")
-        .value_name("IP:PORT");
+    // Help has a higher priority and should be handled separately.
+    if pargs.contains(["-h", "--help"]) {
+        print!("{}", HELP);
+        std::process::exit(0);
+    }
 
-    let matches = Command::new("pp_client")
-        .about("connect to a centralized poker server over TCP")
-        .version("0.0.1")
-        .arg(addr)
-        .arg(username)
-        .get_matches();
-
-    let mut username = match matches.get_one::<Username>("username") {
-        Some(username) => username.to_string(),
-        None => whoami::username(),
+    let mut args = Args {
+        addr: pargs
+            .value_from_str("--connect")
+            .unwrap_or("127.0.0.1:6969".into()),
+        username: pargs.free_from_str().unwrap_or(whoami::username()),
     };
-    username.truncate(MAX_USER_INPUT_LENGTH);
-
-    let addr = matches
-        .get_one::<String>("connect")
-        .expect("server address is an invalid string");
+    args.username.truncate(MAX_USER_INPUT_LENGTH);
 
     // Doesn't make sense to use the complexity of non-blocking IO
     // for connecting to the poker server, so we try to connect with
     // a blocking client instead. The client is then eventually
     // converted to a non-blocking stream and polled for events.
-    let (client, view) = Client::connect(&username, addr)?;
+    let (client, view) = Client::connect(&args.username, &args.addr)?;
     let Client {
         username,
         addr,
         stream,
     } = client;
     let terminal = ratatui::init();
-    let app_result = App::new(username, addr).run(stream, view, terminal);
+    let app_result = App::new(username, addr)?.run(stream, view, terminal);
     ratatui::restore();
     app_result
 }
