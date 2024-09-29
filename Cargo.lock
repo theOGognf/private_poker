@@ -484,7 +484,6 @@ dependencies = [
  "pico-args",
  "private_poker",
  "ratatui",
- "regex",
  "whoami",
 ]
 

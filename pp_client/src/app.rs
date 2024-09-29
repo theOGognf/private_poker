@@ -24,7 +24,6 @@ use ratatui::{
     },
     DefaultTerminal, Frame,
 };
-use regex::Regex;
 use std::{
     collections::{HashSet, VecDeque},
     io,
@@ -211,7 +210,6 @@ impl TurnWarnings {
 pub struct App {
     username: Username,
     addr: String,
-    re: Regex,
     /// Help menu
     help_menu_text: String,
     /// Whether to display the help menu window
@@ -320,45 +318,45 @@ impl App {
                 waker.wake()?;
             }
             other => {
-                match self.re.captures(other) {
-                    Some(capture) => {
-                        // Actions use their variant for comparisons,
-                        // so we don't need to provide the correct raise
-                        // amount to see if it exists within the action
-                        // options.
-                        if let Some(action) = action_options.get(&Action::Raise(0)) {
-                            let action = if let Some(amount) = capture.get(1) {
-                                if let Ok(amount) = amount.as_str().parse::<Usd>() {
-                                    Action::Raise(amount)
-                                } else {
-                                    let record = Record::new(
-                                        RecordKind::Error,
-                                        "invalid raise amount".to_string(),
-                                    );
-                                    self.log_handle.push(record.into());
-                                    return Ok(());
-                                }
-                            } else {
-                                action.clone()
-                            };
-                            let msg = ClientMessage {
-                                username: self.username.to_string(),
-                                command: UserCommand::TakeAction(action),
-                            };
-                            tx_client.send(msg)?;
-                            waker.wake()?;
-                        } else {
+                let other: Vec<&str> = other.split(' ').collect();
+                let action = match (
+                    action_options.get(&Action::Raise(0)),
+                    other.first(),
+                    other.get(1),
+                ) {
+                    // Raise with a specific amount.
+                    (Some(_), Some(&"raise"), Some(value)) => match value.parse::<Usd>() {
+                        Ok(amount) => Action::Raise(amount),
+                        Err(_) => {
                             let record =
-                                Record::new(RecordKind::Error, INVALID_ACTION_MESSAGE.to_string());
+                                Record::new(RecordKind::Error, "invalid raise amount".to_string());
                             self.log_handle.push(record.into());
+                            return Ok(());
                         }
+                    },
+                    // Valid raise without specified amount defaults to the default raise.
+                    (Some(action), Some(&"raise"), None) => action.clone(),
+                    // Invalid action.
+                    (None, Some(&"raise"), ..) => {
+                        let record =
+                            Record::new(RecordKind::Error, INVALID_ACTION_MESSAGE.to_string());
+                        self.log_handle.push(record.into());
+                        return Ok(());
                     }
-                    None => {
+                    // Unknown command.
+                    _ => {
                         let record =
                             Record::new(RecordKind::Error, "unrecognized command".to_string());
                         self.log_handle.push(record.into());
+                        return Ok(());
                     }
-                }
+                };
+                let msg = ClientMessage {
+                    username: self.username.to_string(),
+                    command: UserCommand::TakeAction(action),
+                };
+                tx_client.send(msg)?;
+                waker.wake()?;
             }
         }
         Ok(())
@@ -368,7 +366,6 @@ impl App {
         Ok(Self {
             username,
             addr,
-            re: Regex::new(r"^raise(?:\s*(\d+))?$")?,
             help_menu_text: HELP.into(),
             show_help_menu: false,
             log_handle: ScrollableList::new(MAX_LOG_RECORDS),
