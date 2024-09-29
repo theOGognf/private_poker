@@ -210,8 +210,6 @@ impl TurnWarnings {
 pub struct App {
     username: Username,
     addr: String,
-    /// Help menu
-    help_menu_text: String,
     /// Whether to display the help menu window
     show_help_menu: bool,
     /// History of recorded messages
@@ -228,7 +226,7 @@ impl App {
         tx_client: &Sender<ClientMessage>,
         waker: &Waker,
     ) -> Result<(), Error> {
-        match user_input {
+        match user_input.trim() {
             "all-in" => {
                 if let Some(action) = action_options.get(&Action::AllIn) {
                     let msg = ClientMessage {
@@ -318,7 +316,7 @@ impl App {
                 waker.wake()?;
             }
             other => {
-                let other: Vec<&str> = other.split(' ').collect();
+                let other: Vec<&str> = other.split_ascii_whitespace().collect();
                 let action = match (
                     action_options.get(&Action::Raise(0)),
                     other.first(),
@@ -366,7 +364,6 @@ impl App {
         Ok(Self {
             username,
             addr,
-            help_menu_text: HELP.into(),
             show_help_menu: false,
             log_handle: ScrollableList::new(MAX_LOG_RECORDS),
             user_input: UserInput::new(),
@@ -816,13 +813,11 @@ impl App {
             frame.render_widget(Clear, help_menu_area); // clears out the background
 
             // Render help text.
-            let help_text = Paragraph::new(self.help_menu_text.clone())
-                .style(Style::default())
-                .block(
-                    block::Block::bordered()
-                        .title(" commands  ")
-                        .padding(Padding::uniform(1)),
-                );
+            let help_text = Paragraph::new(HELP).style(Style::default()).block(
+                block::Block::bordered()
+                    .title(" commands  ")
+                    .padding(Padding::uniform(1)),
+            );
             frame.render_widget(help_text, help_menu_area);
         }
     }
