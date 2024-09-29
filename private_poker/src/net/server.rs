@@ -488,9 +488,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                     // them for removal.
                                     if messages.len() >= max_network_events {
                                         let repr = token_to_string(&token);
-                                        error!(
-                                            "{repr} has not been receiving and will be removed."
-                                        );
+                                        error!("{repr} has not been receiving and will be removed");
                                         tokens_to_remove.insert(token);
                                         continue;
                                     }
@@ -563,7 +561,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                             if messages.len() >= MAX_NETWORK_EVENTS_PER_USER {
                                                 let repr = token_to_string(&token);
                                                 error!(
-                                                    "{repr} has been spamming and will be removed."
+                                                    "{repr} has been spamming and will be removed"
                                                 );
                                                 tokens_to_remove.insert(token);
                                                 break;
