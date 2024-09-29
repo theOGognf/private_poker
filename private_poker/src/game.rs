@@ -772,42 +772,26 @@ impl From<Game<SeatPlayers>> for Game<Lobby> {
 
 impl From<Game<SeatPlayers>> for Game<MoveButton> {
     fn from(mut value: Game<SeatPlayers>) -> Self {
-        loop {
-            match (
-                value.data.open_seats.pop_front(),
-                value.data.waitlist.pop_front(),
-            ) {
-                (Some(open_seat_idx), Some(user)) => {
-                    if user.money < value.data.big_blind {
-                        value.data.spectators.insert(user.name.clone(), user);
-                    } else {
-                        let num_players = value.get_num_players();
-                        let player = Player::new(user, open_seat_idx);
-                        if num_players > 0 {
-                            match (0..num_players - 1).position(|player_idx| {
-                                value.data.players[player_idx].seat_idx < open_seat_idx
-                                    && value.data.players[player_idx + 1].seat_idx > open_seat_idx
-                            }) {
-                                Some(player_idx) => {
-                                    value.data.players.insert(player_idx + 1, player)
-                                }
-                                None => value.data.players.push(player),
-                            }
-                        } else {
-                            value.data.players.push(player);
-                        }
+        while !value.data.open_seats.is_empty() && !value.data.waitlist.is_empty() {
+            let open_seat_idx = value.data.open_seats.pop_front().expect("not empty");
+            let user = value.data.waitlist.pop_front().expect("not empty");
+            if user.money < value.data.big_blind {
+                value.data.spectators.insert(user.name.clone(), user);
+            } else {
+                let num_players = value.get_num_players();
+                let player = Player::new(user, open_seat_idx);
+                if num_players > 0 {
+                    match (0..num_players - 1).position(|player_idx| {
+                        value.data.players[player_idx].seat_idx < open_seat_idx
+                            && value.data.players[player_idx + 1].seat_idx > open_seat_idx
+                    }) {
+                        Some(player_idx) => value.data.players.insert(player_idx + 1, player),
+                        None => value.data.players.push(player),
                     }
-                    continue;
+                } else {
+                    value.data.players.push(player);
                 }
-                (Some(open_seat_idx), None) => {
-                    value.data.open_seats.push_front(open_seat_idx);
-                }
-                (None, Some(user)) => {
-                    value.data.waitlist.push_front(user);
-                }
-                (None, None) => {}
             }
-            break;
         }
         value.data.num_players_active = value.get_num_players();
         Self {
