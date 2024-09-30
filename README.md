@@ -89,17 +89,35 @@ local or private network, and all your users are familiar with `cargo`,
 it's less work to just use the poker binaries directly rather than using
 Docker and `ssh`.
 
-1. For the host, run the server binary:
+## From source
+
+- For the host, run the server binary:
    
-   ```bash
-   RUST_LOG=info cargo run --bin pp_server -r -- --bind $host
-   ```
+  ```bash
+  RUST_LOG=info cargo run --bin pp_server -r -- --bind $host
+  ```
 
-2. For users, run the client binary:
+- For users, run the client binary:
 
-   ```bash
-   cargo run --bin pp_client -r -- $username --connect $host
-   ```
+  ```bash
+  cargo run --bin pp_client -r -- $username --connect $host
+  ```
+
+## From crates.io
+
+- For the host, install and run the server:
+
+  ```bash
+  cargo install pp_server
+  RUST_LOG=info pp_server --bind $host
+  ```
+
+- For users, install and run the client:
+
+  ```bash
+  cargo install pp_client
+  pp_client $username --connect $host
+  ```
 
 # Project structure
 
@@ -139,3 +157,5 @@ exercise to forkers:
 [4]: https://github.com/Mac-Genius
 [5]: https://github.com/shazow
 [6]: https://github.com/shazow/ssh-chat
+[7]: https://github.com/theOGognf/private_poker
+[8]: 
