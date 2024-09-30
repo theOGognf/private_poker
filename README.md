@@ -14,7 +14,13 @@
 
 If you answered "yes" to any of these rhetorical questions, then this project
 is for you! Host and manage a poker game from the comfort of your computer
-with **p**ri♦ate_**p**♡ker (or **pp** for short)!
+with **p**ri♦ate_**p**♡ker (or **pp** for short)! Get started with any of the
+following artifacts:
+
+- [Library crate][7]
+- [Server crate][8]
+- [Client crate][9]
+- [All-in-one Docker image (recommended)][1]
 
 # Poker over `ssh`
 
@@ -30,7 +36,7 @@ Host and manage poker over `ssh` with the following commands:
 1. Run the container (two options):
 
    - From source:
-         
+
      ```bash
      docker build -t poker .
      docker run -d --name poker -p $port:22 --rm poker
@@ -89,10 +95,10 @@ local or private network, and all your users are familiar with `cargo`,
 it's less work to just use the poker binaries directly rather than using
 Docker and `ssh`.
 
-## From source
+From source:
 
 - For the host, run the server binary:
-   
+
   ```bash
   RUST_LOG=info cargo run --bin pp_server -r -- --bind $host
   ```
@@ -103,7 +109,7 @@ Docker and `ssh`.
   cargo run --bin pp_client -r -- $username --connect $host
   ```
 
-## From crates.io
+From crates.io:
 
 - For the host, install and run the server:
 
@@ -157,5 +163,6 @@ exercise to forkers:
 [4]: https://github.com/Mac-Genius
 [5]: https://github.com/shazow
 [6]: https://github.com/shazow/ssh-chat
-[7]: https://github.com/theOGognf/private_poker
-[8]: 
+[7]: https://crates.io/crates/private_poker
+[8]: https://crates.io/crates/pp_server
+[9]: https://crates.io/crates/pp_client

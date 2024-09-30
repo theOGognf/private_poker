@@ -1,9 +1,19 @@
 # pp_server
 
-A low-level TCP poker server. The server runs with two threads; one for
-managing TCP connections and exchanging data with clients, and another
-for updating the poker game state at fixed intervals and in response to
-user commands. See [pp_client][1] for a client and TUI that can connect to
-this server.
+A TCP poker server. Host a poker server with:
 
-[1]: https://github.com/theOGognf/private_poker/tree/main/pp_client
+```bash
+RUST_LOG=info pp_server --bind $host
+```
+
+Poker clients can connect with [pp_client][2].
+
+## Related artifacts
+
+- [Library crate][1]
+- [Client crate][2]
+- [All-in-one Docker image (recommended)][3]
+
+[1]: https://crates.io/crates/private_poker
+[2]: https://crates.io/crates/pp_client
+[3]: https://hub.docker.com/r/ognf/poker
