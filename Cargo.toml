@@ -5,6 +5,10 @@ members = [
     "private_poker",
 ]
 resolver = "2"
+exclude = [
+    ".github",
+    "assets/*",
+]
 
 [profile.release]
 codegen-units = 1
