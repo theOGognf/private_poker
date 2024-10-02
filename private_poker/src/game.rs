@@ -1459,15 +1459,15 @@ impl fmt::Display for PokerState {
             PokerState::ShowHands(ref game) => {
                 let num_pots = game.get_num_pots();
                 match num_pots {
-                    1 => "showing the main pot",
-                    i => &format!("showing side pot #{i}"),
+                    1 => "showing main pot",
+                    i => &format!("showing side pot #{}", i - 1),
                 }
             }
             PokerState::DistributePot(ref game) => {
                 let num_pots = game.get_num_pots();
                 match num_pots {
-                    1 => "distributing the main pot",
-                    i => &format!("distributing side pot #{i}"),
+                    1 => "distributing main pot",
+                    i => &format!("distributing side pot #{}", i - 1),
                 }
             }
             PokerState::RemovePlayers(_) => "updating players that joined spectators or left",
