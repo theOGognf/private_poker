@@ -1188,9 +1188,8 @@ impl From<Game<ShowHands>> for Game<DistributePot> {
         if num_players_remaining > 1 {
             for player_idx in value.data.pot.investments.keys() {
                 let player = &mut value.data.players[*player_idx];
-                match player.state {
-                    PlayerState::AllIn | PlayerState::Wait => player.state = PlayerState::Show,
-                    _ => {}
+                if player.state != PlayerState::Fold {
+                    player.state = PlayerState::Show
                 }
             }
         }
@@ -1718,6 +1717,8 @@ impl From<GameSettings> for PokerState {
 mod game_tests {
     use std::collections::HashSet;
 
+    use crate::entities::PlayerState;
+
     use super::{
         entities::{Action, Card, Suit},
         BootPlayers, CollectBlinds, Deal, DistributePot, DivideDonations, Flop, Game, Lobby,
@@ -2227,6 +2228,70 @@ mod game_tests {
         let mut expected_open_seats = Vec::from_iter(3..game.data.settings.max_players);
         expected_open_seats.push(0);
         assert_eq!(game.data.open_seats, expected_open_seats)
+    }
+
+    #[test]
+    fn show_hands_after_checks() {
+        let game = init_3_player_game();
+        let game: Game<MoveButton> = game.into();
+        let game: Game<CollectBlinds> = game.into();
+        let game: Game<Deal> = game.into();
+        let mut game: Game<TakeAction> = game.into();
+        assert_eq!(game.act(Action::Fold), Ok(Action::Fold));
+        assert_eq!(game.act(Action::Call(5)), Ok(Action::Call(5)));
+        assert_eq!(game.act(Action::Check), Ok(Action::Check));
+        let game: Game<Flop> = game.into();
+        let mut game: Game<TakeAction> = game.into();
+        assert_eq!(game.act(Action::Check), Ok(Action::Check));
+        assert_eq!(game.act(Action::Check), Ok(Action::Check));
+        let game: Game<Turn> = game.into();
+        let mut game: Game<TakeAction> = game.into();
+        assert_eq!(game.act(Action::Check), Ok(Action::Check));
+        assert_eq!(game.act(Action::Check), Ok(Action::Check));
+        let game: Game<River> = game.into();
+        let mut game: Game<TakeAction> = game.into();
+        assert_eq!(game.act(Action::Check), Ok(Action::Check));
+        assert_eq!(game.act(Action::Check), Ok(Action::Check));
+        let game: Game<ShowHands> = game.into();
+        let game: Game<DistributePot> = game.into();
+        for (i, state) in [PlayerState::Fold, PlayerState::Show, PlayerState::Show]
+            .iter()
+            .enumerate()
+        {
+            assert_eq!(game.data.players[i].state, *state);
+        }
+    }
+
+    #[test]
+    fn show_hands_after_raise_and_call() {
+        let game = init_3_player_game();
+        let game: Game<MoveButton> = game.into();
+        let game: Game<CollectBlinds> = game.into();
+        let game: Game<Deal> = game.into();
+        let mut game: Game<TakeAction> = game.into();
+        assert_eq!(game.act(Action::Fold), Ok(Action::Fold));
+        assert_eq!(game.act(Action::Call(5)), Ok(Action::Call(5)));
+        assert_eq!(game.act(Action::Check), Ok(Action::Check));
+        let game: Game<Flop> = game.into();
+        let mut game: Game<TakeAction> = game.into();
+        assert_eq!(game.act(Action::Check), Ok(Action::Check));
+        assert_eq!(game.act(Action::Check), Ok(Action::Check));
+        let game: Game<Turn> = game.into();
+        let mut game: Game<TakeAction> = game.into();
+        assert_eq!(game.act(Action::Check), Ok(Action::Check));
+        assert_eq!(game.act(Action::Check), Ok(Action::Check));
+        let game: Game<River> = game.into();
+        let mut game: Game<TakeAction> = game.into();
+        assert_eq!(game.act(Action::Raise(20)), Ok(Action::Raise(20)));
+        assert_eq!(game.act(Action::Call(20)), Ok(Action::Call(20)));
+        let game: Game<ShowHands> = game.into();
+        let game: Game<DistributePot> = game.into();
+        for (i, state) in [PlayerState::Fold, PlayerState::Show, PlayerState::Show]
+            .iter()
+            .enumerate()
+        {
+            assert_eq!(game.data.players[i].state, *state);
+        }
     }
 
     #[test]
