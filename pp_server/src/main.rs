@@ -12,14 +12,7 @@ use private_poker::{
     server::{self, PokerConfig},
     GameSettings, DEFAULT_MAX_USERS, MAX_PLAYERS,
 };
-#[cfg(target_os = "linux")]
-use {
-    signal_hook::{
-        consts::{SIGINT, SIGQUIT, SIGTERM},
-        iterator::Signals,
-    },
-    std::{process, thread},
-};
+use ctrlc::set_handler;
 
 const HELP: &str = "\
 Run a private poker server
@@ -60,15 +53,7 @@ fn main() -> Result<(), Error> {
     let config: PokerConfig = game_settings.into();
 
     // Catching signals for exit.
-    #[cfg(target_os = "linux")]
-    {
-        let mut signals = Signals::new([SIGINT, SIGTERM, SIGQUIT])?;
-        thread::spawn(move || {
-            if let Some(sig) = signals.forever().next() {
-                process::exit(sig);
-            }
-        });
-    }
+    set_handler(|| std::process::exit(0))?;
 
     env_logger::builder().format_target(false).init();
     info!("starting at {}", args.bind);

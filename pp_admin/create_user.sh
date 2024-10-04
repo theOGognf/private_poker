@@ -1,9 +1,8 @@
 #!/bin/sh
 
-# Create a user in the Alpine Docker container,
-# make their home directory, create an SSH key pair,
-# and put their public key within their authorized keys
-# file.
+# Create a user in the Alpine Docker container, make their home directory, and
+# listen for when they update their authorized_keys file so we can finalize
+# their poker account.
 username=$1
 ssh_dir=/home/$username/.ssh
 

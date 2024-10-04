@@ -62,7 +62,7 @@ Host and manage poker over `ssh` with the following commands:
    the server:
 
    ```bash
-   ssh-keygen -q -t rsa -b 4096 -N '' -f ~/.ssh/poker_id_rsa
+   ssh-keygen -q -t rsa -b 4096 -N "" -f ~/.ssh/poker_id_rsa
    export PUBLIC_KEY="$(cat ~/.ssh/poker_id_rsa.pub)"
    ssh -i ~/.ssh/poker_id_rsa -o SendEnv=PUBLIC_KEY -p $port $username@$host
    ```
