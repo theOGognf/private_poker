@@ -5,6 +5,7 @@
 //! at fixed intervals and in response to user commands.
 
 use anyhow::Error;
+use ctrlc::set_handler;
 use log::info;
 use pico_args::Arguments;
 use private_poker::{
@@ -12,7 +13,6 @@ use private_poker::{
     server::{self, PokerConfig},
     GameSettings, DEFAULT_MAX_USERS, MAX_PLAYERS,
 };
-use ctrlc::set_handler;
 
 const HELP: &str = "\
 Run a private poker server
