@@ -3,10 +3,13 @@ use private_poker::{
     entities::{Action, SubHand, Usd, Usdf},
     functional,
     messages::{GameView, ServerMessage, UserState},
-    Client,
+    utils, Client,
 };
 use rand::{distributions::WeightedIndex, prelude::Distribution, thread_rng};
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    net::TcpStream,
+};
 
 const ACTIONS_ARRAY: [Action; 5] = [
     Action::AllIn,
@@ -107,11 +110,8 @@ struct PokerEnv {
 impl PokerEnv {
     fn new(username: &str, addr: &str) -> Result<Self, Error> {
         let (mut client, view) = Client::connect(username, addr)?;
-        let user = view
-            .waitlist
-            .iter()
-            .find(|u| u.name == username)
-            .expect("user exists");
+        let user = view.spectators.get(username).expect("user exists");
+        client.stream.set_read_timeout(None)?;
         client.change_state(UserState::Play)?;
         Ok(Self {
             client,
@@ -122,41 +122,19 @@ impl PokerEnv {
     }
 
     fn reset(&mut self) -> Result<(State, ActionMask), Error> {
-        // Check if we have enough for the big blind. If we don't, we have
-        // to wait until we're moved to spectator and then disconnect,
-        // reconnect, and then move to the waitlist.
-        if let Some(player) = self
-            .view
-            .players
-            .iter()
-            .find(|p| p.user.name == self.client.username)
-        {
-            if player.user.money < self.view.big_blind {
-                loop {
-                    match self.client.recv() {
-                        Ok(ServerMessage::GameView(view)) => {
-                            if view.spectators.contains_key(&self.client.username) {
-                                self.client.stream.shutdown(std::net::Shutdown::Both).ok();
-                                let (mut client, view) =
-                                    Client::connect(&self.client.username, &self.client.addr)?;
-                                client.change_state(UserState::Play)?;
-                                self.client = client;
-                                self.view = view;
-                            }
-                        }
-                        Ok(ServerMessage::ClientError(error)) => bail!(error),
-                        Ok(ServerMessage::UserError(error)) => bail!(error),
-                        // Don't care about acks, game statuses, or turn signals.
-                        Ok(_) => {}
-                        Err(error) => bail!(error),
-                    }
-                }
-            }
+        // Check to see if we were moved to spectate.
+        if self.view.spectators.contains_key(&self.client.username) {
+            self.client.stream.shutdown(std::net::Shutdown::Both).ok();
+            let (mut client, view) = Client::connect(&self.client.username, &self.client.addr)?;
+            client.stream.set_read_timeout(None)?;
+            client.change_state(UserState::Play)?;
+            self.client = client;
+            self.view = view;
         }
 
         // Wait until it's our turn.
         let masks = loop {
-            match self.client.recv() {
+            match utils::read_prefixed::<ServerMessage, TcpStream>(&mut self.client.stream) {
                 Ok(ServerMessage::GameView(view)) => {
                     self.view = view;
                     if let Some(player) = self
@@ -175,12 +153,10 @@ impl PokerEnv {
                 Ok(ServerMessage::TurnSignal(masks)) => break masks,
                 Ok(ServerMessage::ClientError(error)) => bail!(error),
                 Ok(ServerMessage::UserError(error)) => bail!(error),
-                // Don't care about acks or game statuses.
-                Ok(_) => {}
                 Err(error) => bail!(error),
+                _ => {}
             }
         };
-
         Ok((self.hand.clone(), masks))
     }
 
@@ -194,45 +170,52 @@ impl PokerEnv {
         let bet = match action {
             Action::AllIn => player.user.money,
             Action::Check => 0,
-            Action::Fold => return Ok((self.hand.clone(), HashSet::new(), 0.0, true)),
+            Action::Fold => 0,
             Action::Call(amount) => amount,
             Action::Raise(amount) => amount,
         };
-        self.client.take_action(action)?;
+        self.client.take_action(action.clone())?;
+        if action == Action::Fold {
+            return Ok((self.hand.clone(), HashSet::new(), 0.0, true));
+        }
         let remaining_money = player.user.money - bet;
         let mut reward = -(bet as Usdf) / (self.starting_money as Usdf);
         // We have to wait until the game is over or wait until it's our turn
         // again so we can get masks and get the final reward for our action.
         let masks = loop {
-            match self.client.recv() {
+            match utils::read_prefixed::<ServerMessage, TcpStream>(&mut self.client.stream) {
                 Ok(ServerMessage::GameView(view)) => {
-                    // If we don't have anymore cards, then the game is over.
                     self.view = view;
-                    let player = self
+                    if let Some(player) = self
                         .view
                         .players
                         .iter()
                         .find(|p| p.user.name == self.client.username)
-                        .expect("player exists");
-                    if player.cards.is_empty() {
-                        // Reward is relative to money at the start of the game
-                        // and to money after the last action was made.
-                        reward += ((player.user.money - remaining_money) as Usdf)
+                    {
+                        // If we don't have anymore cards, then the game is over.
+                        if player.cards.is_empty() {
+                            reward += ((player.user.money - remaining_money) as Usdf)
+                                / (self.starting_money as Usdf);
+                            return Ok((self.hand.clone(), HashSet::new(), reward, true));
+                        } else {
+                            let mut cards = self.view.board.clone();
+                            cards.extend(player.cards.clone());
+                            functional::prepare_hand(&mut cards);
+                            self.hand = functional::eval(&cards);
+                        }
+                    // We were forcibly moved to spectate because we don't have enough
+                    // money. This means the current game is over.
+                    } else if let Some(user) = self.view.spectators.get(&self.client.username) {
+                        reward += ((user.money - remaining_money) as Usdf)
                             / (self.starting_money as Usdf);
                         return Ok((self.hand.clone(), HashSet::new(), reward, true));
-                    } else {
-                        let mut cards = self.view.board.clone();
-                        cards.extend(player.cards.clone());
-                        functional::prepare_hand(&mut cards);
-                        self.hand = functional::eval(&cards);
                     }
                 }
                 Ok(ServerMessage::TurnSignal(masks)) => break masks,
                 Ok(ServerMessage::ClientError(error)) => bail!(error),
                 Ok(ServerMessage::UserError(error)) => bail!(error),
-                // Don't care about acks or game statuses.
-                Ok(_) => {}
                 Err(error) => bail!(error),
+                _ => {}
             }
         };
         Ok((self.hand.clone(), masks, reward, false))

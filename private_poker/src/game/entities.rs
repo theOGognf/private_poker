@@ -265,8 +265,6 @@ pub enum PlayerState {
     Fold,
     // Player raises and is waiting for other player actions.
     Raise,
-    // Player shows their cards at the end of the game.
-    Show,
     // Player is in the pot but is waiting for their move.
     Wait,
 }
@@ -279,7 +277,6 @@ impl fmt::Display for PlayerState {
             PlayerState::Check => "check",
             PlayerState::Fold => "folded",
             PlayerState::Raise => "raise",
-            PlayerState::Show => "showing",
             PlayerState::Wait => "waiting",
         };
         write!(f, "{repr:7}")
@@ -291,6 +288,7 @@ pub struct Player {
     pub user: User,
     pub state: PlayerState,
     pub cards: Vec<Card>,
+    pub showing: bool,
     pub seat_idx: usize,
 }
 
@@ -300,6 +298,7 @@ impl Player {
             user,
             state: PlayerState::Wait,
             cards: Vec::with_capacity(2),
+            showing: false,
             seat_idx,
         }
     }
@@ -307,6 +306,7 @@ impl Player {
     pub fn reset(&mut self) {
         self.state = PlayerState::Wait;
         self.cards.clear();
+        self.showing = false;
     }
 }
 

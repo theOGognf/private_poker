@@ -300,7 +300,7 @@ impl<T> Game<T> {
     fn as_view(&self, username: &str) -> GameView {
         let mut players = Vec::with_capacity(self.data.settings.max_players);
         for player in self.data.players.iter() {
-            let cards = if player.user.name == username || player.state == PlayerState::Show {
+            let cards = if player.user.name == username || player.showing {
                 player.cards.clone()
             } else {
                 vec![]
@@ -1154,8 +1154,8 @@ macro_rules! impl_show_hands {
                     .find(|p| p.user.name == username)
                 {
                     Some(player) => {
-                        if player.state != PlayerState::Show {
-                            player.state = PlayerState::Show;
+                        if !player.showing {
+                            player.showing = true;
                             Ok(())
                         } else {
                             Err(UserError::UserAlreadyShowingHand)
@@ -1188,7 +1188,7 @@ impl From<Game<ShowHands>> for Game<DistributePot> {
             for player_idx in value.data.pot.investments.keys() {
                 let player = &mut value.data.players[*player_idx];
                 if player.state != PlayerState::Fold {
-                    player.state = PlayerState::Show
+                    player.showing = true;
                 }
             }
         }
@@ -1215,6 +1215,9 @@ impl Game<DistributePot> {
             let mut pot_call = **largest_call;
             for (idx, (player_idx, investment)) in investments.iter().enumerate().rev() {
                 let player = &self.data.players[**player_idx];
+                // If the player's investment doesn't match the pot's call, then
+                // that means they and everyone with smaller investements aren't
+                // included in the pot.
                 if player.state != PlayerState::Fold && investment < largest_call {
                     pot_call = **largest_call - **investment;
                     break;
@@ -2253,7 +2256,7 @@ mod game_tests {
         assert_eq!(game.act(Action::Check), Ok(Action::Check));
         let game: Game<ShowHands> = game.into();
         let game: Game<DistributePot> = game.into();
-        for (i, state) in [PlayerState::Fold, PlayerState::Show, PlayerState::Show]
+        for (i, state) in [PlayerState::Fold, PlayerState::Check, PlayerState::Check]
             .iter()
             .enumerate()
         {
@@ -2285,7 +2288,7 @@ mod game_tests {
         assert_eq!(game.act(Action::Call(20)), Ok(Action::Call(20)));
         let game: Game<ShowHands> = game.into();
         let game: Game<DistributePot> = game.into();
-        for (i, state) in [PlayerState::Fold, PlayerState::Show, PlayerState::Show]
+        for (i, state) in [PlayerState::Fold, PlayerState::Raise, PlayerState::Call]
             .iter()
             .enumerate()
         {
