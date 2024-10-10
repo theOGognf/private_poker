@@ -10,7 +10,7 @@ const HELP: &str = "\
 Create a poker bot and conect it to a private poker server over TCP
 
 USAGE:
-  pp_bot [OPTIONS] USERNAME
+  pp_bots [OPTIONS] USERNAME
 
 OPTIONS:
   --connect IP:PORT     Server socket connection address  [default: 127.0.0.1:6969]
