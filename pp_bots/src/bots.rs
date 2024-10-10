@@ -245,21 +245,21 @@ pub fn run(username: &str, addr: &str) -> Result<(), Error> {
     loop {
         let (mut state1, mut masks1) = env.reset()?;
         loop {
-            let action = policy.sample(state1.clone(), masks1);
+            let action = policy.sample(state1.clone(), masks1.clone());
             let (state2, masks2, reward, done) = env.step(action.clone())?;
             if done {
-                policy.update_done(state1, action.clone(), reward);
+                policy.update_done(state1.clone(), action.clone(), reward);
                 break;
             }
             policy.update_step(
-                state1,
+                state1.clone(),
                 action.clone(),
                 reward,
                 state2.clone(),
                 masks2.clone(),
             );
-            state1 = state2.clone();
-            masks1 = masks2.clone();
+            state1.clone_from(&state2);
+            masks1.clone_from(&masks2);
         }
     }
 }
