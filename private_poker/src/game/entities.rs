@@ -84,7 +84,7 @@ impl fmt::Display for Rank {
     }
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SubHand {
     pub rank: Rank,
     pub values: Vec<Value>,
@@ -148,6 +148,22 @@ pub enum Action {
     Check,
     Fold,
     Raise(Usd),
+}
+
+// Can't really convert a usize into an Action safely, and it doesn't
+// really make sense to use a try- conversion version, so let's just
+// use the into trait.
+#[allow(clippy::from_over_into)]
+impl Into<usize> for Action {
+    fn into(self) -> usize {
+        match self {
+            Action::AllIn => 0,
+            Action::Call(_) => 1,
+            Action::Check => 2,
+            Action::Fold => 3,
+            Action::Raise(_) => 4,
+        }
+    }
 }
 
 impl fmt::Display for Action {

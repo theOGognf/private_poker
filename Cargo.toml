@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "pp_bots",
     "pp_client",
     "pp_server",
     "private_poker",

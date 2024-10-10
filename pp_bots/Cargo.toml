@@ -1,0 +1,14 @@
+[package]
+name = "pp_bots"
+version = "0.0.1"
+edition = "2021"
+description = "Adaptive poker bots"
+repository = "https://github.com/theOGognf/private_poker"
+readme = "README.md"
+license = "Apache-2.0"
+
+[dependencies]
+anyhow = "1.0.89"
+pico-args = "0.5.0"
+private_poker = { version = "0.1.5", path = "../private_poker" }
+rand = "0.8.5"
