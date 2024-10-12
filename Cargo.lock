@@ -504,7 +504,7 @@ checksum = "5be167a7af36ee22fe3115051bc51f6e6c7054c9348e28deb4f49bd6f705a315"
 
 [[package]]
 name = "pp_bots"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "anyhow",
  "ctrlc",
@@ -515,7 +515,7 @@ dependencies = [
 
 [[package]]
 name = "pp_client"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "anyhow",
  "chrono",
@@ -528,7 +528,7 @@ dependencies = [
 
 [[package]]
 name = "pp_server"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "anyhow",
  "ctrlc",
@@ -549,7 +549,7 @@ dependencies = [
 
 [[package]]
 name = "private_poker"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "anyhow",
  "bincode",
