@@ -18,8 +18,8 @@ USAGE:
 
 OPTIONS:
   --connect IP:PORT     Server socket connection address  [default: 127.0.0.1:6969]
-  --alpha   ALPHA       Q-Learning rate.                  [default: 0.1]
-  --gamma   GAMMA       Discount reward factor.           [default: 0.95]
+  --alpha   ALPHA       Q-Learning rate                   [default: 0.1]
+  --gamma   GAMMA       Discount rate                     [default: 0.95]
 
 FLAGS:
   -h, --help            Print help information
@@ -29,7 +29,7 @@ struct Args {
     addr: String,
     alpha: f32,
     gamma: f32,
-    usernames: Vec<String>,
+    botnames: Vec<String>,
 }
 
 fn main() -> Result<(), Error> {
@@ -47,44 +47,48 @@ fn main() -> Result<(), Error> {
             .unwrap_or("127.0.0.1:6969".into()),
         alpha: pargs.value_from_str("--alpha").unwrap_or("0.1".parse()?),
         gamma: pargs.value_from_str("--gamma").unwrap_or("0.95".parse()?),
-        usernames: pargs
+        botnames: pargs
             .finish()
             .iter()
             .map(|s| s.to_str().unwrap().to_string())
             .collect(),
     };
 
+    if args.botnames.is_empty() {
+        println!("no botnames provided");
+        std::process::exit(0);
+    }
     // Catching signals for exit.
     set_handler(|| std::process::exit(0))?;
 
     let policy = Arc::new(Mutex::new(QLearning::new(args.alpha, args.gamma)));
     let workers: Vec<_> = args
-        .usernames
+        .botnames
         .into_iter()
-        .map(|username| {
+        .map(|botname| {
             thread::spawn({
                 let addr = args.addr.clone();
                 let policy = policy.clone();
                 move || -> Result<(), Error> {
-                    let mut env = Bot::new(&username, &addr)?;
+                    let mut env = Bot::new(&botname, &addr)?;
                     loop {
                         let (mut state1, mut masks1) = env.reset()?;
                         loop {
                             let action = {
                                 let mut policy = policy.lock().expect("sample lock");
-                                info!("{username} sampling");
+                                info!("{botname} sampling");
                                 policy.sample(state1.clone(), masks1.clone())
                             };
                             let (state2, masks2, reward, done) = env.step(action.clone())?;
                             if done {
                                 let mut policy = policy.lock().expect("done lock");
-                                info!("{username} done update");
+                                info!("{botname} done update");
                                 policy.update_done(state1.clone(), action.clone(), reward);
                                 break;
                             }
                             {
                                 let mut policy = policy.lock().expect("step lock");
-                                info!("{username} step update");
+                                info!("{botname} step update");
                                 policy.update_step(
                                     state1.clone(),
                                     action.clone(),

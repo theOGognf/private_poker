@@ -110,9 +110,9 @@ pub struct Bot {
 }
 
 impl Bot {
-    pub fn new(username: &str, addr: &str) -> Result<Self, Error> {
-        let (mut client, view) = Client::connect(username, addr)?;
-        let user = view.spectators.get(username).expect("user exists");
+    pub fn new(botname: &str, addr: &str) -> Result<Self, Error> {
+        let (mut client, view) = Client::connect(botname, addr)?;
+        let user = view.spectators.get(botname).expect("user exists");
         client.stream.set_read_timeout(None)?;
         client.change_state(UserState::Play)?;
         Ok(Self {
