@@ -11,6 +11,13 @@ use std::{
     net::TcpStream,
 };
 
+type State = Vec<SubHand>;
+type ActionMasks = HashSet<Action>;
+type ActionWeight = f32;
+type ActionWeights = [f32; 5];
+type Reward = f32;
+type Done = bool;
+
 const ACTIONS_ARRAY: [Action; 5] = [
     Action::AllIn,
     Action::Call(0),
@@ -18,36 +25,31 @@ const ACTIONS_ARRAY: [Action; 5] = [
     Action::Fold,
     Action::Raise(0),
 ];
-const Q_S_DEFAULT: [f32; 5] = [1.0; 5];
+const Q_S_DEFAULT: ActionWeights = [1.0; 5];
 
-type State = Vec<SubHand>;
-type ActionMask = HashSet<Action>;
-type Reward = f32;
-type Done = bool;
-
-struct QParams {
+struct QLearningParams {
     alpha: f32,
     gamma: f32,
 }
 
-struct Q {
-    params: QParams,
-    dist: WeightedIndex<f32>,
-    table: HashMap<Vec<SubHand>, [f32; 5]>,
+pub struct QLearning {
+    params: QLearningParams,
+    dist: WeightedIndex<ActionWeight>,
+    table: HashMap<State, ActionWeights>,
 }
 
-impl Q {
-    fn new(alpha: f32, gamma: f32) -> Self {
+impl QLearning {
+    pub fn new(alpha: f32, gamma: f32) -> Self {
         Self {
-            params: QParams { alpha, gamma },
+            params: QLearningParams { alpha, gamma },
             dist: WeightedIndex::new(Q_S_DEFAULT).expect("valid weights"),
             table: HashMap::new(),
         }
     }
 
-    fn sample(&mut self, state: State, masks: ActionMask) -> Action {
+    pub fn sample(&mut self, state: State, masks: ActionMasks) -> Action {
         let old_weights = self.table.entry(state).or_insert(Q_S_DEFAULT);
-        let new_weights: Vec<f32> = ACTIONS_ARRAY
+        let new_weights: Vec<ActionWeight> = ACTIONS_ARRAY
             .iter()
             .enumerate()
             .map(|(idx, action)| {
@@ -58,7 +60,7 @@ impl Q {
                 }
             })
             .collect();
-        let new_weights: Vec<(usize, &f32)> = new_weights.iter().enumerate().collect();
+        let new_weights: Vec<(usize, &ActionWeight)> = new_weights.iter().enumerate().collect();
         self.dist
             .update_weights(&new_weights)
             .expect("valid weights");
@@ -67,19 +69,19 @@ impl Q {
         masks.get(action).expect("valid action").clone()
     }
 
-    fn update_done(&mut self, state: State, action: Action, reward: Reward) {
+    pub fn update_done(&mut self, state: State, action: Action, reward: Reward) {
         let q_s = self.table.entry(state).or_insert(Q_S_DEFAULT);
         let action_idx: usize = action.into();
         q_s[action_idx] = reward;
     }
 
-    fn update_step(
+    pub fn update_step(
         &mut self,
         state1: State,
         action: Action,
         reward: Reward,
         state2: State,
-        masks2: ActionMask,
+        masks2: ActionMasks,
     ) {
         let td_target = {
             let idx_masks2: HashSet<usize> = masks2.into_iter().map(|a| a.into()).collect();
@@ -100,15 +102,15 @@ impl Q {
     }
 }
 
-struct PokerEnv {
+pub struct Bot {
     client: Client,
     hand: State,
     starting_money: Usd,
     view: GameView,
 }
 
-impl PokerEnv {
-    fn new(username: &str, addr: &str) -> Result<Self, Error> {
+impl Bot {
+    pub fn new(username: &str, addr: &str) -> Result<Self, Error> {
         let (mut client, view) = Client::connect(username, addr)?;
         let user = view.spectators.get(username).expect("user exists");
         client.stream.set_read_timeout(None)?;
@@ -121,9 +123,13 @@ impl PokerEnv {
         })
     }
 
-    fn reset(&mut self) -> Result<(State, ActionMask), Error> {
-        // Check to see if we were moved to spectate.
-        if self.view.spectators.contains_key(&self.client.username) {
+    pub fn reset(&mut self) -> Result<(State, ActionMasks), Error> {
+        // Hand is only empty on the first connection. Naturally, we'll be in
+        // spectate when we first connect, so check that our hand isn't empty
+        // before we try restarting our connection.
+        if !self.hand.is_empty() && self.view.spectators.contains_key(&self.client.username) {
+            // If we were moved to spectate, disconnect and then immediately
+            // reconnect to the game to get a fresh money stack.
             self.client.stream.shutdown(std::net::Shutdown::Both).ok();
             let (mut client, view) = Client::connect(&self.client.username, &self.client.addr)?;
             client.stream.set_read_timeout(None)?;
@@ -132,7 +138,8 @@ impl PokerEnv {
             self.view = view;
         }
 
-        // Wait until it's our turn.
+        // Wait until it's our turn so we can get our hand and available
+        // actions.
         let masks = loop {
             match utils::read_prefixed::<ServerMessage, TcpStream>(&mut self.client.stream) {
                 Ok(ServerMessage::GameView(view)) => {
@@ -160,7 +167,7 @@ impl PokerEnv {
         Ok((self.hand.clone(), masks))
     }
 
-    fn step(&mut self, action: Action) -> Result<(State, ActionMask, Reward, Done), Error> {
+    pub fn step(&mut self, action: Action) -> Result<(State, ActionMasks, Reward, Done), Error> {
         let player = self
             .view
             .players
@@ -219,30 +226,5 @@ impl PokerEnv {
             }
         };
         Ok((self.hand.clone(), masks, reward, false))
-    }
-}
-
-pub fn run(username: &str, addr: &str) -> Result<(), Error> {
-    let mut policy = Q::new(0.1, 0.95);
-    let mut env = PokerEnv::new(username, addr)?;
-    loop {
-        let (mut state1, mut masks1) = env.reset()?;
-        loop {
-            let action = policy.sample(state1.clone(), masks1.clone());
-            let (state2, masks2, reward, done) = env.step(action.clone())?;
-            if done {
-                policy.update_done(state1.clone(), action.clone(), reward);
-                break;
-            }
-            policy.update_step(
-                state1.clone(),
-                action.clone(),
-                reward,
-                state2.clone(),
-                masks2.clone(),
-            );
-            state1.clone_from(&state2);
-            masks1.clone_from(&masks2);
-        }
     }
 }
