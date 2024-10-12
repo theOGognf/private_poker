@@ -508,7 +508,6 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "ctrlc",
- "log",
  "pico-args",
  "private_poker",
  "rand",

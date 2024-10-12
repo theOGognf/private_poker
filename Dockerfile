@@ -47,6 +47,7 @@ COPY --from=builder /usr/app/pp_admin/claim_user.sh /usr/local/bin/claim_user
 COPY --from=builder /usr/app/pp_admin/sshd_config /etc/ssh/sshd_config
 
 # Copy poker binaries
+COPY --from=builder /usr/app/target/release/pp_bots ./pp_bots
 COPY --from=builder /usr/app/target/release/pp_client /usr/local/bin/pp_client
 COPY --from=builder /usr/app/target/release/pp_server ./pp_server
 

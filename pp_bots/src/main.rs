@@ -1,6 +1,5 @@
 use anyhow::Error;
 use ctrlc::set_handler;
-use log::info;
 use pico_args::Arguments;
 use std::{
     sync::{Arc, Mutex},
@@ -58,6 +57,7 @@ fn main() -> Result<(), Error> {
         println!("no botnames provided");
         std::process::exit(0);
     }
+
     // Catching signals for exit.
     set_handler(|| std::process::exit(0))?;
 
@@ -76,19 +76,16 @@ fn main() -> Result<(), Error> {
                         loop {
                             let action = {
                                 let mut policy = policy.lock().expect("sample lock");
-                                info!("{botname} sampling");
                                 policy.sample(state1.clone(), masks1.clone())
                             };
                             let (state2, masks2, reward, done) = env.step(action.clone())?;
                             if done {
                                 let mut policy = policy.lock().expect("done lock");
-                                info!("{botname} done update");
                                 policy.update_done(state1.clone(), action.clone(), reward);
                                 break;
                             }
                             {
                                 let mut policy = policy.lock().expect("step lock");
-                                info!("{botname} step update");
                                 policy.update_step(
                                     state1.clone(),
                                     action.clone(),

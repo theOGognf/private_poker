@@ -5,10 +5,12 @@ use private_poker::{
     messages::{GameView, ServerMessage, UserState},
     utils, Client,
 };
-use rand::{distributions::WeightedIndex, prelude::Distribution, thread_rng};
+use rand::{distributions::WeightedIndex, prelude::Distribution, thread_rng, Rng};
 use std::{
     collections::{HashMap, HashSet},
     net::TcpStream,
+    thread,
+    time::Duration,
 };
 
 type State = Vec<SubHand>;
@@ -25,7 +27,7 @@ const ACTIONS_ARRAY: [Action; 5] = [
     Action::Fold,
     Action::Raise(0),
 ];
-const Q_S_DEFAULT: ActionWeights = [1.0; 5];
+const Q_S_DEFAULT: ActionWeights = [0.25, 1.0, 1.0, 1.0, 1.0];
 
 struct QLearningParams {
     alpha: f32,
@@ -174,6 +176,9 @@ impl Bot {
             .iter()
             .find(|p| p.user.name == self.client.username)
             .expect("player exists");
+        // Sleep some random amount so real users have time to process info.
+        let dur = Duration::from_secs(thread_rng().gen_range(1..8));
+        thread::sleep(dur);
         let bet = match action {
             Action::AllIn => player.user.money,
             Action::Check => 0,
