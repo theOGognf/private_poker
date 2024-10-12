@@ -8,8 +8,10 @@ it's still available for enthusiastic developers.
 
 - [Server crate][1]
 - [Client crate][2]
-- [All-in-one Docker image (recommended)][3]
+- [Bots crate][3]
+- [All-in-one Docker image (recommended)][4]
 
 [1]: https://crates.io/crates/pp_server
 [2]: https://crates.io/crates/pp_client
-[3]: https://hub.docker.com/r/ognf/poker
+[3]: https://crates.io/crates/pp_bots
+[4]: https://hub.docker.com/r/ognf/poker
