@@ -1,9 +1,9 @@
 # pp_bots
 
-Poker bots that adapt to you. Create poker bots with:
+Poker bots that adapt to you. Manage poker bots with:
 
 ```bash
-pp_bots --connect $host BOTNAME1 BOTNAME2 BOTNAME3
+pp_bots --connect $host
 ```
 
 Poker servers are hosted with [pp_server][2] and poker clients can connect

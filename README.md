@@ -76,13 +76,25 @@ Host and manage poker over `ssh` with the following commands:
    ssh -i ~/.ssh/poker_id_rsa -p $port $username@$host
    ```
 
-4. Delete a user:
+4. (Optionally) Create a tmux session in the container for managing poker bots.
+
+   ```bash
+   docker exec poker tmux new-session -d -s bots ./pp_bots
+   ```
+
+   You can reattach to the session to manage the bots with a TUI:
+
+   ```bash
+   docker exec -it poker tmux attach -t bots
+   ```
+
+5. Delete a user:
 
    ```bash
    docker exec poker ./delete_user $username
    ```
 
-5. Stop the server:
+6. Stop the server:
 
    ```bash
    docker stop poker
@@ -133,6 +145,7 @@ See each subdirectory's docs or `README.md`s for more specific info.
 ```bash
 .
 ├── pp_admin        # Scripts and configs for managing the server within Docker
+├── pp_bots         # Bots binary source
 ├── pp_client       # Client binary source
 ├── pp_server       # Server binary source
 └── private_poker   # Library that the client and server use

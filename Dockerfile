@@ -32,6 +32,7 @@ RUN apk update \
         openrc \
         openssh \
         syslog-ng \
+        tmux \
     && mkdir -p /run/openrc \
     && touch /run/openrc/softlevel \
     && addgroup unclaimed
