@@ -12,7 +12,6 @@ use private_poker::{
     },
 };
 use ratatui::{
-    self,
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     layout::{Alignment, Constraint, Flex, Layout, Margin, Position},
     style::{Style, Stylize},

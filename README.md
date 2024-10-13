@@ -20,6 +20,7 @@ following artifacts:
 - [Library crate][7]
 - [Server crate][8]
 - [Client crate][9]
+- [Bots create][10]
 - [All-in-one Docker image (recommended)][1]
 
 # Poker over `ssh`
@@ -166,3 +167,4 @@ exercise to forkers:
 [7]: https://crates.io/crates/private_poker
 [8]: https://crates.io/crates/pp_server
 [9]: https://crates.io/crates/pp_client
+[10]: https://crates.io/crates/pp_bots

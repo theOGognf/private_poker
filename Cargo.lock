@@ -511,6 +511,7 @@ dependencies = [
  "pico-args",
  "private_poker",
  "rand",
+ "ratatui",
 ]
 
 [[package]]
