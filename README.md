@@ -20,7 +20,7 @@ following artifacts:
 - [Library crate][7]
 - [Server crate][8]
 - [Client crate][9]
-- [Bots create][10]
+- [Bots crate][10]
 - [All-in-one Docker image (recommended)][1]
 
 # Poker over `ssh`
@@ -156,8 +156,8 @@ See each subdirectory's docs or `README.md`s for more specific info.
 I use this project to learn Rust and to play poker with friends
 and family. I'm probably disinterested in anything related to this
 project that doesn't contribute to those goals. Specifically, the
-following features are ommitted from this project and left as an
-exercise to forkers:
+following features are omitted from this project and left as an
+exercise for forkers:
 
 - Server orchestration or scaling
 - Persistent storage or backups of game data
