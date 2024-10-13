@@ -1,6 +1,6 @@
 [package]
 name = "private_poker"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 description = "A poker library"
 repository = "https://github.com/theOGognf/private_poker"
