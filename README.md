@@ -76,7 +76,7 @@ Host and manage poker over `ssh` with the following commands:
    ssh -i ~/.ssh/poker_id_rsa -p $port $username@$host
    ```
 
-4. (Optionally) Create a tmux session in the container for managing poker bots.
+4. (Optionally) Create a tmux session in the container for managing poker bots:
 
    ```bash
    docker exec poker tmux new-session -d -s bots ./pp_bots
