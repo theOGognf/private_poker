@@ -27,7 +27,7 @@ const ACTIONS_ARRAY: [Action; 5] = [
     Action::Fold,
     Action::Raise(0),
 ];
-const Q_S_DEFAULT: ActionWeights = [0.25, 1.0, 1.0, 1.0, 1.0];
+const Q_S_DEFAULT: ActionWeights = [0.2, 1.0, 1.0, 1.0, 0.2];
 
 struct QLearningParams {
     alpha: f32,
