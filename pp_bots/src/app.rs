@@ -1,15 +1,17 @@
 use std::{
+    fmt::Display,
     sync::{
         mpsc::{channel, Receiver, Sender},
         Arc, Mutex,
     },
     thread::{self, JoinHandle},
+    time::Duration,
 };
 
 use anyhow::Error;
 
 use ratatui::{
-    crossterm::event::{self, Event, KeyCode},
+    crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     layout::{Alignment, Constraint, Flex, Layout, Position},
     style::{Style, Stylize},
     text::{Line, Text},
@@ -31,6 +33,7 @@ are you sure you want to exit?
   leave             go back
 (Enter)             (Esc)
 ";
+const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
 enum PopupMenu {
     BotCreation,
@@ -38,7 +41,27 @@ enum PopupMenu {
     Exit,
 }
 
-type Worker = (String, Sender<()>, JoinHandle<Result<(), Error>>);
+enum WorkerState {
+    Active,
+    Deleted,
+}
+
+impl Display for WorkerState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let repr = match self {
+            WorkerState::Active => "active",
+            WorkerState::Deleted => "to be deleted after next game",
+        };
+        write!(f, "{repr}")
+    }
+}
+
+struct Worker {
+    botname: String,
+    state: WorkerState,
+    handle: JoinHandle<Result<(), Error>>,
+    delete_signaler: Sender<()>,
+}
 
 fn worker(
     mut env: Bot,
@@ -46,9 +69,6 @@ fn worker(
     interrupt: Receiver<()>,
 ) -> Result<(), Error> {
     loop {
-        if interrupt.try_recv().is_ok() {
-            return Ok(());
-        }
         let (mut state1, mut masks1) = env.reset()?;
         loop {
             let action = {
@@ -73,6 +93,9 @@ fn worker(
             }
             state1.clone_from(&state2);
             masks1.clone_from(&masks2);
+        }
+        if interrupt.try_recv().is_ok() {
+            return Ok(());
         }
     }
 }
@@ -102,67 +125,80 @@ impl App {
         loop {
             terminal.draw(|frame| self.draw(frame))?;
 
-            if let Event::Key(key) = event::read()? {
-                match self.popup_menu {
-                    Some(PopupMenu::BotCreation) => match key.code {
-                        KeyCode::Char(to_insert) => self.user_input.input(to_insert),
-                        KeyCode::Delete => self.user_input.delete(),
-                        KeyCode::Backspace => self.user_input.backspace(),
-                        KeyCode::Left => self.user_input.move_left(),
-                        KeyCode::Right => self.user_input.move_right(),
-                        KeyCode::Home => self.user_input.jump_to_first(),
-                        KeyCode::End => self.user_input.jump_to_last(),
-                        KeyCode::Enter if !self.user_input.value.is_empty() => {
-                            let botname = self.user_input.submit();
-                            let addr = self.addr.clone();
-                            match Bot::new(&botname, &addr) {
-                                Ok(env) => {
-                                    let policy = self.policy.clone();
-                                    let (tx_server, rx_worker): (Sender<()>, Receiver<()>) =
-                                        channel();
-                                    self.workers.push((
-                                        botname.clone(),
-                                        tx_server,
-                                        thread::spawn(move || worker(env, policy, rx_worker)),
-                                    ));
-                                    self.table_state.select(Some(self.workers.len() - 1));
+            if event::poll(POLL_TIMEOUT)? {
+                if let Event::Key(KeyEvent { code, kind, .. }) = event::read()? {
+                    if kind == KeyEventKind::Press {
+                        match self.popup_menu {
+                            Some(PopupMenu::BotCreation) => match code {
+                                KeyCode::Char(to_insert) => self.user_input.input(to_insert),
+                                KeyCode::Delete => self.user_input.delete(),
+                                KeyCode::Backspace => self.user_input.backspace(),
+                                KeyCode::Left => self.user_input.move_left(),
+                                KeyCode::Right => self.user_input.move_right(),
+                                KeyCode::Home => self.user_input.jump_to_first(),
+                                KeyCode::End => self.user_input.jump_to_last(),
+                                KeyCode::Enter if !self.user_input.value.is_empty() => {
+                                    let botname = self.user_input.submit();
+                                    let addr = self.addr.clone();
+                                    match Bot::new(&botname, &addr) {
+                                        Ok(env) => {
+                                            let policy = self.policy.clone();
+                                            let (tx_server, rx_worker): (Sender<()>, Receiver<()>) =
+                                                channel();
+                                            let worker = Worker {
+                                                botname: botname.clone(),
+                                                state: WorkerState::Active,
+                                                handle: thread::spawn(move || {
+                                                    worker(env, policy, rx_worker)
+                                                }),
+                                                delete_signaler: tx_server,
+                                            };
+                                            self.workers.push(worker);
+                                            self.table_state.select(Some(self.workers.len() - 1));
+                                            self.popup_menu = None;
+                                        }
+                                        Err(msg) => {
+                                            self.popup_menu =
+                                                Some(PopupMenu::Error(msg.to_string()))
+                                        }
+                                    }
+                                }
+                                KeyCode::Esc => {
+                                    self.user_input.clear();
                                     self.popup_menu = None;
                                 }
-                                Err(msg) => {
-                                    self.popup_menu = Some(PopupMenu::Error(msg.to_string()))
+                                _ => {}
+                            },
+                            Some(PopupMenu::Error(_)) => self.popup_menu = None,
+                            Some(PopupMenu::Exit) => match code {
+                                KeyCode::Enter => return Ok(()),
+                                KeyCode::Esc => self.popup_menu = None,
+                                _ => {}
+                            },
+                            None => match code {
+                                KeyCode::Char('d') if self.table_state.selected().is_some() => {
+                                    if let Some(idx) = self.table_state.selected() {
+                                        let worker =
+                                            self.workers.get_mut(idx).expect("worker exists");
+                                        worker.state = WorkerState::Deleted;
+                                        worker.delete_signaler.send(())?;
+                                    }
                                 }
-                            }
+                                KeyCode::Char('i') => {
+                                    self.popup_menu = Some(PopupMenu::BotCreation)
+                                }
+                                KeyCode::Esc => self.popup_menu = Some(PopupMenu::Exit),
+                                KeyCode::Down => self.table_state.select_next(),
+                                KeyCode::Up => self.table_state.select_previous(),
+                                _ => {}
+                            },
                         }
-                        KeyCode::Esc => {
-                            self.user_input.clear();
-                            self.popup_menu = None;
-                        }
-                        _ => {}
-                    },
-                    Some(PopupMenu::Error(_)) => self.popup_menu = None,
-                    Some(PopupMenu::Exit) => match key.code {
-                        KeyCode::Enter => return Ok(()),
-                        KeyCode::Esc => self.popup_menu = None,
-                        _ => {}
-                    },
-                    None => match key.code {
-                        KeyCode::Char('d') if self.table_state.selected().is_some() => {
-                            if let Some(idx) = self.table_state.selected() {
-                                let (_, tx_server, _) = self.workers.remove(idx);
-                                tx_server.send(())?;
-                            }
-                        }
-                        KeyCode::Char('i') => self.popup_menu = Some(PopupMenu::BotCreation),
-                        KeyCode::Esc => self.popup_menu = Some(PopupMenu::Exit),
-                        KeyCode::Down => self.table_state.select_next(),
-                        KeyCode::Up => self.table_state.select_previous(),
-                        _ => {}
-                    },
+                    }
                 }
             }
 
             // Only keep workers that're doing work.
-            self.workers.retain(|(.., handle)| !handle.is_finished());
+            self.workers.retain(|w| !w.handle.is_finished());
         }
     }
 
@@ -172,12 +208,15 @@ impl App {
 
         // Render current bots.
         let table = Table::new(
-            self.workers.iter().map(|(botname, ..)| {
-                let text = Text::raw(botname);
-                let cell = Cell::new(text);
-                Row::new([cell])
+            self.workers.iter().map(|w| {
+                let name_text = Text::raw(w.botname.clone());
+                let name_cell = Cell::new(name_text);
+
+                let state_text = Text::from(w.state.to_string());
+                let state_cell = Cell::new(state_text);
+                Row::new([name_cell, state_cell])
             }),
-            [Constraint::Fill(1)],
+            [Constraint::Fill(1), Constraint::Fill(1)],
         )
         .block(block::Block::bordered().padding(Padding::uniform(1)))
         .highlight_style(Style::new().bg(ratatui::style::Color::White));
@@ -188,10 +227,12 @@ impl App {
             "press ".into(),
             "i".bold().white(),
             " to create a bot, ".into(),
-            "up/down".bold().white(),
+            "↑".bold().white(),
+            "/".into(),
+            "↓".bold().white(),
             " to select a bot, ".into(),
             "d".bold().white(),
-            " delete a bot, or press ".into(),
+            " to delete a bot, or press ".into(),
             "Esc".bold().white(),
             " to exit".into(),
         ];
