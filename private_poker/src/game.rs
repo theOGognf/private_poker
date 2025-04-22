@@ -2485,40 +2485,39 @@ mod state_tests {
     fn early_showdown_1_winner_2_early_folds() {
         let mut state = init_state();
         assert_eq!(state.init_start("0"), Ok(()));
-        // SeatPlayers
         state = state.step();
-        // MoveButton
+        assert!(matches!(state, PokerState::SeatPlayers(_)));
         state = state.step();
-        // CollectBlinds
+        assert!(matches!(state, PokerState::MoveButton(_)));
         state = state.step();
-        // Deal
+        assert!(matches!(state, PokerState::CollectBlinds(_)));
         state = state.step();
-        // TakeAction
+        assert!(matches!(state, PokerState::Deal(_)));
         state = state.step();
+        assert!(matches!(state, PokerState::TakeAction(_)));
         // 1st fold
         state = state.step();
         // 2nd fold
         state = state.step();
-        // Flop
+        assert!(matches!(state, PokerState::Flop(_)));
         state = state.step();
-        // Turn
+        assert!(matches!(state, PokerState::Turn(_)));
         state = state.step();
-        // River
+        assert!(matches!(state, PokerState::River(_)));
         state = state.step();
-        // ShowHands
+        assert!(matches!(state, PokerState::ShowHands(_)));
         state = state.step();
-        // DistributePot
+        assert!(matches!(state, PokerState::DistributePot(_)));
         state = state.step();
-        // RemovePlayers
+        assert!(matches!(state, PokerState::RemovePlayers(_)));
         state = state.step();
-        // DivideDonations
+        assert!(matches!(state, PokerState::DivideDonations(_)));
         state = state.step();
-        // UpdateBlinds
+        assert!(matches!(state, PokerState::UpdateBlinds(_)));
         state = state.step();
-        // BootPlayers
+        assert!(matches!(state, PokerState::BootPlayers(_)));
         state = state.step();
-        // Lobby
-        state = state.step();
+        assert!(matches!(state, PokerState::Lobby(_)));
         assert_eq!(state.init_start("0"), Ok(()));
     }
 
@@ -2526,42 +2525,41 @@ mod state_tests {
     fn early_showdown_1_winner_2_folds() {
         let mut state = init_state();
         assert_eq!(state.init_start("0"), Ok(()));
-        // SeatPlayers
         state = state.step();
-        // MoveButton
+        assert!(matches!(state, PokerState::SeatPlayers(_)));
         state = state.step();
-        // CollectBlinds
+        assert!(matches!(state, PokerState::MoveButton(_)));
         state = state.step();
-        // Deal
+        assert!(matches!(state, PokerState::CollectBlinds(_)));
         state = state.step();
-        // TakeAction
+        assert!(matches!(state, PokerState::Deal(_)));
         state = state.step();
+        assert!(matches!(state, PokerState::TakeAction(_)));
         // All-in
         assert_eq!(state.take_action("0", Action::AllIn), Ok(Action::AllIn));
         // 1st fold
         state = state.step();
         // 2nd fold
         state = state.step();
-        // Flop
+        assert!(matches!(state, PokerState::Flop(_)));
         state = state.step();
-        // Turn
+        assert!(matches!(state, PokerState::Turn(_)));
         state = state.step();
-        // River
+        assert!(matches!(state, PokerState::River(_)));
         state = state.step();
-        // ShowHands
+        assert!(matches!(state, PokerState::ShowHands(_)));
         state = state.step();
-        // DistributePot
+        assert!(matches!(state, PokerState::DistributePot(_)));
         state = state.step();
-        // RemovePlayers
+        assert!(matches!(state, PokerState::RemovePlayers(_)));
         state = state.step();
-        // DivideDonations
+        assert!(matches!(state, PokerState::DivideDonations(_)));
         state = state.step();
-        // UpdateBlinds
+        assert!(matches!(state, PokerState::UpdateBlinds(_)));
         state = state.step();
-        // BootPlayers
+        assert!(matches!(state, PokerState::BootPlayers(_)));
         state = state.step();
-        // Lobby
-        state = state.step();
+        assert!(matches!(state, PokerState::Lobby(_)));
         assert_eq!(state.init_start("0"), Ok(()));
     }
 
@@ -2569,16 +2567,16 @@ mod state_tests {
     fn early_showdown_1_winner_2_late_folds() {
         let mut state = init_state();
         assert_eq!(state.init_start("0"), Ok(()));
-        // SeatPlayers
         state = state.step();
-        // MoveButton
+        assert!(matches!(state, PokerState::SeatPlayers(_)));
         state = state.step();
-        // CollectBlinds
+        assert!(matches!(state, PokerState::MoveButton(_)));
         state = state.step();
-        // Deal
+        assert!(matches!(state, PokerState::CollectBlinds(_)));
         state = state.step();
-        // TakeAction
+        assert!(matches!(state, PokerState::Deal(_)));
         state = state.step();
+        assert!(matches!(state, PokerState::TakeAction(_)));
         // Call
         assert_eq!(
             state.take_action("0", Action::Call(10)),
@@ -2588,50 +2586,44 @@ mod state_tests {
         assert_eq!(state.take_action("1", Action::Call(5)), Ok(Action::Call(5)));
         // Check
         assert_eq!(state.take_action("2", Action::Check), Ok(Action::Check));
-        // Flop
         state = state.step();
-        // TakeAction
+        assert!(matches!(state, PokerState::Flop(_)));
         state = state.step();
+        assert!(matches!(state, PokerState::TakeAction(_)));
         // Check
         assert_eq!(state.take_action("0", Action::Check), Ok(Action::Check));
         // Check
         assert_eq!(state.take_action("1", Action::Check), Ok(Action::Check));
         // Check
         assert_eq!(state.take_action("2", Action::Check), Ok(Action::Check));
-        // Turn
         state = state.step();
-        // TakeAction
+        assert!(matches!(state, PokerState::Turn(_)));
         state = state.step();
-        // Check
+        assert!(matches!(state, PokerState::TakeAction(_)));
         assert_eq!(state.take_action("0", Action::Check), Ok(Action::Check));
-        // Check
         assert_eq!(state.take_action("1", Action::Check), Ok(Action::Check));
-        // Check
         assert_eq!(state.take_action("2", Action::Check), Ok(Action::Check));
-        // River
         state = state.step();
-        // TakeAction
+        assert!(matches!(state, PokerState::River(_)));
         state = state.step();
-        // Check
+        assert!(matches!(state, PokerState::TakeAction(_)));
         assert_eq!(state.take_action("0", Action::AllIn), Ok(Action::AllIn));
-        // Check
         assert_eq!(state.take_action("1", Action::Fold), Ok(Action::Fold));
-        // Check
         assert_eq!(state.take_action("2", Action::Fold), Ok(Action::Fold));
-        // ShowHands
         state = state.step();
-        // DistributePot
+        assert!(matches!(state, PokerState::ShowHands(_)));
         state = state.step();
-        // RemovePlayers
+        assert!(matches!(state, PokerState::DistributePot(_)));
         state = state.step();
-        // DivideDonations
+        assert!(matches!(state, PokerState::RemovePlayers(_)));
         state = state.step();
-        // UpdateBlinds
+        assert!(matches!(state, PokerState::DivideDonations(_)));
         state = state.step();
-        // BootPlayers
+        assert!(matches!(state, PokerState::UpdateBlinds(_)));
         state = state.step();
-        // Lobby
+        assert!(matches!(state, PokerState::BootPlayers(_)));
         state = state.step();
+        assert!(matches!(state, PokerState::Lobby(_)));
         assert_eq!(state.init_start("0"), Ok(()));
     }
 }
