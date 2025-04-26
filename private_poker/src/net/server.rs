@@ -833,23 +833,13 @@ mod tests {
 
     use super::TokenManager;
 
-    fn get_random_open_port() -> u16 {
-        let addr = "127.0.0.1:0".parse().unwrap();
-        // Bind to port 0, which tells the OS to assign an available port
-        let listener = TcpListener::bind(addr).unwrap();
-        // Get the assigned port
-        listener.local_addr().unwrap().port()
-    }
-
     fn get_server() -> TcpListener {
-        let port = get_random_open_port();
-        let addr = format!("127.0.0.1:{port}").parse().unwrap();
-        TcpListener::bind(addr).unwrap()
+        let random_port_addr = "127.0.0.1:0".parse().unwrap();
+        TcpListener::bind(random_port_addr).unwrap()
     }
 
     fn get_stream(listener: &TcpListener) -> TcpStream {
-        let port = listener.local_addr().unwrap().port();
-        let addr = format!("127.0.0.1:{port}").parse().unwrap();
+        let addr = listener.local_addr().unwrap();
         TcpStream::connect(addr).unwrap();
         let (stream, _) = listener.accept().unwrap();
         stream

@@ -58,18 +58,10 @@ mod tests {
 
     use super::{read_prefixed, write_prefixed};
 
-    fn get_random_open_port() -> u16 {
-        let addr = "127.0.0.1:0".parse().unwrap();
-        // Bind to port 0, which tells the OS to assign an available port
-        let listener = TcpListener::bind(addr).unwrap();
-        // Get the assigned port
-        listener.local_addr().unwrap().port()
-    }
-
     fn setup() -> (TcpStream, TcpStream) {
-        let port = get_random_open_port();
-        let addr = format!("127.0.0.1:{port}").parse().unwrap();
-        let server = TcpListener::bind(addr).unwrap();
+        let random_port_addr = "127.0.0.1:0".parse().unwrap();
+        let server = TcpListener::bind(random_port_addr).unwrap();
+        let addr = server.local_addr().unwrap();
         let client = TcpStream::connect(addr).unwrap();
         let (stream, _) = server.accept().unwrap();
         (client, stream)
