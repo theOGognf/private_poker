@@ -63,38 +63,38 @@ const MAX_LOG_RECORDS: usize = 1024;
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
 fn blinds_to_string(view: &GameView) -> String {
-    format!(" blinds: ${}/${}  ", view.big_blind, view.small_blind)
+    format!(" blinds: ${}/{}  ", view.big_blind, view.small_blind)
 }
 
 fn board_to_vec_of_spans(view: &GameView) -> Vec<Span<'_>> {
-    let mut span = vec![];
-    if !view.board.is_empty() {
-        span.push(" board: ".into());
-        // Player cards styled according to suit.
-        for card in view.board.iter() {
-            let card_repr = card_to_span(card);
-            span.push(card_repr);
-            span.push("  ".into());
-        }
+    if view.board.is_empty() {
+        return vec![];
     }
-    span
+    std::iter::once(" board: ".into())
+        .chain(
+            view.board
+                .iter()
+                .flat_map(|card| vec![card_to_span(card), "  ".into()]),
+        )
+        .collect()
 }
 
 fn card_to_span(card: &Card) -> Span<'_> {
     let Card(value, suit) = card;
     let value = match value {
-        1 | 14 => "A",
-        11 => "J",
-        12 => "Q",
-        13 => "K",
-        v => &v.to_string(),
+        1 | 14 => "A".to_string(),
+        11 => "J".to_string(),
+        12 => "Q".to_string(),
+        13 => "K".to_string(),
+        v => v.to_string(),
     };
+    let padded_value = format!("{value:>2}");
     match suit {
-        Suit::Club => format!("{value:>2}/c").light_green(),
-        Suit::Diamond => format!("{value:>2}/d").light_blue(),
-        Suit::Heart => format!("{value:>2}/h").light_red(),
-        Suit::Spade => format!("{value:>2}/s").into(),
-        Suit::Wild => format!("{value:>2}/w").light_magenta(),
+        Suit::Club => format!("{padded_value}/c").light_green(),
+        Suit::Diamond => format!("{padded_value}/d").light_blue(),
+        Suit::Heart => format!("{padded_value}/h").light_red(),
+        Suit::Spade => format!("{padded_value}/s").into(),
+        Suit::Wild => format!("{padded_value}/w").light_magenta(),
     }
 }
 
@@ -103,15 +103,16 @@ fn pot_to_string(view: &GameView) -> String {
 }
 
 fn user_to_row(username: &str, user: &User) -> Row<'static> {
-    let row = Row::new(vec![
+    let mut row = Row::new(vec![
         Cell::new(Text::from(user.name.clone()).alignment(Alignment::Left)),
         Cell::new(Text::from(format!("${}", user.money)).alignment(Alignment::Right)),
     ]);
+
     if username == user.name {
-        row.bold().white()
-    } else {
-        row
+        row = row.bold().white();
     }
+
+    row
 }
 
 #[derive(Clone)]
@@ -225,18 +226,12 @@ impl App {
         tx_client: &Sender<ClientMessage>,
         waker: &Waker,
     ) -> Result<(), Error> {
-        match user_input.trim() {
+        let result = match user_input.trim() {
             "all-in" => {
                 if let Some(action) = action_options.get(&Action::AllIn) {
-                    let msg = ClientMessage {
-                        username: self.username.to_string(),
-                        command: UserCommand::TakeAction(action.clone()),
-                    };
-                    tx_client.send(msg)?;
-                    waker.wake()?;
+                    Ok(UserCommand::TakeAction(action.clone()))
                 } else {
-                    let record = Record::new(RecordKind::Error, INVALID_ACTION_MESSAGE.to_string());
-                    self.log_handle.push(record.into());
+                    Err(INVALID_ACTION_MESSAGE.to_string())
                 }
             }
             "call" => {
@@ -245,115 +240,63 @@ impl App {
                 // amount to see if it exists within the action
                 // options.
                 if let Some(action) = action_options.get(&Action::Call(0)) {
-                    let msg = ClientMessage {
-                        username: self.username.to_string(),
-                        command: UserCommand::TakeAction(action.clone()),
-                    };
-                    tx_client.send(msg)?;
-                    waker.wake()?;
+                    Ok(UserCommand::TakeAction(action.clone()))
                 } else {
-                    let record = Record::new(RecordKind::Error, INVALID_ACTION_MESSAGE.to_string());
-                    self.log_handle.push(record.into());
+                    Err(INVALID_ACTION_MESSAGE.to_string())
                 }
             }
             "check" => {
                 if let Some(action) = action_options.get(&Action::Check) {
-                    let msg = ClientMessage {
-                        username: self.username.to_string(),
-                        command: UserCommand::TakeAction(action.clone()),
-                    };
-                    tx_client.send(msg)?;
-                    waker.wake()?;
+                    Ok(UserCommand::TakeAction(action.clone()))
                 } else {
-                    let record = Record::new(RecordKind::Error, INVALID_ACTION_MESSAGE.to_string());
-                    self.log_handle.push(record.into());
+                    Err(INVALID_ACTION_MESSAGE.to_string())
                 }
             }
             "fold" => {
                 if let Some(action) = action_options.get(&Action::Fold) {
-                    let msg = ClientMessage {
-                        username: self.username.clone(),
-                        command: UserCommand::TakeAction(action.clone()),
-                    };
-                    tx_client.send(msg)?;
-                    waker.wake()?;
+                    Ok(UserCommand::TakeAction(action.clone()))
                 } else {
-                    let record = Record::new(RecordKind::Error, INVALID_ACTION_MESSAGE.to_string());
-                    self.log_handle.push(record.into());
+                    Err(INVALID_ACTION_MESSAGE.to_string())
                 }
             }
-            "play" => {
-                let msg = ClientMessage {
-                    username: self.username.clone(),
-                    command: UserCommand::ChangeState(UserState::Play),
-                };
-                tx_client.send(msg)?;
-                waker.wake()?;
-            }
-            "show" => {
-                let msg = ClientMessage {
-                    username: self.username.clone(),
-                    command: UserCommand::ShowHand,
-                };
-                tx_client.send(msg)?;
-                waker.wake()?;
-            }
-            "spectate" => {
-                let msg = ClientMessage {
-                    username: self.username.clone(),
-                    command: UserCommand::ChangeState(UserState::Spectate),
-                };
-                tx_client.send(msg)?;
-                waker.wake()?;
-            }
-            "start" => {
-                let msg = ClientMessage {
-                    username: self.username.clone(),
-                    command: UserCommand::StartGame,
-                };
-                tx_client.send(msg)?;
-                waker.wake()?;
-            }
+            "play" => Ok(UserCommand::ChangeState(UserState::Play)),
+            "show" => Ok(UserCommand::ShowHand),
+            "spectate" => Ok(UserCommand::ChangeState(UserState::Spectate)),
+            "start" => Ok(UserCommand::StartGame),
             other => {
                 let other: Vec<&str> = other.split_ascii_whitespace().collect();
-                let action = match (
+                let result = match (
                     action_options.get(&Action::Raise(0)),
                     other.first(),
                     other.get(1),
                 ) {
                     // Raise with a specific amount.
                     (Some(_), Some(&"raise"), Some(value)) => match value.parse::<Usd>() {
-                        Ok(amount) => Action::Raise(amount),
-                        Err(_) => {
-                            let record =
-                                Record::new(RecordKind::Error, "invalid raise amount".to_string());
-                            self.log_handle.push(record.into());
-                            return Ok(());
-                        }
+                        Ok(amount) => Ok(Action::Raise(amount)),
+                        Err(_) => Err("invalid raise amount".to_string()),
                     },
                     // Valid raise without specified amount defaults to the default raise.
-                    (Some(action), Some(&"raise"), None) => action.clone(),
+                    (Some(action), Some(&"raise"), None) => Ok(action.clone()),
                     // Invalid action.
-                    (None, Some(&"raise"), ..) => {
-                        let record =
-                            Record::new(RecordKind::Error, INVALID_ACTION_MESSAGE.to_string());
-                        self.log_handle.push(record.into());
-                        return Ok(());
-                    }
+                    (None, Some(&"raise"), ..) => Err(INVALID_ACTION_MESSAGE.to_string()),
                     // Unknown command.
-                    _ => {
-                        let record =
-                            Record::new(RecordKind::Error, "unrecognized command".to_string());
-                        self.log_handle.push(record.into());
-                        return Ok(());
-                    }
+                    _ => Err("unrecognized command".to_string()),
                 };
+                result.map(UserCommand::TakeAction)
+            }
+        };
+        match result {
+            Ok(command) => {
                 let msg = ClientMessage {
                     username: self.username.to_string(),
-                    command: UserCommand::TakeAction(action),
+                    command,
                 };
                 tx_client.send(msg)?;
                 waker.wake()?;
+            }
+            Err(message) => {
+                let record = Record::new(RecordKind::Error, message);
+                self.log_handle.push(record.into());
             }
         }
         Ok(())
@@ -552,7 +495,7 @@ impl App {
             }
 
             if let Ok(msg) = rx_server.try_recv() {
-                match msg {
+                let result = match msg {
                     ServerMessage::Ack(msg) => {
                         if msg.username == self.username {
                             match msg.command {
@@ -565,29 +508,31 @@ impl App {
                                 _ => {}
                             }
                         }
-                        let record = Record::new(RecordKind::Ack, msg.to_string());
-                        self.log_handle.push(record.into());
+                        Some(Record::new(RecordKind::Ack, msg.to_string()))
                     }
                     ServerMessage::ClientError(error) => {
-                        let record = Record::new(RecordKind::Error, error.to_string());
-                        self.log_handle.push(record.into());
+                        Some(Record::new(RecordKind::Error, error.to_string()))
                     }
-                    ServerMessage::GameView(new_view) => view = new_view,
-                    ServerMessage::Status(msg) => {
-                        let record = Record::new(RecordKind::Game, msg);
-                        self.log_handle.push(record.into());
+                    ServerMessage::GameView(new_view) => {
+                        view = new_view;
+                        None
                     }
+                    ServerMessage::Status(msg) => Some(Record::new(RecordKind::Game, msg)),
                     ServerMessage::TurnSignal(new_action_options) => {
                         action_options = new_action_options;
                         turn_warnings.reset();
-                        let record = Record::new(RecordKind::Alert, "it's your turn!".to_string());
-                        self.log_handle.push(record.into());
+                        Some(Record::new(
+                            RecordKind::Alert,
+                            "it's your turn!".to_string(),
+                        ))
                     }
                     ServerMessage::UserError(error) => {
-                        let record = Record::new(RecordKind::Error, error.to_string());
-                        self.log_handle.push(record.into());
+                        Some(Record::new(RecordKind::Error, error.to_string()))
                     }
                 };
+                if let Some(record) = result {
+                    self.log_handle.push(record.into());
+                }
             }
 
             // Signal how much time is left to the user at specific intervals.
@@ -714,12 +659,11 @@ impl App {
                 let hand_cell = Cell::new(hand_repr);
                 row.push(hand_cell);
 
-                let row = Row::new(row);
+                let mut row = Row::new(row);
                 if self.username == player.user.name {
-                    row.bold().white()
-                } else {
-                    row
+                    row = row.bold().white()
                 }
+                row
             }),
             [
                 Constraint::Max(3),
