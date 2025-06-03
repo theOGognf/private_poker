@@ -254,20 +254,19 @@ impl TokenManager {
 
     /// Create a new token.
     pub fn new_token(&mut self) -> Token {
-        let token = match self.recycled_tokens.pop_first() {
-            Some(token) => token,
-            None => {
-                let newest = match (
-                    self.unconfirmed_tokens.last_key_value(),
-                    self.confirmed_tokens.last_key_value(),
-                ) {
-                    (Some((unconfirmed, _)), Some((confirmed, _))) => max(unconfirmed, confirmed),
-                    (Some((unconfirmed, _)), None) => unconfirmed,
-                    (None, Some((verified, _))) => verified,
-                    (None, None) => &WAKER,
-                };
-                Token(newest.0 + 1)
-            }
+        let token = if let Some(token) = self.recycled_tokens.pop_first() {
+            token
+        } else {
+            let newest = match (
+                self.unconfirmed_tokens.last_key_value(),
+                self.confirmed_tokens.last_key_value(),
+            ) {
+                (Some((unconfirmed, _)), Some((confirmed, _))) => max(unconfirmed, confirmed),
+                (Some((unconfirmed, _)), None) => unconfirmed,
+                (None, Some((verified, _))) => verified,
+                (None, None) => &WAKER,
+            };
+            Token(newest.0 + 1)
         };
         token
     }
@@ -293,7 +292,7 @@ impl TokenManager {
         for token in tokens_to_recycle {
             match self.unconfirmed_tokens.remove(&token) {
                 Some(unconfirmed_client) => {
-                    recyclables.push_back((token, unconfirmed_client.stream))
+                    recyclables.push_back((token, unconfirmed_client.stream));
                 }
                 None => unreachable!("an unassociated token is always unconfirmed"),
             }
@@ -359,7 +358,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                 }
             }
 
-            for event in events.iter() {
+            for event in &events {
                 match event.token() {
                     SERVER => loop {
                         // Received an event for the TCP server socket, which
@@ -496,7 +495,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                         match write_prefixed::<ServerMessage, TcpStream>(
                                             stream, &msg,
                                         ) {
-                                            Ok(_) => {
+                                            Ok(()) => {
                                                 // Client errors are strict and result in the removal of a connection.
                                                 if let ServerMessage::ClientError(_) = msg {
                                                     let repr = token_to_string(&token);
@@ -629,9 +628,9 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                     };
                     let repr = token_to_string(&token);
                     match result {
-                        Ok(_) => {
+                        Ok(()) => {
                             debug!("{repr}: {msg}");
-                            tx_client.send(msg)?
+                            tx_client.send(msg)?;
                         }
                         Err(error) => {
                             debug!("{repr}: {error}");
@@ -814,7 +813,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                         }
                     }
                 }
-                timeout = timeout.saturating_sub(Instant::now() - start);
+                timeout = timeout.saturating_sub(start.elapsed());
             }
         }
     }

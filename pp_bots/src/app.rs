@@ -159,7 +159,7 @@ impl App {
                                         }
                                         Err(msg) => {
                                             self.popup_menu =
-                                                Some(PopupMenu::Error(msg.to_string()))
+                                                Some(PopupMenu::Error(msg.to_string()));
                                         }
                                     }
                                 }
@@ -185,7 +185,7 @@ impl App {
                                     }
                                 }
                                 KeyCode::Char('i') => {
-                                    self.popup_menu = Some(PopupMenu::BotCreation)
+                                    self.popup_menu = Some(PopupMenu::BotCreation);
                                 }
                                 KeyCode::Esc => self.popup_menu = Some(PopupMenu::Exit),
                                 KeyCode::Down => self.table_state.select_next(),

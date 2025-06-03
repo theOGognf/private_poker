@@ -60,6 +60,7 @@ pub struct GameSettings {
 }
 
 impl GameSettings {
+    #[must_use]
     pub fn new(max_players: usize, max_users: usize, buy_in: Usd) -> Self {
         let min_big_blind = buy_in / 20;
         let min_small_blind = min_big_blind / 2;
@@ -198,6 +199,7 @@ impl Default for Lobby {
 }
 
 impl Lobby {
+    #[must_use]
     pub fn new() -> Self {
         Self { start_game: false }
     }
@@ -243,6 +245,7 @@ impl Default for ShowHands {
 }
 
 impl ShowHands {
+    #[must_use]
     pub fn new() -> Self {
         ShowHands {
             hand_eval_cache: HashMap::with_capacity(MAX_PLAYERS),
@@ -278,6 +281,7 @@ pub struct Game<T> {
 
 /// General game methods.
 impl<T> Game<T> {
+    #[must_use]
     pub fn action_options_to_string(action_options: &HashSet<Action>) -> String {
         let num_options = action_options.len();
         action_options
@@ -293,13 +297,12 @@ impl<T> Game<T> {
                     _ => format!("{repr}, "),
                 }
             })
-            .collect::<Vec<_>>()
-            .join("")
+            .collect::<String>()
     }
 
     fn as_view(&self, username: &str) -> GameView {
         let mut players = Vec::with_capacity(self.data.settings.max_players);
-        for player in self.data.players.iter() {
+        for player in &self.data.players {
             let cards = if player.user.name == username || player.showing {
                 player.cards.clone()
             } else {
@@ -371,7 +374,7 @@ impl<T> Game<T> {
                 .iter()
                 .enumerate()
                 .cycle()
-                .skip(action_idx + !new_phase as usize)
+                .skip(action_idx + usize::from(!new_phase))
                 .find(|(_, p)| p.state == PlayerState::Wait)
                 .map(|(next_action_idx, _)| next_action_idx),
             None => None,
@@ -516,6 +519,7 @@ impl<T> Game<T> {
         }
     }
 
+    #[must_use]
     pub fn new() -> Game<Lobby> {
         Game {
             data: GameData::new(),
@@ -531,10 +535,10 @@ impl<T> Game<T> {
             // Check if player already exists but is queued for removal.
             // This probably means the user disconnected and is trying
             // to reconnect.
-            if !self.data.players_to_remove.remove(username) {
-                return Err(UserError::UserAlreadyExists);
-            } else {
+            if self.data.players_to_remove.remove(username) {
                 return Ok(false);
+            } else {
+                return Err(UserError::UserAlreadyExists);
             }
         }
         self.data.spectators.insert(
@@ -559,7 +563,7 @@ impl<T> Game<T> {
                 PlayerState::Call | PlayerState::Check | PlayerState::Raise
             )
         }) {
-            player.state = PlayerState::Wait
+            player.state = PlayerState::Wait;
         }
         self.data.next_action_idx = Some(self.data.starting_action_idx);
         self.data.next_action_idx = self.get_next_action_idx(true);
@@ -736,6 +740,7 @@ impl Game<Lobby> {
         }
     }
 
+    #[must_use]
     pub fn is_ready_to_start(&self) -> bool {
         self.state.start_game && self.get_num_potential_players() >= 2
     }
@@ -993,7 +998,7 @@ impl Game<TakeAction> {
                         })
                         .map(|(_, player)| player)
                     {
-                        player.state = PlayerState::Wait
+                        player.state = PlayerState::Wait;
                     }
                 }
 
@@ -1004,6 +1009,7 @@ impl Game<TakeAction> {
         }
     }
 
+    #[must_use]
     pub fn get_action_options(&self) -> Option<HashSet<Action>> {
         self.state.action_options.clone()
     }
@@ -1383,7 +1389,7 @@ impl From<Game<UpdateBlinds>> for Game<BootPlayers> {
 impl From<Game<BootPlayers>> for Game<Lobby> {
     fn from(mut value: Game<BootPlayers>) -> Self {
         value.data.board.clear();
-        for player in value.data.players.iter_mut() {
+        for player in &mut value.data.players {
             if player.user.money < value.data.big_blind {
                 value.data.open_seats.push_back(player.seat_idx);
                 value
@@ -1481,6 +1487,7 @@ impl fmt::Display for PokerState {
 }
 
 impl PokerState {
+    #[must_use]
     pub fn get_action_options(&self) -> Option<HashSet<Action>> {
         match self {
             PokerState::TakeAction(ref game) => game.get_action_options(),
@@ -1488,6 +1495,7 @@ impl PokerState {
         }
     }
 
+    #[must_use]
     pub fn get_next_action_username(&self) -> Option<String> {
         match self {
             PokerState::TakeAction(ref game) => game.get_next_action_username(),
@@ -1495,6 +1503,7 @@ impl PokerState {
         }
     }
 
+    #[must_use]
     pub fn get_views(&self) -> GameViews {
         match self {
             PokerState::Lobby(ref game) => game.get_views(),
@@ -1530,6 +1539,7 @@ impl PokerState {
         }
     }
 
+    #[must_use]
     pub fn new() -> Self {
         let game = Game::<Lobby>::new();
         PokerState::Lobby(game)
@@ -1569,6 +1579,7 @@ impl PokerState {
         }
     }
 
+    #[must_use]
     pub fn step(self) -> Self {
         match self {
             PokerState::Lobby(game) => {
@@ -1839,7 +1850,7 @@ mod game_tests {
         let game = init_game_at_deal();
         assert_eq!(game.get_num_community_cards(), 0);
         assert_eq!(game.data.deck_idx, 2 * game.get_num_users());
-        for player in game.data.players.iter() {
+        for player in &game.data.players {
             assert_eq!(player.cards.len(), 2);
         }
     }
@@ -2201,7 +2212,7 @@ mod game_tests {
         }
         let mut expected_open_seats = Vec::from_iter(3..game.data.settings.max_players);
         expected_open_seats.push(0);
-        assert_eq!(game.data.open_seats, expected_open_seats)
+        assert_eq!(game.data.open_seats, expected_open_seats);
     }
 
     #[test]
@@ -2229,7 +2240,7 @@ mod game_tests {
         }
         let mut expected_open_seats = Vec::from_iter(3..game.data.settings.max_players);
         expected_open_seats.push(0);
-        assert_eq!(game.data.open_seats, expected_open_seats)
+        assert_eq!(game.data.open_seats, expected_open_seats);
     }
 
     #[test]

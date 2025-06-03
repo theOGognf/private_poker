@@ -178,7 +178,7 @@ impl TurnWarnings {
         if self.idx > 0 {
             let ceiling = self.warnings.last().expect("warnings immutable");
             let warning = self.warnings[self.idx - 1];
-            let dt = Instant::now() - self.t;
+            let dt = self.t.elapsed();
             let remaining = ceiling.saturating_sub(dt.as_secs() as u8);
             if remaining <= warning {
                 self.idx -= 1;
@@ -344,7 +344,7 @@ impl App {
                     }
                 }
 
-                for event in events.iter() {
+                for event in &events {
                     match event.token() {
                         SERVER => {
                             if event.is_writable() && !messages_to_write.is_empty() {
@@ -643,7 +643,7 @@ impl App {
 
                 // Player's highest subhand displayed.
                 let hand_repr = if player.cards.is_empty() {
-                    "".to_string()
+                    String::new()
                 } else {
                     let mut cards = view.board.clone();
                     cards.extend(player.cards.clone());
@@ -652,7 +652,7 @@ impl App {
                     if let Some(subhand) = hand.first() {
                         format!("({})", subhand.rank)
                     } else {
-                        "".to_string()
+                        String::new()
                     }
                 };
                 let hand_repr = Text::from(hand_repr).alignment(Alignment::Right);
@@ -661,7 +661,7 @@ impl App {
 
                 let mut row = Row::new(row);
                 if self.username == player.user.name {
-                    row = row.bold().white()
+                    row = row.bold().white();
                 }
                 row
             }),

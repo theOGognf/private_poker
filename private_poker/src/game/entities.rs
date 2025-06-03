@@ -190,6 +190,7 @@ impl From<Bet> for Action {
 }
 
 impl Action {
+    #[must_use]
     pub fn to_action_string(&self) -> String {
         match self {
             Action::AllIn => format!("{self}s (unhinged)"),
@@ -199,11 +200,12 @@ impl Action {
         }
     }
 
+    #[must_use]
     pub fn to_option_string(&self) -> String {
         match self {
             Action::AllIn | Action::Check | Action::Fold => self.to_string(),
-            Action::Call(amount) => format!("call (== ${})", amount),
-            Action::Raise(amount) => format!("raise (>= ${})", amount),
+            Action::Call(amount) => format!("call (== ${amount})"),
+            Action::Raise(amount) => format!("raise (>= ${amount})"),
         }
     }
 }
@@ -293,6 +295,7 @@ pub struct Player {
 }
 
 impl Player {
+    #[must_use]
     pub fn new(user: User, seat_idx: usize) -> Player {
         Player {
             user,
@@ -328,6 +331,7 @@ impl Pot {
         *investment += bet.amount;
     }
 
+    #[must_use]
     pub fn get_call(&self) -> Usd {
         *self.investments.values().max().unwrap_or(&0)
     }
@@ -335,29 +339,35 @@ impl Pot {
     /// Return the amount the player must bet to remain in the hand, and
     /// the minimum the player must raise by for it to be considered
     /// a valid raise.
+    #[must_use]
     pub fn get_call_by_player_idx(&self, player_idx: usize) -> Usd {
         self.get_call() - self.get_investment_by_player_idx(player_idx)
     }
 
     /// Return the amount the player has invested in the pot.
+    #[must_use]
     pub fn get_investment_by_player_idx(&self, player_idx: usize) -> Usd {
         *self.investments.get(&player_idx).unwrap_or(&0)
     }
 
     /// Return the minimum amount a player has to bet in order for their
     /// raise to be considered a valid raise.
+    #[must_use]
     pub fn get_min_raise_by_player_idx(&self, player_idx: usize) -> Usd {
         2 * self.get_call() - self.get_investment_by_player_idx(player_idx)
     }
 
+    #[must_use]
     pub fn get_size(&self) -> Usd {
         self.investments.values().sum()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.get_size() == 0
     }
 
+    #[must_use]
     pub fn new(max_players: usize) -> Pot {
         Pot {
             investments: HashMap::with_capacity(max_players),

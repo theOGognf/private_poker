@@ -19,6 +19,7 @@ use super::entities::{Card, Rank, SubHand, Suit, Value};
 /// let hand2 = eval(&cards2);
 /// assert_eq!(argmax(&[hand1, hand2]), vec![1])
 /// ```
+#[must_use]
 pub fn argmax(hands: &[Vec<SubHand>]) -> Vec<usize> {
     let mut max = vec![SubHand {
         rank: Rank::HighCard,
@@ -56,6 +57,7 @@ pub fn argmax(hands: &[Vec<SubHand>]) -> Vec<usize> {
 /// let subhands = eval(&cards);
 /// assert_eq!(subhands[0].rank, Rank::OnePair)
 /// ```
+#[must_use]
 pub fn eval(cards: &[Card]) -> Vec<SubHand> {
     // Mapping of suit to (sorted) cards within that suit.
     // Used for tracking whether there's a flush or straight flush.
@@ -78,7 +80,7 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
     // of 14). We push hands into a binary heap so we can
     // easily get the best hand at the end.
     let mut hands: BinaryHeap<SubHand> = BinaryHeap::new();
-    for Card(value, suit) in cards.iter() {
+    for Card(value, suit) in cards {
         // Keep a count of cards for each suit. If the suit count
         // reaches a flush, it's also checked for a straight
         // for the straight flush potential.
@@ -113,12 +115,12 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                 hands.push(SubHand {
                     rank: Rank::StraightFlush,
                     values,
-                })
+                });
             } else {
                 hands.push(SubHand {
                     rank: Rank::Flush,
                     values,
-                })
+                });
             }
         }
 
@@ -358,6 +360,7 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
 /// let mut deck = new_deck();
 /// deck.shuffle(&mut thread_rng());
 /// ```
+#[must_use]
 pub fn new_deck() -> [Card; 52] {
     let mut deck: [Card; 52] = [Card(0, Suit::Wild); 52];
     for (i, value) in (1u8..14u8).enumerate() {

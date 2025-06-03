@@ -86,7 +86,8 @@ impl QLearning {
         masks2: ActionMasks,
     ) {
         let td_target = {
-            let idx_masks2: HashSet<usize> = masks2.into_iter().map(|a| a.into()).collect();
+            let idx_masks2: HashSet<usize> =
+                masks2.into_iter().map(std::convert::Into::into).collect();
             let q_s2 = self.table.entry(state2).or_insert(Q_S_DEFAULT);
             reward
                 + self.params.gamma
