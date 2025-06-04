@@ -130,7 +130,7 @@ impl Bot {
         // Hand is only empty on the first connection. Naturally, we'll be in
         // spectate when we first connect, so check that our hand isn't empty
         // before we try restarting our connection.
-        if !self.hand.is_empty() && self.view.spectators.contains_key(&self.client.username) {
+        if !self.hand.is_empty() && self.view.spectators.contains(self.client.username.as_str()) {
             // If we were moved to spectate, disconnect and then immediately
             // reconnect to the game to get a fresh money stack.
             self.client.stream.shutdown(std::net::Shutdown::Both).ok();
@@ -218,7 +218,9 @@ impl Bot {
                         }
                     // We were forcibly moved to spectate because we don't have enough
                     // money. This means the current game is over.
-                    } else if let Some(user) = self.view.spectators.get(&self.client.username) {
+                    } else if let Some(user) =
+                        self.view.spectators.get(self.client.username.as_str())
+                    {
                         reward += ((user.money - remaining_money) as Usdf)
                             / (self.starting_money as Usdf);
                         return Ok((self.hand.clone(), HashSet::new(), reward, true));

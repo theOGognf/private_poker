@@ -18,12 +18,16 @@ use entities::{
     DEFAULT_MIN_SMALL_BLIND,
 };
 
+use crate::entities::{Username, Vote};
+
 #[derive(Debug, Deserialize, Eq, Error, PartialEq, Serialize)]
 pub enum UserError {
     #[error("can't show hand")]
     CannotShowHand,
     #[error("can't start unless you're waitlisted or a player")]
     CannotStartGame,
+    #[error("can't vote on yourself")]
+    CannotVoteOnSelf,
     #[error("game is full")]
     CapacityReached,
     #[error("game already in progress")]
@@ -98,12 +102,14 @@ pub struct GameData {
     pub donations: Usdf,
     pub small_blind: Usd,
     pub big_blind: Usd,
-    pub spectators: HashMap<String, User>,
+    pub spectators: HashSet<User>,
     pub waitlist: VecDeque<User>,
     pub open_seats: VecDeque<usize>,
     pub players: Vec<Player>,
     /// Community cards shared amongst all players.
     pub board: Vec<Card>,
+    /// Mapping of running votes to users that are for those running votes.
+    votes: HashMap<Vote, HashSet<Username>>,
     /// Count of the number of players active in a hand.
     /// All-in and folding are considered INACTIVE since they
     /// have no more moves to make. Once `num_players_called`
@@ -116,14 +122,21 @@ pub struct GameData {
     /// raises (since they've increased the minimum call).
     num_players_called: usize,
     pub pot: Pot,
+    /// Queue of users that've been voted to be kicked. We can't
+    /// safely remove them from the game mid gameplay, so we instead queue
+    /// them for removal.
+    players_to_kick: BTreeSet<Username>,
     /// Queue of users that're playing the game but have opted
     /// to spectate. We can't safely remove them from the game mid gameplay,
     /// so we instead queue them for removal.
-    players_to_spectate: BTreeSet<String>,
+    players_to_spectate: BTreeSet<Username>,
     /// Queue of users that're playing the game but have opted
     /// to leave. We can't safely remove them from the game mid gameplay,
     /// so we instead queue them for removal.
-    players_to_remove: BTreeSet<String>,
+    players_to_remove: BTreeSet<Username>,
+    /// Queue of users whose money we'll reset. We can't safely
+    /// reset them mid gameplay, so we instead queue them for reset.
+    players_to_reset: HashSet<Username>,
     deck_idx: usize,
     pub small_blind_idx: usize,
     pub big_blind_idx: usize,
@@ -135,28 +148,7 @@ pub struct GameData {
 impl GameData {
     fn new() -> Self {
         let settings = GameSettings::default();
-        Self {
-            deck: functional::new_deck(),
-            donations: 0.0,
-            small_blind: settings.min_small_blind,
-            big_blind: settings.min_big_blind,
-            spectators: HashMap::with_capacity(settings.max_users),
-            waitlist: VecDeque::with_capacity(settings.max_users),
-            open_seats: VecDeque::from_iter(0..settings.max_players),
-            players: Vec::with_capacity(settings.max_players),
-            board: Vec::with_capacity(5),
-            num_players_active: 0,
-            num_players_called: 0,
-            pot: Pot::new(settings.max_players),
-            players_to_remove: BTreeSet::new(),
-            players_to_spectate: BTreeSet::new(),
-            deck_idx: 0,
-            small_blind_idx: 0,
-            big_blind_idx: 1,
-            starting_action_idx: 2,
-            next_action_idx: None,
-            settings,
-        }
+        settings.into()
     }
 }
 
@@ -167,15 +159,18 @@ impl From<GameSettings> for GameData {
             donations: 0.0,
             small_blind: value.min_small_blind,
             big_blind: value.min_big_blind,
-            spectators: HashMap::with_capacity(value.max_users),
+            spectators: HashSet::with_capacity(value.max_users),
             waitlist: VecDeque::with_capacity(value.max_users),
             open_seats: VecDeque::from_iter(0..value.max_players),
             players: Vec::with_capacity(value.max_players),
             board: Vec::with_capacity(5),
+            votes: HashMap::with_capacity(2 * value.max_users + 1),
             num_players_active: 0,
             num_players_called: 0,
             pot: Pot::new(value.max_players),
+            players_to_kick: BTreeSet::new(),
             players_to_remove: BTreeSet::new(),
+            players_to_reset: HashSet::with_capacity(value.max_users),
             players_to_spectate: BTreeSet::new(),
             deck_idx: 0,
             small_blind_idx: 0,
@@ -344,7 +339,7 @@ impl<T> Game<T> {
     }
 
     fn contains_user(&self, username: &str) -> bool {
-        self.data.spectators.contains_key(username)
+        self.data.spectators.contains(username)
             || self
                 .data
                 .waitlist
@@ -354,7 +349,7 @@ impl<T> Game<T> {
     }
 
     pub fn contains_spectator(&self, username: &str) -> bool {
-        self.data.spectators.contains_key(username)
+        self.data.spectators.contains(username)
     }
 
     pub fn contains_waitlister(&self, username: &str) -> bool {
@@ -472,7 +467,8 @@ impl<T> Game<T> {
         for username in self
             .data
             .spectators
-            .keys()
+            .iter()
+            .map(|u| &u.name)
             .chain(self.data.waitlist.iter().map(|u| &u.name))
             .chain(self.data.players.iter().map(|p| &p.user.name))
         {
@@ -541,13 +537,10 @@ impl<T> Game<T> {
                 return Err(UserError::UserAlreadyExists);
             }
         }
-        self.data.spectators.insert(
-            username.to_string(),
-            User {
-                name: username.to_string(),
-                money: self.data.settings.buy_in,
-            },
-        );
+        self.data.spectators.insert(User {
+            name: username.to_string(),
+            money: self.data.settings.buy_in,
+        });
         Ok(true)
     }
 
@@ -575,6 +568,13 @@ impl<T> Game<T> {
         *money = 0;
     }
 
+    /// A user casts a vote. If the vote results in the vote passing, then the
+    /// vote is returned. If the vote is not passing yet, then nothing is
+    /// returned.
+    // pub fn vote(&mut self, username: &str, vote: Vote) -> Result<Option<Vote>, UserError> {
+    //     // if self.data.votes.contains_key(k)
+    // }
+
     /// Add a user to the waitlist, putting them in queue to play. The queue
     /// is eventually drained until the table is full and there are no more
     /// seats available for play.
@@ -584,9 +584,9 @@ impl<T> Game<T> {
         // want to play again.
         self.data.players_to_spectate.remove(username);
         self.data.players_to_remove.remove(username);
-        if let Some(user) = self.data.spectators.remove(username) {
+        if let Some(user) = self.data.spectators.take(username) {
             if user.money < self.data.big_blind {
-                self.data.spectators.insert(username.to_string(), user);
+                self.data.spectators.insert(user);
                 return Err(UserError::InsufficientFunds {
                     big_blind: self.data.big_blind,
                 });
@@ -611,7 +611,7 @@ macro_rules! impl_user_managers {
     ($($t:ty),+) => {
         $(impl $t {
             pub fn remove_user(&mut self, username: &str) -> Result<bool, UserError> {
-                let mut user = if let Some(user) = self.data.spectators.remove(username) {
+                let mut user = if let Some(user) = self.data.spectators.take(username) {
                     user
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
                     self.data.waitlist.remove(waitlist_idx).expect("waitlister exists")
@@ -633,7 +633,7 @@ macro_rules! impl_user_managers {
                 if self.data.players_to_spectate.contains(username) {
                     return Ok(false);
                 }
-                let user = if self.data.spectators.contains_key(username) {
+                let user = if self.data.spectators.contains(username) {
                     return Ok(true);
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
                     self.data.waitlist.remove(waitlist_idx).expect("waitlister exists")
@@ -645,7 +645,7 @@ macro_rules! impl_user_managers {
                 } else {
                     return Err(UserError::UserDoesNotExist);
                 };
-                self.data.spectators.insert(username.to_string(), user);
+                self.data.spectators.insert(user);
                 Ok(true)
             }
         })*
@@ -661,7 +661,7 @@ macro_rules! impl_user_managers_with_queue {
                 if self.data.players_to_remove.contains(username) {
                     return Ok(false);
                 }
-                let mut user = if let Some(user) = self.data.spectators.remove(username) {
+                let mut user = if let Some(user) = self.data.spectators.take(username) {
                     user
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
                     self.data.waitlist.remove(waitlist_idx).expect("waitlister exists")
@@ -687,7 +687,7 @@ macro_rules! impl_user_managers_with_queue {
                 if self.data.players_to_spectate.contains(username) {
                     return Ok(false);
                 }
-                let user = if self.data.spectators.contains_key(username) {
+                let user = if self.data.spectators.contains(username) {
                     return Ok(true)
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
                     self.data.waitlist.remove(waitlist_idx).expect("waitlister exists")
@@ -700,7 +700,7 @@ macro_rules! impl_user_managers_with_queue {
                 } else {
                     return Err(UserError::UserDoesNotExist);
                 };
-                self.data.spectators.insert(username.to_string(), user);
+                self.data.spectators.insert(user);
                 Ok(true)
             }
         })*
@@ -780,7 +780,7 @@ impl From<Game<SeatPlayers>> for Game<MoveButton> {
             let open_seat_idx = value.data.open_seats.pop_front().expect("not empty");
             let user = value.data.waitlist.pop_front().expect("not empty");
             if user.money < value.data.big_blind {
-                value.data.spectators.insert(user.name.clone(), user);
+                value.data.spectators.insert(user);
             } else {
                 let num_players = value.get_num_players();
                 let player = Player::new(user, open_seat_idx);
@@ -1334,16 +1334,17 @@ impl From<Game<DivideDonations>> for Game<UpdateBlinds> {
         let num_users = value.get_num_users();
         if num_users > 0 && value.data.donations > 0 as Usdf {
             let donation_per_user = value.data.donations as Usd / num_users as Usd;
-            for user in value
-                .data
-                .spectators
+            let mut spectators: Vec<User> = value.data.spectators.drain().collect();
+            for user in spectators
                 .iter_mut()
-                .map(|(_, u)| u)
                 .chain(value.data.waitlist.iter_mut())
                 .chain(value.data.players.iter_mut().map(|p| &mut p.user))
             {
                 user.money += donation_per_user;
                 value.data.donations -= donation_per_user as Usdf;
+            }
+            for user in spectators {
+                value.data.spectators.insert(user);
             }
         }
         Self {
@@ -1364,7 +1365,7 @@ impl From<Game<UpdateBlinds>> for Game<BootPlayers> {
         let min_money = value
             .data
             .spectators
-            .values()
+            .iter()
             .map(|u| u.money)
             .chain(value.data.waitlist.iter().map(|u| u.money))
             .chain(value.data.players.iter().map(|p| p.user.money))

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, VecDeque},
+    borrow::Borrow,
+    collections::{HashMap, HashSet, VecDeque},
     fmt,
     hash::{Hash, Hasher},
     mem::discriminant,
@@ -132,6 +133,18 @@ pub const DEFAULT_MIN_SMALL_BLIND: Usd = DEFAULT_MIN_BIG_BLIND / 2;
 pub struct User {
     pub name: String,
     pub money: Usd,
+}
+
+impl Hash for User {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+    }
+}
+
+impl Borrow<str> for User {
+    fn borrow(&self) -> &str {
+        &self.name
+    }
 }
 
 impl fmt::Display for User {
@@ -375,6 +388,25 @@ impl Pot {
     }
 }
 
+#[derive(Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub enum Vote {
+    // Vote to kick another user.
+    Kick(Username),
+    // Vote to reset money (for a specific user or for everyone).
+    Reset(Option<Username>),
+}
+
+impl fmt::Display for Vote {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let repr = match self {
+            Self::Kick(username) => format!("kick {username}"),
+            Self::Reset(None) => "reset everyone's money".to_string(),
+            Self::Reset(Some(username)) => format!("reset {username}'s money").to_string(),
+        };
+        write!(f, "{repr}")
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PlayerView {
     pub user: User,
@@ -398,7 +430,7 @@ pub struct GameView {
     pub donations: Usdf,
     pub small_blind: Usd,
     pub big_blind: Usd,
-    pub spectators: HashMap<String, User>,
+    pub spectators: HashSet<User>,
     pub waitlist: VecDeque<User>,
     pub open_seats: VecDeque<usize>,
     pub players: Vec<PlayerView>,

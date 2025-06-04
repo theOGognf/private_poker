@@ -561,7 +561,7 @@ impl App {
                 .areas(lobby_area);
 
         // Render spectators area.
-        let mut spectators = Vec::from_iter(view.spectators.values());
+        let mut spectators = Vec::from_iter(view.spectators.iter());
         spectators.sort_unstable();
         let spectators = Table::new(
             spectators
