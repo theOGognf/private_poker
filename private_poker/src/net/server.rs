@@ -766,7 +766,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
             }
 
             // Use the timeout duration to process events from the server's
-            // IO thread.
+            // IO thread. This is really the main server loop.
             while timeout.as_secs() > 0 {
                 let start = Instant::now();
                 if let Ok(mut msg) = rx_client.recv_timeout(timeout) {
@@ -785,6 +785,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                 timeout = Duration::ZERO;
                                 *action = new_action;
                             }),
+                        UserCommand::Vote(vote) => state.vote(&msg.username, vote.clone()),
                     };
 
                     // Get the result from a client's command. If their command
@@ -813,6 +814,9 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                         }
                     }
                 }
+
+                // Get all passed/failed votes and notify all clients of results.
+                
                 timeout = timeout.saturating_sub(start.elapsed());
             }
         }

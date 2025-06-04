@@ -2,10 +2,10 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt};
 
 pub use crate::game::entities::GameView;
-use crate::game::{
+use crate::{entities::Vote, game::{
     entities::{Action, Username},
     Game, TakeAction, UserError,
-};
+}};
 
 /// Errors due to the poker client's interaction with the poker server
 /// and not from the user's particular action.
@@ -59,6 +59,8 @@ pub enum UserCommand {
     /// User wants to make a bet. Can only occur if they're a
     /// player and it's their turn.
     TakeAction(Action),
+    /// User wants to make a vote.
+    Vote(Vote),
 }
 
 impl fmt::Display for UserCommand {
@@ -70,6 +72,7 @@ impl fmt::Display for UserCommand {
             UserCommand::ShowHand => "showed their hand",
             UserCommand::StartGame => "started the game",
             UserCommand::TakeAction(action) => &action.to_action_string(),
+            UserCommand::Vote(vote) => &format!("voted to {vote}"),
         };
         write!(f, "{repr}")
     }

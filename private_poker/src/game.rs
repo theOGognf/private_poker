@@ -409,7 +409,7 @@ impl<T> Game<T> {
     /// Return the username of the user that has the next turn (or nothing
     /// if there is no turn next). Helps determine whether to notify the
     /// player that their turn has come.
-    pub fn get_next_action_username(&self) -> Option<String> {
+    pub fn get_next_action_username(&self) -> Option<Username> {
         self.data
             .next_action_idx
             .map(|action_idx| self.data.players[action_idx].user.name.clone())
@@ -1497,7 +1497,7 @@ impl PokerState {
     }
 
     #[must_use]
-    pub fn get_next_action_username(&self) -> Option<String> {
+    pub fn get_next_action_username(&self) -> Option<Username> {
         match self {
             PokerState::TakeAction(ref game) => game.get_next_action_username(),
             _ => None,

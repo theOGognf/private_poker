@@ -131,7 +131,7 @@ pub const DEFAULT_MIN_SMALL_BLIND: Usd = DEFAULT_MIN_BIG_BLIND / 2;
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct User {
-    pub name: String,
+    pub name: Username,
     pub money: Usd,
 }
 
@@ -388,7 +388,7 @@ impl Pot {
     }
 }
 
-#[derive(Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum Vote {
     // Vote to kick another user.
     Kick(Username),
@@ -441,4 +441,4 @@ pub struct GameView {
     pub next_action_idx: Option<usize>,
 }
 
-pub type GameViews = HashMap<String, GameView>;
+pub type GameViews = HashMap<Username, GameView>;
