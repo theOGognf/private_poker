@@ -1,13 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::{
     borrow::Borrow,
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{BTreeSet, HashMap, HashSet, VecDeque},
     fmt,
     hash::{Hash, Hasher},
     mem::discriminant,
 };
-
-use crate::game::{Blinds, PlayPositions};
 
 use super::constants;
 
@@ -125,11 +123,73 @@ pub type Usdf = f32;
 /// Type alias for poker user usernames.
 pub type Username = String;
 
+/// Type alias for seat positions during the game.
+pub type SeatIndex = usize;
+
+/// Play positions used for tracking who is paying what blinds and whose
+/// turn is next.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PlayPositions {
+    pub small_blind_idx: SeatIndex,
+    pub big_blind_idx: SeatIndex,
+    pub next_action_idx: Option<SeatIndex>,
+}
+
+impl Default for PlayPositions {
+    fn default() -> Self {
+        Self {
+            small_blind_idx: 0,
+            big_blind_idx: 1,
+            next_action_idx: None,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct PlayerCounts {
+    /// Count of the number of players active in a hand.
+    /// All-in and folding are considered INACTIVE since they
+    /// have no more moves to make. Once `num_players_called`
+    /// is equal to this value, the round of betting is concluded.
+    pub num_active: usize,
+    /// Count of the number of players that have matched the minimum
+    /// call. Coupled with `num_players_active`, this helps track
+    /// whether a round of betting has ended. This value is reset
+    /// at the beginning of each betting round and whenever a player
+    /// raises (since they've increased the minimum call).
+    pub num_called: usize,
+}
+
+#[derive(Debug, Default)]
+pub struct PlayerQueues {
+    /// Queue of users that've been voted to be kicked. We can't
+    /// safely remove them from the game mid gameplay, so we instead queue
+    /// them for removal.
+    pub to_kick: BTreeSet<Username>,
+    /// Queue of users that're playing the game but have opted
+    /// to spectate. We can't safely remove them from the game mid gameplay,
+    /// so we instead queue them for removal.
+    pub to_spectate: BTreeSet<Username>,
+    /// Queue of users that're playing the game but have opted
+    /// to leave. We can't safely remove them from the game mid gameplay,
+    /// so we instead queue them for removal.
+    pub to_remove: BTreeSet<Username>,
+    /// Queue of users whose money we'll reset. We can't safely
+    /// reset them mid gameplay, so we instead queue them for reset.
+    pub to_reset: BTreeSet<Username>,
+}
+
 // By default, a player will be cleaned if they fold 20 rounds with the big
 // blind.
 pub const DEFAULT_BUY_IN: Usd = 200;
 pub const DEFAULT_MIN_BIG_BLIND: Usd = DEFAULT_BUY_IN / 20;
 pub const DEFAULT_MIN_SMALL_BLIND: Usd = DEFAULT_MIN_BIG_BLIND / 2;
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Blinds {
+    pub small: Usd,
+    pub big: Usd,
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct User {

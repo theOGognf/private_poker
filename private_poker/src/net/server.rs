@@ -14,17 +14,16 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::{
-    entities::Vote,
-    game::{
-        entities::{Action, GameView, Username},
-        Game, GameEvent, GameSettings, PokerState, TakeAction,
-    },
-    utils::preprocess_username,
-    UserError,
-};
-
 use super::{
+    super::{
+        entities::Vote,
+        game::{
+            entities::{Action, GameView, Username},
+            Game, GameEvent, GameSettings, PokerState, TakeAction,
+        },
+        utils::preprocess_username,
+        UserError,
+    },
     messages::{ClientError, ClientMessage, ServerMessage, UserCommand, UserState},
     utils::{read_prefixed, write_prefixed},
 };

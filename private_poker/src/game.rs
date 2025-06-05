@@ -2,7 +2,7 @@ use rand::{seq::SliceRandom, thread_rng};
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::{max, min, Ordering},
-    collections::{BTreeSet, HashMap, HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     fmt,
 };
 use thiserror::Error;
@@ -13,12 +13,10 @@ pub mod functional;
 
 use constants::{DEFAULT_MAX_USERS, MAX_PLAYERS};
 use entities::{
-    Action, Bet, BetAction, Card, GameView, GameViews, Player, PlayerState, PlayerView, Pot,
-    PotView, SubHand, Usd, Usdf, User, DEFAULT_BUY_IN, DEFAULT_MIN_BIG_BLIND,
-    DEFAULT_MIN_SMALL_BLIND,
+    Action, Bet, BetAction, Blinds, Card, GameView, GameViews, PlayPositions, Player, PlayerCounts,
+    PlayerQueues, PlayerState, PlayerView, Pot, PotView, SeatIndex, SubHand, Usd, Usdf, User,
+    Username, Vote, DEFAULT_BUY_IN, DEFAULT_MIN_BIG_BLIND, DEFAULT_MIN_SMALL_BLIND,
 };
-
-use crate::entities::{Username, Vote};
 
 #[derive(Debug, Deserialize, Eq, Error, PartialEq, Serialize)]
 pub enum UserError {
@@ -136,65 +134,6 @@ impl Default for GameSettings {
             min_small_blind: DEFAULT_MIN_SMALL_BLIND,
             max_players: MAX_PLAYERS,
             max_users: DEFAULT_MAX_USERS,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct Blinds {
-    pub small: Usd,
-    pub big: Usd,
-}
-
-#[derive(Debug, Default)]
-struct PlayerCounts {
-    /// Count of the number of players active in a hand.
-    /// All-in and folding are considered INACTIVE since they
-    /// have no more moves to make. Once `num_players_called`
-    /// is equal to this value, the round of betting is concluded.
-    num_active: usize,
-    /// Count of the number of players that have matched the minimum
-    /// call. Coupled with `num_players_active`, this helps track
-    /// whether a round of betting has ended. This value is reset
-    /// at the beginning of each betting round and whenever a player
-    /// raises (since they've increased the minimum call).
-    num_called: usize,
-}
-
-#[derive(Debug, Default)]
-struct PlayerQueues {
-    /// Queue of users that've been voted to be kicked. We can't
-    /// safely remove them from the game mid gameplay, so we instead queue
-    /// them for removal.
-    pub to_kick: BTreeSet<Username>,
-    /// Queue of users that're playing the game but have opted
-    /// to spectate. We can't safely remove them from the game mid gameplay,
-    /// so we instead queue them for removal.
-    pub to_spectate: BTreeSet<Username>,
-    /// Queue of users that're playing the game but have opted
-    /// to leave. We can't safely remove them from the game mid gameplay,
-    /// so we instead queue them for removal.
-    pub to_remove: BTreeSet<Username>,
-    /// Queue of users whose money we'll reset. We can't safely
-    /// reset them mid gameplay, so we instead queue them for reset.
-    pub to_reset: BTreeSet<Username>,
-}
-
-type SeatIndex = usize;
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct PlayPositions {
-    pub small_blind_idx: SeatIndex,
-    pub big_blind_idx: SeatIndex,
-    pub next_action_idx: Option<SeatIndex>,
-}
-
-impl Default for PlayPositions {
-    fn default() -> Self {
-        Self {
-            small_blind_idx: 0,
-            big_blind_idx: 1,
-            next_action_idx: None,
         }
     }
 }
@@ -1128,7 +1067,8 @@ impl From<Game<MoveButton>> for Game<CollectBlinds> {
             .rev()
             .cycle()
             .skip(num_players - value.data.play_positions.big_blind_idx);
-        value.data.play_positions.small_blind_idx = seats.next().expect("small blind position exists");
+        value.data.play_positions.small_blind_idx =
+            seats.next().expect("small blind position exists");
         Self {
             data: value.data,
             state: CollectBlinds {},
@@ -1145,7 +1085,10 @@ impl From<Game<CollectBlinds>> for Game<Deal> {
                 value.data.play_positions.small_blind_idx,
                 value.data.blinds.small,
             ),
-            (value.data.play_positions.big_blind_idx, value.data.blinds.big),
+            (
+                value.data.play_positions.big_blind_idx,
+                value.data.blinds.big,
+            ),
         ] {
             let player = &mut value.data.players[player_idx];
             let bet = match player.user.money.cmp(&blind) {
@@ -1777,7 +1720,8 @@ impl fmt::Display for PokerState {
                     .user
                     .name;
                 let small_blind = game.data.blinds.small;
-                let small_blind_username = &game.data.players[game.data.play_positions.small_blind_idx]
+                let small_blind_username = &game.data.players
+                    [game.data.play_positions.small_blind_idx]
                     .user
                     .name;
                 &format!("collecting ${big_blind} from {big_blind_username} and ${small_blind} from {small_blind_username}")

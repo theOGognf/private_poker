@@ -1,12 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt};
 
-use crate::{
-    entities::Vote,
-    game::{
-        entities::{Action, GameView, Username},
-        Game, GameEvent, TakeAction, UserError,
-    },
+use super::super::game::{
+    entities::{Action, GameView, Username, Vote},
+    Game, GameEvent, TakeAction, UserError,
 };
 
 /// Errors due to the poker client's interaction with the poker server

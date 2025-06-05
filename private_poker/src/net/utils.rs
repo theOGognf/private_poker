@@ -2,7 +2,7 @@ use bincode::{deserialize, serialize, ErrorKind};
 use serde::{de::DeserializeOwned, Serialize};
 use std::io::{self, Read, Write};
 
-use crate::constants::MAX_USER_INPUT_LENGTH;
+use super::super::constants::MAX_USER_INPUT_LENGTH;
 
 pub fn preprocess_username(username: &str) -> String {
     let mut username: String = username
