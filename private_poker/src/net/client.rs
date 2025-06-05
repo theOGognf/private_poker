@@ -6,9 +6,12 @@
 use anyhow::{bail, Error};
 use std::{net::TcpStream, thread, time::Duration};
 
-use crate::game::{
-    entities::{Action, GameView},
-    UserError,
+use crate::{
+    entities::Vote,
+    game::{
+        entities::{Action, GameView},
+        GameEvent, UserError,
+    },
 };
 
 use super::{
@@ -26,6 +29,15 @@ pub struct Client {
 }
 
 impl Client {
+    pub fn cast_vote(&mut self, vote: Vote) -> Result<(), Error> {
+        let msg = ClientMessage {
+            username: self.username.clone(),
+            command: UserCommand::CastVote(vote),
+        };
+        utils::write_prefixed(&mut self.stream, &msg)?;
+        Ok(())
+    }
+
     pub fn change_state(&mut self, state: UserState) -> Result<(), Error> {
         let msg = ClientMessage {
             username: self.username.clone(),
@@ -98,6 +110,16 @@ impl Client {
     pub fn recv_client_error(stream: &mut TcpStream) -> Result<ClientError, Error> {
         match utils::read_prefixed::<ServerMessage, TcpStream>(stream) {
             Ok(ServerMessage::ClientError(error)) => Ok(error),
+            Ok(response) => {
+                bail!("invalid server response: {response}")
+            }
+            Err(error) => bail!(error),
+        }
+    }
+
+    pub fn recv_event(stream: &mut TcpStream) -> Result<GameEvent, Error> {
+        match utils::read_prefixed::<ServerMessage, TcpStream>(stream) {
+            Ok(ServerMessage::GameEvent(event)) => Ok(event),
             Ok(response) => {
                 bail!("invalid server response: {response}")
             }

@@ -44,7 +44,7 @@ pub const WAKER: Token = Token(1);
 enum ServerData {
     /// An acknowledgement of a client message, signaling that the client's
     /// command was successfully processed by the game thread.
-    AckClient(ClientMessage),
+    Ack(ClientMessage),
     /// An acknowledgement of a server game event, signaling that an internal
     /// event was processed during a state transition or as a result of a user's
     /// action.
@@ -404,7 +404,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             match msg {
                                 // Acks are effectively successful responses to client
                                 // messages and are relayed to all clients.
-                                ServerData::AckClient(msg) => {
+                                ServerData::Ack(msg) => {
                                     // We only need to check this connect edge case because all other
                                     // client commands can only go through to the parent thread if the
                                     // client's username has already been confirmed by the parent
@@ -769,7 +769,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             // fold for them).
                             warn!("{username} ran out of time and will be forced to fold");
                             let command = UserCommand::TakeAction(Action::Fold);
-                            let msg = ServerData::AckClient(ClientMessage {
+                            let msg = ServerData::Ack(ClientMessage {
                                 username: username.clone(),
                                 command,
                             });
@@ -867,7 +867,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                     match result {
                         Ok(()) => {
                             info!("{msg}");
-                            let msg = ServerData::AckClient(msg);
+                            let msg = ServerData::Ack(msg);
                             tx_server.send(msg)?;
                             waker.wake()?;
 

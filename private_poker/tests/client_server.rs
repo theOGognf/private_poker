@@ -3,6 +3,7 @@ use mio::net::TcpListener;
 use std::{thread, time::Duration};
 
 use private_poker::{
+    game::GameEvent,
     messages,
     server::{self, PokerConfig, ServerTimeouts},
     Client, UserError,
@@ -57,6 +58,8 @@ fn one_user_connects_to_lobby() {
     assert_eq!(view.spectators.len(), 0);
     assert_eq!(view.waitlist.len(), 1);
     assert!(!view.spectators.contains(client.username.as_str()));
+    let event = Client::recv_event(&mut client.stream).unwrap();
+    assert_eq!(event, GameEvent::Waitlisted(username.to_string()));
 
     // Prematurely start the game.
     client.start_game().unwrap();
@@ -79,6 +82,8 @@ fn one_user_connects_to_lobby() {
     assert_eq!(view.spectators.len(), 1);
     assert_eq!(view.waitlist.len(), 0);
     assert!(view.spectators.contains(client.username.as_str()));
+    let event = Client::recv_event(&mut client.stream).unwrap();
+    assert_eq!(event, GameEvent::Spectated(username.to_string()));
 }
 
 #[test]
