@@ -7,6 +7,8 @@ use std::{
     mem::discriminant,
 };
 
+use crate::game::{Blinds, PlayPositions};
+
 use super::constants;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -428,17 +430,14 @@ impl fmt::Display for PotView {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct GameView {
     pub donations: Usdf,
-    pub small_blind: Usd,
-    pub big_blind: Usd,
+    pub blinds: Blinds,
     pub spectators: HashSet<User>,
     pub waitlist: VecDeque<User>,
     pub open_seats: VecDeque<usize>,
     pub players: Vec<PlayerView>,
     pub board: Vec<Card>,
     pub pot: PotView,
-    pub small_blind_idx: usize,
-    pub big_blind_idx: usize,
-    pub next_action_idx: Option<usize>,
+    pub play_positions: PlayPositions,
 }
 
 pub type GameViews = HashMap<Username, GameView>;

@@ -64,7 +64,7 @@ const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 const UNRECOGNIZED_COMMAND_MESSAGE: &str = "unrecognized command";
 
 fn blinds_to_string(view: &GameView) -> String {
-    format!(" blinds: ${}/{}  ", view.big_blind, view.small_blind)
+    format!(" blinds: ${}/{}  ", view.blinds.big, view.blinds.small)
 }
 
 fn board_to_vec_of_spans(view: &GameView) -> Vec<Span<'_>> {
@@ -607,16 +607,16 @@ impl App {
         let table = Table::new(
             view.players.iter().enumerate().map(|(player_idx, player)| {
                 // Indicator if it's the player's move.
-                let move_repr = match view.next_action_idx {
+                let move_repr = match view.play_positions.next_action_idx {
                     Some(next_action_idx) if player_idx == next_action_idx => "→",
                     _ => "",
                 };
                 let move_repr = Text::from(move_repr);
 
                 // Indicator for what blind each player pays.
-                let button_repr = if player_idx == view.big_blind_idx {
+                let button_repr = if player_idx == view.play_positions.big_blind_idx {
                     "BB"
-                } else if player_idx == view.small_blind_idx {
+                } else if player_idx == view.play_positions.small_blind_idx {
                     "SB"
                 } else {
                     ""
