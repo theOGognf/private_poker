@@ -409,10 +409,7 @@ impl<T> Game<T> {
             let is_vote_passing = votes.insert(username.to_string()) && votes.len() > num_users / 2;
             // Add an event on the vote's passage, and return a copy of the vote that passed.
             if is_vote_passing {
-                self.data.votes.remove(&vote);
-                self.data
-                    .events
-                    .push_back(GameEvent::PassedVote(vote.clone()));
+                self.pass_vote_with_event(vote.clone());
                 Ok(Some(vote))
             } else {
                 Ok(None)
@@ -636,6 +633,11 @@ impl<T> Game<T> {
         Ok(true)
     }
 
+    fn pass_vote_with_event(&mut self, vote: Vote) {
+        self.data.votes.remove(&vote);
+        self.data.events.push_back(GameEvent::PassedVote(vote));
+    }
+
     /// Reset the next action index and return the possible actions
     /// for that player. This should be called prior to each game phase
     /// in preparation for a new round of betting.
@@ -655,16 +657,75 @@ impl<T> Game<T> {
         self.get_next_action_options()
     }
 
+    fn queue_player_for_kick_with_event(&mut self, username: &str) {
+        self.data
+            .events
+            .push_back(GameEvent::KickQueue(username.to_string()));
+        self.data.players_to_kick.insert(username.to_string());
+    }
+
+    fn queue_player_for_remove_with_event(&mut self, username: &str) {
+        self.data
+            .events
+            .push_back(GameEvent::RemoveQueue(username.to_string()));
+        // Need to remove the player from other queues just in
+        // case they changed their mind.
+        self.data.players_to_spectate.remove(username);
+        self.data.players_to_remove.insert(username.to_string());
+    }
+
+    fn queue_player_for_reset_with_event(&mut self, username: &str) {
+        self.data
+            .events
+            .push_back(GameEvent::ResetUserMoneyQueue(username.to_string()));
+        self.data.players_to_reset.insert(username.to_string());
+    }
+
+    fn queue_player_for_spectate_with_event(&mut self, username: &str) {
+        self.data
+            .events
+            .push_back(GameEvent::SpectateQueue(username.to_string()));
+        // Need to remove the player from other queues just in
+        // case they changed their mind.
+        self.data.players_to_remove.remove(username);
+        self.data.players_to_spectate.insert(username.to_string());
+    }
+
     fn redistribute_user_money(&mut self, money: &mut Usd) {
         self.data.donations += (*money as Usdf) - (self.data.settings.buy_in as Usdf);
         *money = 0;
     }
 
     /// Rescind all the votes by a user.
-    fn rescind_votes(&mut self, username: &str) {
+    fn rescind_user_votes(&mut self, username: &str) {
         for votes in self.data.votes.values_mut() {
             votes.remove(username);
         }
+    }
+
+    fn seat_player_with_event(&mut self, player: Player) {
+        self.data
+            .events
+            .push_back(GameEvent::JoinedTable(player.user.name.clone()));
+        let num_players = self.get_num_players();
+        if num_players > 0 {
+            match (0..num_players - 1).position(|player_idx| {
+                self.data.players[player_idx].seat_idx < player.seat_idx
+                    && self.data.players[player_idx + 1].seat_idx > player.seat_idx
+            }) {
+                Some(player_idx) => self.data.players.insert(player_idx + 1, player),
+                None => self.data.players.push(player),
+            }
+        } else {
+            self.data.players.push(player);
+        }
+    }
+
+    fn spectate_user_with_event(&mut self, user: User) {
+        self.data
+            .events
+            .push_back(GameEvent::Spectated(user.name.clone()));
+        self.data.spectators.insert(user);
     }
 
     /// Add a user to the waitlist, putting them in queue to play. The queue
@@ -720,7 +781,7 @@ macro_rules! impl_user_managers {
                 };
                 self.data.events.push_back(GameEvent::Kicked(username.to_string()));
                 self.redistribute_user_money(&mut user.money);
-                self.rescind_votes(&user.name);
+                self.rescind_user_votes(&user.name);
                 Ok(Some(true))
             }
 
@@ -739,7 +800,7 @@ macro_rules! impl_user_managers {
                 };
                 self.data.events.push_back(GameEvent::Removed(username.to_string()));
                 self.redistribute_user_money(&mut user.money);
-                self.rescind_votes(&user.name);
+                self.rescind_user_votes(&user.name);
                 Ok(Some(true))
             }
 
@@ -817,18 +878,14 @@ macro_rules! impl_user_managers_with_queue {
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
                     self.data.waitlist.remove(waitlist_idx).expect("waitlister exists")
                 } else if let Some(_) = self.data.players.iter().position(|p| p.user.name == username) {
-                    // The player is still at the table while the game is ongoing.
-                    // We don't want to disrupt gameplay, so we just queue the
-                    // player and kick them later.
-                    self.data.players_to_kick.insert(username.to_string());
-                    self.data.events.push_back(GameEvent::KickQueue(username.to_string()));
+                    self.queue_player_for_kick_with_event(username);
                     return Ok(Some(false));
                 } else {
                     return Err(UserError::UserDoesNotExist);
                 };
                 self.data.events.push_back(GameEvent::Kicked(username.to_string()));
                 self.redistribute_user_money(&mut user.money);
-                self.rescind_votes(&user.name);
+                self.rescind_user_votes(&user.name);
                 Ok(Some(true))
             }
 
@@ -843,21 +900,14 @@ macro_rules! impl_user_managers_with_queue {
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
                     self.data.waitlist.remove(waitlist_idx).expect("waitlister exists")
                 } else if let Some(_) = self.data.players.iter().position(|p| p.user.name == username) {
-                    // Need to remove the player from other queues just in
-                    // case they changed their mind.
-                    self.data.players_to_spectate.remove(username);
-                    // The player is still at the table while the game is ongoing.
-                    // We don't want to disrupt gameplay, so we just queue the
-                    // player for removal and remove them later.
-                    self.data.players_to_remove.insert(username.to_string());
-                    self.data.events.push_back(GameEvent::RemoveQueue(username.to_string()));
+                    self.queue_player_for_remove_with_event(username);
                     return Ok(Some(false));
                 } else {
                     return Err(UserError::UserDoesNotExist);
                 };
                 self.data.events.push_back(GameEvent::Removed(username.to_string()));
                 self.redistribute_user_money(&mut user.money);
-                self.rescind_votes(&user.name);
+                self.rescind_user_votes(&user.name);
                 Ok(Some(true))
             }
 
@@ -869,8 +919,7 @@ macro_rules! impl_user_managers_with_queue {
                     let user = self.data.waitlist.get_mut(waitlist_idx).expect("waitlister exists");
                     user.money = self.data.settings.buy_in;
                 } else if let Some(_) = self.data.players.iter().position(|p| p.user.name == username) {
-                    self.data.players_to_reset.insert(username.to_string());
-                    self.data.events.push_back(GameEvent::ResetUserMoneyQueue(username.to_string()));
+                    self.queue_player_for_reset_with_event(username);
                     return Ok(Some(false));
                 } else {
                     return Err(UserError::UserDoesNotExist);
@@ -896,11 +945,7 @@ macro_rules! impl_user_managers_with_queue {
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
                     self.data.waitlist.remove(waitlist_idx).expect("waitlister exists")
                 } else if let Some(_) = self.data.players.iter().position(|p| p.user.name == username) {
-                    // Need to remove the player from other queues just in
-                    // case they changed their mind.
-                    self.data.players_to_remove.remove(username);
-                    self.data.players_to_spectate.insert(username.to_string());
-                    self.data.events.push_back(GameEvent::SpectateQueue(username.to_string()));
+                    self.queue_player_for_spectate_with_event(username);
                     return Ok(Some(false));
                 } else {
                     return Err(UserError::UserDoesNotExist);
@@ -986,29 +1031,10 @@ impl From<Game<SeatPlayers>> for Game<MoveButton> {
             let open_seat_idx = value.data.open_seats.pop_front().expect("not empty");
             let user = value.data.waitlist.pop_front().expect("not empty");
             if user.money < value.data.big_blind {
-                value
-                    .data
-                    .events
-                    .push_back(GameEvent::Spectated(user.name.clone()));
-                value.data.spectators.insert(user);
+                value.spectate_user_with_event(user);
             } else {
-                let num_players = value.get_num_players();
                 let player = Player::new(user, open_seat_idx);
-                value
-                    .data
-                    .events
-                    .push_back(GameEvent::JoinedTable(player.user.name.clone()));
-                if num_players > 0 {
-                    match (0..num_players - 1).position(|player_idx| {
-                        value.data.players[player_idx].seat_idx < open_seat_idx
-                            && value.data.players[player_idx + 1].seat_idx > open_seat_idx
-                    }) {
-                        Some(player_idx) => value.data.players.insert(player_idx + 1, player),
-                        None => value.data.players.push(player),
-                    }
-                } else {
-                    value.data.players.push(player);
-                }
+                value.seat_player_with_event(player);
             }
         }
         value.data.num_players_active = value.get_num_players();

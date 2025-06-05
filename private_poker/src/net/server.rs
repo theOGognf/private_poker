@@ -435,6 +435,23 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                     }
                                 }
                                 ServerData::Event(msg) => {
+                                    // Sanity check to make sure we no longer send messages to this
+                                    // user since they are no longer in the game.
+                                    match &msg {
+                                        GameEvent::Kicked(username)
+                                        | GameEvent::Removed(username) => {
+                                            if let Ok(token) =
+                                                token_manager.get_token_with_username(username)
+                                            {
+                                                if let Ok(mut stream) =
+                                                    token_manager.recycle_token(token)
+                                                {
+                                                    poll.registry().deregister(&mut stream)?;
+                                                }
+                                            }
+                                        }
+                                        _ => {}
+                                    }
                                     for token in token_manager.confirmed_tokens.keys() {
                                         let msg = ServerMessage::GameEvent(msg.clone());
                                         messages_to_write.entry(*token).or_default().push_back(msg);
