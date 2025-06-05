@@ -16,10 +16,12 @@ use std::{
 
 use crate::{
     constants::MAX_USER_INPUT_LENGTH,
+    entities::Vote,
     game::{
         entities::{Action, GameView, Username},
-        GameSettings, PokerState,
+        Game, GameEvent, GameSettings, PokerState, TakeAction,
     },
+    UserError,
 };
 
 use super::{
@@ -42,11 +44,20 @@ pub const WAKER: Token = Token(1);
 enum ServerData {
     /// An acknowledgement of a client message, signaling that the client's
     /// command was successfully processed by the game thread.
-    Ack(ClientMessage),
-    /// A server message sent to a specific client.
-    Response {
+    AckClient(ClientMessage),
+    /// An acknowledgement of a server game event, signaling that an internal
+    /// event was processed during a state transition or as a result of a user's
+    /// action.
+    Event(GameEvent),
+    /// Signaling a specific user made an error.
+    UserError {
         username: Username,
-        data: Box<ServerMessage>,
+        error: UserError,
+    },
+    /// Signaling it's a specific user's turn.
+    TurnSignal {
+        username: Username,
+        action_options: HashSet<Action>,
     },
     /// Game state represented as a string.
     Status(String),
@@ -393,7 +404,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             match msg {
                                 // Acks are effectively successful responses to client
                                 // messages and are relayed to all clients.
-                                ServerData::Ack(msg) => {
+                                ServerData::AckClient(msg) => {
                                     // We only need to check this connect edge case because all other
                                     // client commands can only go through to the parent thread if the
                                     // client's username has already been confirmed by the parent
@@ -412,7 +423,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                         if disconnected {
                                             let msg = ClientMessage {
                                                 username: msg.username.clone(),
-                                                command: UserCommand::Leave,
+                                                command: UserCommand::Disconnect,
                                             };
                                             tx_client.send(msg)?;
                                         }
@@ -423,17 +434,37 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                         tokens_to_reregister.insert(*token);
                                     }
                                 }
+                                ServerData::Event(msg) => {
+                                    for token in token_manager.confirmed_tokens.keys() {
+                                        let msg = ServerMessage::GameEvent(msg.clone());
+                                        messages_to_write.entry(*token).or_default().push_back(msg);
+                                        tokens_to_reregister.insert(*token);
+                                    }
+                                }
                                 // A response goes to a single client. We can safely ignore cases where a
                                 // client no longer exists to receive a response because the response
                                 // is meant just for the client.
-                                ServerData::Response { username, data } => {
+                                ServerData::TurnSignal {
+                                    username,
+                                    action_options,
+                                } => {
                                     if let Ok(token) =
                                         token_manager.get_token_with_username(&username)
                                     {
-                                        messages_to_write
-                                            .entry(token)
-                                            .or_default()
-                                            .push_back(*data);
+                                        let msg = ServerMessage::TurnSignal(action_options);
+                                        messages_to_write.entry(token).or_default().push_back(msg);
+                                        tokens_to_reregister.insert(token);
+                                    }
+                                }
+                                // A response goes to a single client. We can safely ignore cases where a
+                                // client no longer exists to receive a response because the response
+                                // is meant just for the client.
+                                ServerData::UserError { username, error } => {
+                                    if let Ok(token) =
+                                        token_manager.get_token_with_username(&username)
+                                    {
+                                        let msg = ServerMessage::UserError(error);
+                                        messages_to_write.entry(token).or_default().push_back(msg);
                                         tokens_to_reregister.insert(token);
                                     }
                                 }
@@ -660,7 +691,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                 if let Ok(username) = token_manager.get_confirmed_username_with_token(&token) {
                     let msg = ClientMessage {
                         username,
-                        command: UserCommand::Leave,
+                        command: UserCommand::Disconnect,
                     };
                     tx_client.send(msg)?;
                 }
@@ -721,7 +752,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             // fold for them).
                             warn!("{username} ran out of time and will be forced to fold");
                             let command = UserCommand::TakeAction(Action::Fold);
-                            let msg = ServerData::Ack(ClientMessage {
+                            let msg = ServerData::AckClient(ClientMessage {
                                 username: username.clone(),
                                 command,
                             });
@@ -735,7 +766,8 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             break 'command;
                         } else {
                             // Let all users know whose turn it is.
-                            let turn_signal = ServerMessage::TurnSignal(action_options);
+                            let turn_signal =
+                                Game::<TakeAction>::action_options_to_string(&action_options);
                             let status =
                                 format!("it's {username}'s turn and they can {turn_signal}");
                             let msg = ServerData::Status(status.clone());
@@ -744,9 +776,9 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
 
                             // Let player know it's their turn.
                             info!("{status}");
-                            let msg = ServerData::Response {
+                            let msg = ServerData::TurnSignal {
                                 username: username.clone(),
-                                data: Box::new(turn_signal),
+                                action_options,
                             };
                             tx_server.send(msg)?;
                             waker.wake()?;
@@ -768,6 +800,13 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
             // Use the timeout duration to process events from the server's
             // IO thread. This is really the main server loop.
             while timeout.as_secs() > 0 {
+                // Drain game events before catching more user commands.
+                for event in state.drain_events() {
+                    info!("{event}");
+                    let msg = ServerData::Event(event);
+                    tx_server.send(msg)?;
+                    waker.wake()?;
+                }
                 let start = Instant::now();
                 if let Ok(mut msg) = rx_client.recv_timeout(timeout) {
                     let result = match msg.command {
@@ -776,7 +815,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             UserState::Spectate => state.spectate_user(&msg.username),
                         },
                         UserCommand::Connect => state.new_user(&msg.username),
-                        UserCommand::Leave => state.remove_user(&msg.username),
+                        UserCommand::Disconnect => state.remove_user(&msg.username),
                         UserCommand::ShowHand => state.show_hand(&msg.username),
                         UserCommand::StartGame => state.init_start(&msg.username),
                         UserCommand::TakeAction(ref mut action) => state
@@ -785,7 +824,23 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                 timeout = Duration::ZERO;
                                 *action = new_action;
                             }),
-                        UserCommand::Vote(vote) => state.vote(&msg.username, vote.clone()),
+                        UserCommand::CastVote(ref vote) => {
+                            let result = state.cast_vote(&msg.username, vote.clone());
+                            match result {
+                                Ok(Some(vote)) => match vote {
+                                    Vote::Kick(username) => state.kick_user(&username),
+                                    Vote::Reset(None) => {
+                                        state.reset_all_money();
+                                        Ok(())
+                                    }
+                                    Vote::Reset(Some(username)) => {
+                                        state.reset_user_money(&username)
+                                    }
+                                },
+                                Ok(None) => Ok(()),
+                                Err(err) => Err(err),
+                            }
+                        }
                     };
 
                     // Get the result from a client's command. If their command
@@ -795,7 +850,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                     match result {
                         Ok(()) => {
                             info!("{msg}");
-                            let msg = ServerData::Ack(msg);
+                            let msg = ServerData::AckClient(msg);
                             tx_server.send(msg)?;
                             waker.wake()?;
 
@@ -805,18 +860,15 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                         }
                         Err(error) => {
                             error!("{error}: {msg}");
-                            let msg = ServerData::Response {
+                            let msg = ServerData::UserError {
                                 username: msg.username,
-                                data: Box::new(ServerMessage::UserError(error)),
+                                error,
                             };
                             tx_server.send(msg)?;
                             waker.wake()?;
                         }
                     }
                 }
-
-                // Get all passed/failed votes and notify all clients of results.
-                
                 timeout = timeout.saturating_sub(start.elapsed());
             }
         }

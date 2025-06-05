@@ -1,8 +1,8 @@
 use anyhow::{bail, Error};
 use private_poker::{
-    entities::{Action, SubHand, Usd, Usdf},
+    entities::{Action, GameView, SubHand, Usd, Usdf},
     functional,
-    messages::{GameView, ServerMessage, UserState},
+    messages::{ServerMessage, UserState},
     utils, Client,
 };
 use rand::{distributions::WeightedIndex, prelude::Distribution, thread_rng, Rng};

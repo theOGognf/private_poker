@@ -2,7 +2,7 @@ use anyhow::{bail, Error};
 use chrono::{DateTime, Utc};
 use mio::{Events, Interest, Poll, Waker};
 use private_poker::{
-    entities::{Action, Card, GameView, Suit, Usd, User, Username},
+    entities::{Action, Card, GameView, Suit, Usd, User, Username, Vote},
     functional,
     messages::UserState,
     net::{
@@ -61,6 +61,7 @@ start
 const INVALID_ACTION_MESSAGE: &str = "can't do that now";
 const MAX_LOG_RECORDS: usize = 1024;
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
+const UNRECOGNIZED_COMMAND_MESSAGE: &str = "unrecognized command";
 
 fn blinds_to_string(view: &GameView) -> String {
     format!(" blinds: ${}/{}  ", view.big_blind, view.small_blind)
@@ -265,24 +266,33 @@ impl App {
             "start" => Ok(UserCommand::StartGame),
             other => {
                 let other: Vec<&str> = other.split_ascii_whitespace().collect();
-                let result = match (
-                    action_options.get(&Action::Raise(0)),
-                    other.first(),
-                    other.get(1),
-                ) {
-                    // Raise with a specific amount.
-                    (Some(_), Some(&"raise"), Some(value)) => match value.parse::<Usd>() {
-                        Ok(amount) => Ok(Action::Raise(amount)),
-                        Err(_) => Err("invalid raise amount".to_string()),
+                match other.first() {
+                    Some(&"raise") => {
+                        let result = match (action_options.get(&Action::Raise(0)), other.get(1)) {
+                            // Raise with a specific amount.
+                            (Some(_), Some(value)) => match value.parse::<Usd>() {
+                                Ok(amount) => Ok(Action::Raise(amount)),
+                                Err(_) => Err("invalid raise amount".to_string()),
+                            },
+                            // Valid raise without specified amount defaults to the default raise.
+                            (Some(action), None) => Ok(action.clone()),
+                            // Invalid action.
+                            (None, ..) => Err(INVALID_ACTION_MESSAGE.to_string()),
+                        };
+                        result.map(UserCommand::TakeAction)
+                    }
+                    Some(&"vote") => match (other.get(1), other.get(2)) {
+                        (Some(&"kick"), Some(username)) => {
+                            Ok(UserCommand::CastVote(Vote::Kick(username.to_string())))
+                        }
+                        (Some(&"reset"), Some(username)) => Ok(UserCommand::CastVote(Vote::Reset(
+                            Some(username.to_string()),
+                        ))),
+                        (Some(&"reset"), None) => Ok(UserCommand::CastVote(Vote::Reset(None))),
+                        _ => Err(UNRECOGNIZED_COMMAND_MESSAGE.to_string()),
                     },
-                    // Valid raise without specified amount defaults to the default raise.
-                    (Some(action), Some(&"raise"), None) => Ok(action.clone()),
-                    // Invalid action.
-                    (None, Some(&"raise"), ..) => Err(INVALID_ACTION_MESSAGE.to_string()),
-                    // Unknown command.
-                    _ => Err("unrecognized command".to_string()),
-                };
-                result.map(UserCommand::TakeAction)
+                    _ => Err(UNRECOGNIZED_COMMAND_MESSAGE.to_string()),
+                }
             }
         };
         match result {
@@ -504,7 +514,7 @@ impl App {
                                     turn_warnings.clear();
                                 }
                                 // Our action timed-out and so the server booted us; let's exit.
-                                UserCommand::Leave => return Ok(()),
+                                UserCommand::Disconnect => return Ok(()),
                                 _ => {}
                             }
                         }
@@ -512,6 +522,9 @@ impl App {
                     }
                     ServerMessage::ClientError(error) => {
                         Some(Record::new(RecordKind::Error, error.to_string()))
+                    }
+                    ServerMessage::GameEvent(event) => {
+                        Some(Record::new(RecordKind::Game, event.to_string()))
                     }
                     ServerMessage::GameView(new_view) => {
                         view = new_view;

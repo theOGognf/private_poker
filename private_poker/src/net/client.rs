@@ -6,10 +6,13 @@
 use anyhow::{bail, Error};
 use std::{net::TcpStream, thread, time::Duration};
 
-use crate::game::{entities::Action, UserError};
+use crate::game::{
+    entities::{Action, GameView},
+    UserError,
+};
 
 use super::{
-    messages::{ClientError, ClientMessage, GameView, ServerMessage, UserCommand, UserState},
+    messages::{ClientError, ClientMessage, ServerMessage, UserCommand, UserState},
     utils,
 };
 
