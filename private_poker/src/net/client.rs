@@ -12,6 +12,7 @@ use crate::{
         entities::{Action, GameView},
         GameEvent, UserError,
     },
+    utils::preprocess_username,
 };
 
 use super::{
@@ -48,6 +49,7 @@ impl Client {
     }
 
     pub fn connect(username: &str, addr: &str) -> Result<(Self, GameView), Error> {
+        let username = preprocess_username(username);
         let addr = addr.parse()?;
         let mut connect_timeouts = vec![
             Duration::from_secs(1),
@@ -60,7 +62,7 @@ impl Client {
                     stream.set_read_timeout(Some(READ_TIMEOUT))?;
                     stream.set_write_timeout(Some(WRITE_TIMEOUT))?;
                     let msg = ClientMessage {
-                        username: username.to_string(),
+                        username: username.clone(),
                         command: UserCommand::Connect,
                     };
                     utils::write_prefixed(&mut stream, &msg)?;
@@ -70,7 +72,7 @@ impl Client {
                         Ok(view) => {
                             return Ok((
                                 Self {
-                                    username: username.to_string(),
+                                    username,
                                     addr: addr.to_string(),
                                     stream,
                                 },

@@ -15,12 +15,12 @@ use std::{
 };
 
 use crate::{
-    constants::MAX_USER_INPUT_LENGTH,
     entities::Vote,
     game::{
         entities::{Action, GameView, Username},
         Game, GameEvent, GameSettings, PokerState, TakeAction,
     },
+    utils::preprocess_username,
     UserError,
 };
 
@@ -601,7 +601,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                 loop {
                                     match read_prefixed::<ClientMessage, TcpStream>(stream) {
                                         Ok(mut msg) => {
-                                            msg.username.truncate(MAX_USER_INPUT_LENGTH);
+                                            msg.username = preprocess_username(&msg.username);
                                             let messages =
                                                 messages_to_process.entry(token).or_default();
                                             messages.push_back(msg);

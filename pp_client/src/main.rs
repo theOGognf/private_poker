@@ -9,7 +9,7 @@
 use anyhow::Error;
 
 use pico_args::Arguments;
-use private_poker::{constants::MAX_USER_INPUT_LENGTH, entities::Username, Client};
+use private_poker::{entities::Username, Client};
 
 mod app;
 use app::App;
@@ -41,13 +41,12 @@ fn main() -> Result<(), Error> {
         std::process::exit(0);
     }
 
-    let mut args = Args {
+    let args = Args {
         addr: pargs
             .value_from_str("--connect")
             .unwrap_or("127.0.0.1:6969".into()),
         username: pargs.free_from_str().unwrap_or(whoami::username()),
     };
-    args.username.truncate(MAX_USER_INPUT_LENGTH);
 
     // Doesn't make sense to use the complexity of non-blocking IO
     // for connecting to the poker server, so we try to connect with
