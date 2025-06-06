@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, fmt};
+use std::fmt;
 
 use super::super::game::{
-    entities::{Action, GameView, Username, Vote},
+    entities::{Action, ActionChoices, GameView, Username, Vote},
     Game, GameEvent, TakeAction, UserError,
 };
 
@@ -70,7 +70,7 @@ impl fmt::Display for UserCommand {
             UserCommand::Disconnect => "disconnected",
             UserCommand::ShowHand => "showed their hand",
             UserCommand::StartGame => "started the game",
-            UserCommand::TakeAction(action) => &action.to_action_string(),
+            UserCommand::TakeAction(action) => &action.to_string(),
             UserCommand::CastVote(vote) => &format!("voted to {vote}"),
         };
         write!(f, "{repr}")
@@ -109,7 +109,7 @@ pub enum ServerMessage {
     /// The game state represented as a string.
     Status(String),
     /// A sginal indicating that it's the user's turn.
-    TurnSignal(HashSet<Action>),
+    TurnSignal(ActionChoices),
     /// An indication that the poker client sent a message that was read
     /// properly, but the type of action that it relayed was invalid
     /// for the game state, resulting in a user error.
@@ -124,8 +124,8 @@ impl fmt::Display for ServerMessage {
             ServerMessage::GameEvent(event) => event.to_string(),
             ServerMessage::GameView(_) => "game view".to_string(),
             ServerMessage::Status(status) => status.to_string(),
-            ServerMessage::TurnSignal(action_options) => {
-                Game::<TakeAction>::action_options_to_string(action_options)
+            ServerMessage::TurnSignal(action_choices) => {
+                Game::<TakeAction>::action_choices_to_string(action_choices)
             }
             ServerMessage::UserError(error) => error.to_string(),
         };

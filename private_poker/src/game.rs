@@ -13,9 +13,10 @@ pub mod functional;
 
 use constants::{DEFAULT_MAX_USERS, MAX_PLAYERS};
 use entities::{
-    Action, Bet, BetAction, Blinds, Card, GameView, GameViews, PlayPositions, Player, PlayerCounts,
-    PlayerQueues, PlayerState, PlayerView, Pot, PotView, SeatIndex, SubHand, Usd, Usdf, User,
-    Username, Vote, DEFAULT_BUY_IN, DEFAULT_MIN_BIG_BLIND, DEFAULT_MIN_SMALL_BLIND,
+    Action, ActionChoice, ActionChoices, Bet, BetAction, Blinds, Card, GameView, GameViews,
+    PlayPositions, Player, PlayerCounts, PlayerQueues, PlayerState, PlayerView, Pot, PotView,
+    SeatIndex, SubHand, Usd, Usdf, User, Username, Vote, DEFAULT_BUY_IN, DEFAULT_MIN_BIG_BLIND,
+    DEFAULT_MIN_SMALL_BLIND,
 };
 
 #[derive(Debug, Deserialize, Eq, Error, PartialEq, Serialize)]
@@ -248,7 +249,7 @@ pub struct Deal {}
 
 #[derive(Clone, Debug)]
 pub struct TakeAction {
-    pub action_options: Option<HashSet<Action>>,
+    pub action_choices: Option<ActionChoices>,
 }
 
 #[derive(Debug)]
@@ -313,13 +314,13 @@ pub struct Game<T> {
 /// General game methods that can or will be used at various stages of gameplay.
 impl<T> Game<T> {
     #[must_use]
-    pub fn action_options_to_string(action_options: &HashSet<Action>) -> String {
-        let num_options = action_options.len();
-        action_options
+    pub fn action_choices_to_string(action_choices: &ActionChoices) -> String {
+        let num_options = action_choices.len();
+        action_choices
             .iter()
             .enumerate()
-            .map(|(i, action)| {
-                let repr = action.to_option_string();
+            .map(|(i, action_choice)| {
+                let repr = action_choice.to_string();
                 match i {
                     0 if num_options == 1 => repr,
                     0 if num_options == 2 => format!("{repr} "),
@@ -461,28 +462,28 @@ impl<T> Game<T> {
     /// Return the set of possible actions the next player can
     /// make, or nothing if there are no actions possible for the current
     /// state.
-    fn get_next_action_options(&self) -> Option<HashSet<Action>> {
+    fn get_next_action_choices(&self) -> Option<ActionChoices> {
         if self.is_ready_for_next_phase() {
             return None;
         }
         match self.data.play_positions.next_action_idx {
             Some(action_idx) => {
-                let mut action_options = HashSet::from([Action::Fold]);
+                let mut action_choices = HashSet::from([ActionChoice::Fold]);
                 let user = &self.data.players[action_idx].user;
                 let raise = self.data.pot.get_min_raise_by_player_idx(action_idx);
                 let call = self.data.pot.get_call_by_player_idx(action_idx);
                 if self.data.player_counts.num_active > 1 || call >= user.money {
-                    action_options.insert(Action::AllIn);
+                    action_choices.insert(ActionChoice::AllIn);
                 }
                 if call > 0 && call < user.money {
-                    action_options.insert(Action::Call(call));
+                    action_choices.insert(ActionChoice::Call(call));
                 } else if call == 0 {
-                    action_options.insert(Action::Check);
+                    action_choices.insert(ActionChoice::Check);
                 }
                 if self.data.player_counts.num_active > 1 && user.money > raise {
-                    action_options.insert(Action::Raise(raise));
+                    action_choices.insert(ActionChoice::Raise(raise));
                 }
-                Some(action_options)
+                Some(action_choices)
             }
             None => None,
         }
@@ -647,7 +648,7 @@ impl<T> Game<T> {
     /// Reset the next action index and return the possible actions
     /// for that player. This should be called prior to each game phase
     /// in preparation for a new round of betting.
-    fn prepare_for_next_phase(&mut self) -> Option<HashSet<Action>> {
+    fn prepare_for_next_phase(&mut self) -> Option<ActionChoices> {
         self.data.player_counts.num_called = 0;
         // Reset player states for players that are still in the hand.
         for player in self.data.players.iter_mut().filter(|player| {
@@ -660,7 +661,7 @@ impl<T> Game<T> {
         }
         self.data.play_positions.next_action_idx = Some(self.data.starting_action_idx);
         self.data.play_positions.next_action_idx = self.get_next_action_idx(true);
-        self.get_next_action_options()
+        self.get_next_action_choices()
     }
 
     fn queue_player_for_kick_with_event(&mut self, username: &str) {
@@ -1143,10 +1144,10 @@ impl From<Game<Deal>> for Game<TakeAction> {
             player.cards.push(card);
             value.data.deck_idx += 1;
         }
-        let action_options = value.prepare_for_next_phase();
+        let action_choices = value.prepare_for_next_phase();
         Self {
             data: value.data,
-            state: TakeAction { action_options },
+            state: TakeAction { action_choices },
         }
     }
 }
@@ -1155,20 +1156,30 @@ impl Game<TakeAction> {
     pub fn act(&mut self, action: Action) -> Result<Action, UserError> {
         let sanitized_action = self.affect(action)?;
         self.data.play_positions.next_action_idx = self.get_next_action_idx(false);
-        self.state.action_options = self.get_next_action_options();
+        self.state.action_choices = self.get_next_action_choices();
         Ok(sanitized_action)
     }
 
     fn affect(&mut self, action: Action) -> Result<Action, UserError> {
         match (
             self.data.play_positions.next_action_idx,
-            &self.state.action_options,
+            &self.state.action_choices,
         ) {
-            (Some(player_idx), Some(action_options)) => {
-                if !action_options.contains(&action) {
+            (Some(player_idx), Some(action_choices)) => {
+                let action_choice: ActionChoice = match action {
+                    Action::AllIn => ActionChoice::AllIn,
+                    Action::Call => ActionChoice::Call(0),
+                    Action::Check => ActionChoice::Check,
+                    Action::Fold => ActionChoice::Fold,
+                    Action::Raise(amount) => ActionChoice::Raise(amount),
+                };
+                if !action_choices.contains(&action_choice) {
                     return Err(UserError::InvalidAction { action });
                 }
                 let player = &mut self.data.players[player_idx];
+                let pot_call = self.data.pot.get_call();
+                let player_investment = self.data.pot.get_investment_by_player_idx(player_idx);
+                let player_call = pot_call - player_investment;
                 // Convert the action to a valid bet. Sanitize the bet amount according
                 // to the player's intended action.
                 let mut bet = match action {
@@ -1176,9 +1187,9 @@ impl Game<TakeAction> {
                         action: BetAction::AllIn,
                         amount: player.user.money,
                     },
-                    Action::Call(amount) => Bet {
+                    Action::Call => Bet {
                         action: BetAction::Call,
-                        amount,
+                        amount: player_call,
                     },
                     Action::Check => {
                         self.data.player_counts.num_called += 1;
@@ -1200,26 +1211,24 @@ impl Game<TakeAction> {
                     bet.amount = player.user.money;
                 }
                 // Do some additional bet validation based on the bet's amount.
-                let call = self.data.pot.get_call();
-                let investment = self.data.pot.get_investment_by_player_idx(player_idx);
-                let new_investment = investment + bet.amount;
+                let new_player_investment = player_investment + bet.amount;
                 match bet.action {
                     BetAction::AllIn => {
                         self.data.player_counts.num_active -= 1;
-                        if new_investment > call {
+                        if new_player_investment > pot_call {
                             self.data.player_counts.num_called = 0;
                         }
                         player.state = PlayerState::AllIn;
                     }
                     BetAction::Call => {
-                        if new_investment != call {
+                        if new_player_investment != pot_call {
                             return Err(UserError::InvalidBet { bet });
                         }
                         self.data.player_counts.num_called += 1;
                         player.state = PlayerState::Call;
                     }
                     BetAction::Raise => {
-                        if new_investment < (2 * call) {
+                        if new_player_investment < (2 * pot_call) {
                             return Err(UserError::InvalidBet { bet });
                         }
                         self.data.player_counts.num_called = 1;
@@ -1257,8 +1266,8 @@ impl Game<TakeAction> {
     }
 
     #[must_use]
-    pub fn get_action_options(&self) -> Option<HashSet<Action>> {
-        self.state.action_options.clone()
+    pub fn get_action_choices(&self) -> Option<ActionChoices> {
+        self.state.action_choices.clone()
     }
 }
 
@@ -1312,10 +1321,10 @@ impl Game<Flop> {
 impl From<Game<Flop>> for Game<TakeAction> {
     fn from(mut value: Game<Flop>) -> Self {
         value.step();
-        let action_options = value.prepare_for_next_phase();
+        let action_choices = value.prepare_for_next_phase();
         Self {
             data: value.data,
-            state: TakeAction { action_options },
+            state: TakeAction { action_choices },
         }
     }
 }
@@ -1344,10 +1353,10 @@ impl Game<Turn> {
 impl From<Game<Turn>> for Game<TakeAction> {
     fn from(mut value: Game<Turn>) -> Self {
         value.step();
-        let action_options = value.prepare_for_next_phase();
+        let action_choices = value.prepare_for_next_phase();
         Self {
             data: value.data,
-            state: TakeAction { action_options },
+            state: TakeAction { action_choices },
         }
     }
 }
@@ -1376,10 +1385,10 @@ impl Game<River> {
 impl From<Game<River>> for Game<TakeAction> {
     fn from(mut value: Game<River>) -> Self {
         value.step();
-        let action_options = value.prepare_for_next_phase();
+        let action_choices = value.prepare_for_next_phase();
         Self {
             data: value.data,
-            state: TakeAction { action_options },
+            state: TakeAction { action_choices },
         }
     }
 }
@@ -1802,9 +1811,9 @@ impl PokerState {
     }
 
     #[must_use]
-    pub fn get_action_options(&self) -> Option<HashSet<Action>> {
+    pub fn get_action_choices(&self) -> Option<ActionChoices> {
         match self {
-            PokerState::TakeAction(ref game) => game.get_action_options(),
+            PokerState::TakeAction(ref game) => game.get_action_choices(),
             _ => None,
         }
     }
@@ -2102,7 +2111,7 @@ mod game_tests {
     use crate::entities::PlayerState;
 
     use super::{
-        entities::{Action, Card, Suit},
+        entities::{Action, ActionChoice, Card, Suit},
         BootPlayers, CollectBlinds, Deal, DistributePot, DivideDonations, Flop, Game, Lobby,
         MoveButton, RemovePlayers, River, SeatPlayers, ShowHands, TakeAction, Turn, UpdateBlinds,
         UserError,
@@ -2270,8 +2279,8 @@ mod game_tests {
         let game: Game<CollectBlinds> = game.into();
         let game: Game<Deal> = game.into();
         let mut game: Game<TakeAction> = game.into();
-        assert_eq!(game.act(Action::Call(5)), Ok(Action::Call(5)));
-        assert_eq!(game.get_next_action_options(), None);
+        assert_eq!(game.act(Action::Call), Ok(Action::Call));
+        assert_eq!(game.get_next_action_choices(), None);
         let game: Game<Flop> = game.into();
         let game: Game<Turn> = game.into();
         let game: Game<River> = game.into();
@@ -2361,13 +2370,13 @@ mod game_tests {
         let mut game: Game<TakeAction> = game.into();
         assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         assert_eq!(
-            game.get_next_action_options(),
-            Some(HashSet::from([Action::AllIn, Action::Fold,]))
+            game.get_next_action_choices(),
+            Some(HashSet::from([ActionChoice::AllIn, ActionChoice::Fold,]))
         );
         assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         assert_eq!(
-            game.get_next_action_options(),
-            Some(HashSet::from([Action::AllIn, Action::Fold,]))
+            game.get_next_action_choices(),
+            Some(HashSet::from([ActionChoice::AllIn, ActionChoice::Fold,]))
         );
         assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         let game: Game<Flop> = game.into();
@@ -2408,19 +2417,21 @@ mod game_tests {
         let mut game: Game<TakeAction> = game.into();
         assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         assert_eq!(
-            game.get_next_action_options(),
+            game.get_next_action_choices(),
             Some(HashSet::from([
-                Action::AllIn,
-                Action::Call(195),
-                Action::Fold,
+                ActionChoice::AllIn,
+                ActionChoice::Call(195),
+                ActionChoice::Fold,
             ]))
         );
         assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         assert_eq!(
-            game.get_next_action_options(),
-            Some(HashSet::from([Action::Call(390), Action::Fold,]))
+            game.get_next_action_choices(),
+            Some(HashSet::from(
+                [ActionChoice::Call(390), ActionChoice::Fold,]
+            ))
         );
-        assert_eq!(game.act(Action::Call(390)), Ok(Action::Call(390)));
+        assert_eq!(game.act(Action::Call), Ok(Action::Call));
         let game: Game<Flop> = game.into();
         let game: Game<Turn> = game.into();
         let game: Game<River> = game.into();
@@ -2620,7 +2631,7 @@ mod game_tests {
         let game: Game<Deal> = game.into();
         let mut game: Game<TakeAction> = game.into();
         assert_eq!(game.act(Action::Fold), Ok(Action::Fold));
-        assert_eq!(game.act(Action::Call(5)), Ok(Action::Call(5)));
+        assert_eq!(game.act(Action::Call), Ok(Action::Call));
         assert_eq!(game.act(Action::Check), Ok(Action::Check));
         let game: Game<Flop> = game.into();
         let mut game: Game<TakeAction> = game.into();
@@ -2652,7 +2663,7 @@ mod game_tests {
         let game: Game<Deal> = game.into();
         let mut game: Game<TakeAction> = game.into();
         assert_eq!(game.act(Action::Fold), Ok(Action::Fold));
-        assert_eq!(game.act(Action::Call(5)), Ok(Action::Call(5)));
+        assert_eq!(game.act(Action::Call), Ok(Action::Call));
         assert_eq!(game.act(Action::Check), Ok(Action::Check));
         let game: Game<Flop> = game.into();
         let mut game: Game<TakeAction> = game.into();
@@ -2665,7 +2676,7 @@ mod game_tests {
         let game: Game<River> = game.into();
         let mut game: Game<TakeAction> = game.into();
         assert_eq!(game.act(Action::Raise(20)), Ok(Action::Raise(20)));
-        assert_eq!(game.act(Action::Call(20)), Ok(Action::Call(20)));
+        assert_eq!(game.act(Action::Call), Ok(Action::Call));
         let game: Game<ShowHands> = game.into();
         let game: Game<DistributePot> = game.into();
         for (i, state) in [PlayerState::Fold, PlayerState::Raise, PlayerState::Call]
@@ -2689,147 +2700,147 @@ mod game_tests {
     fn take_action_2_all_ins() {
         let mut game = init_game_at_deal();
         assert_eq!(
-            game.get_next_action_options(),
+            game.get_next_action_choices(),
             Some(HashSet::from([
-                Action::AllIn,
-                Action::Call(10),
-                Action::Fold,
-                Action::Raise(20)
+                ActionChoice::AllIn,
+                ActionChoice::Call(10),
+                ActionChoice::Fold,
+                ActionChoice::Raise(20)
             ]))
         );
         assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         assert_eq!(
-            game.get_next_action_options(),
-            Some(HashSet::from([Action::AllIn, Action::Fold]))
+            game.get_next_action_choices(),
+            Some(HashSet::from([ActionChoice::AllIn, ActionChoice::Fold]))
         );
         assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         assert_eq!(
-            game.get_next_action_options(),
-            Some(HashSet::from([Action::AllIn, Action::Fold]))
+            game.get_next_action_choices(),
+            Some(HashSet::from([ActionChoice::AllIn, ActionChoice::Fold]))
         );
         assert_eq!(game.act(Action::Fold), Ok(Action::Fold));
-        assert_eq!(game.get_next_action_options(), None);
+        assert_eq!(game.get_next_action_choices(), None);
     }
 
     #[test]
     fn take_action_2_calls_1_check() {
         let mut game = init_game_at_deal();
         assert_eq!(
-            game.get_next_action_options(),
+            game.get_next_action_choices(),
             Some(HashSet::from([
-                Action::AllIn,
-                Action::Call(10),
-                Action::Fold,
-                Action::Raise(20)
+                ActionChoice::AllIn,
+                ActionChoice::Call(10),
+                ActionChoice::Fold,
+                ActionChoice::Raise(20)
             ]))
         );
-        assert_eq!(game.act(Action::Call(10)), Ok(Action::Call(10)));
+        assert_eq!(game.act(Action::Call), Ok(Action::Call));
         assert_eq!(
-            game.get_next_action_options(),
+            game.get_next_action_choices(),
             Some(HashSet::from([
-                Action::AllIn,
-                Action::Call(5),
-                Action::Fold,
-                Action::Raise(15)
+                ActionChoice::AllIn,
+                ActionChoice::Call(5),
+                ActionChoice::Fold,
+                ActionChoice::Raise(15)
             ]))
         );
-        assert_eq!(game.act(Action::Call(5)), Ok(Action::Call(5)));
+        assert_eq!(game.act(Action::Call), Ok(Action::Call));
         assert_eq!(
-            game.get_next_action_options(),
+            game.get_next_action_choices(),
             Some(HashSet::from([
-                Action::AllIn,
-                Action::Check,
-                Action::Fold,
-                Action::Raise(20)
+                ActionChoice::AllIn,
+                ActionChoice::Check,
+                ActionChoice::Fold,
+                ActionChoice::Raise(20)
             ]))
         );
         assert_eq!(game.act(Action::Check), Ok(Action::Check));
-        assert_eq!(game.get_next_action_options(), None);
+        assert_eq!(game.get_next_action_choices(), None);
     }
 
     #[test]
     fn take_action_2_folds() {
         let mut game = init_game_at_deal();
         assert_eq!(
-            game.get_next_action_options(),
+            game.get_next_action_choices(),
             Some(HashSet::from([
-                Action::AllIn,
-                Action::Call(10),
-                Action::Fold,
-                Action::Raise(20)
+                ActionChoice::AllIn,
+                ActionChoice::Call(10),
+                ActionChoice::Fold,
+                ActionChoice::Raise(20)
             ]))
         );
         assert_eq!(game.act(Action::Fold), Ok(Action::Fold));
         assert_eq!(
-            game.get_next_action_options(),
+            game.get_next_action_choices(),
             Some(HashSet::from([
-                Action::AllIn,
-                Action::Call(5),
-                Action::Fold,
-                Action::Raise(15)
+                ActionChoice::AllIn,
+                ActionChoice::Call(5),
+                ActionChoice::Fold,
+                ActionChoice::Raise(15)
             ]))
         );
         assert_eq!(game.act(Action::Fold), Ok(Action::Fold));
-        assert_eq!(game.get_next_action_options(), None);
+        assert_eq!(game.get_next_action_choices(), None);
     }
 
     #[test]
     fn take_action_2_reraises() {
         let mut game = init_game_at_deal();
         assert_eq!(
-            game.get_next_action_options(),
+            game.get_next_action_choices(),
             Some(HashSet::from([
-                Action::AllIn,
-                Action::Call(10),
-                Action::Fold,
-                Action::Raise(20)
+                ActionChoice::AllIn,
+                ActionChoice::Call(10),
+                ActionChoice::Fold,
+                ActionChoice::Raise(20)
             ]))
         );
         assert_eq!(game.act(Action::Fold), Ok(Action::Fold));
         assert_eq!(
-            game.get_next_action_options(),
+            game.get_next_action_choices(),
             Some(HashSet::from([
-                Action::AllIn,
-                Action::Call(5),
-                Action::Fold,
-                Action::Raise(15)
+                ActionChoice::AllIn,
+                ActionChoice::Call(5),
+                ActionChoice::Fold,
+                ActionChoice::Raise(15)
             ]))
         );
         // Total call is 20
         assert_eq!(game.act(Action::Raise(15)), Ok(Action::Raise(15)));
         assert_eq!(
-            game.get_next_action_options(),
+            game.get_next_action_choices(),
             Some(HashSet::from([
-                Action::AllIn,
-                Action::Call(10),
-                Action::Fold,
-                Action::Raise(30)
+                ActionChoice::AllIn,
+                ActionChoice::Call(10),
+                ActionChoice::Fold,
+                ActionChoice::Raise(30)
             ]))
         );
         // Total call is 40
         assert_eq!(game.act(Action::Raise(30)), Ok(Action::Raise(30)));
         assert_eq!(
-            game.get_next_action_options(),
+            game.get_next_action_choices(),
             Some(HashSet::from([
-                Action::AllIn,
-                Action::Call(20),
-                Action::Fold,
-                Action::Raise(60)
+                ActionChoice::AllIn,
+                ActionChoice::Call(20),
+                ActionChoice::Fold,
+                ActionChoice::Raise(60)
             ]))
         );
         // Total call is 80
         assert_eq!(game.act(Action::Raise(60)), Ok(Action::Raise(60)));
         assert_eq!(
-            game.get_next_action_options(),
+            game.get_next_action_choices(),
             Some(HashSet::from([
-                Action::AllIn,
-                Action::Call(40),
-                Action::Fold,
-                Action::Raise(120)
+                ActionChoice::AllIn,
+                ActionChoice::Call(40),
+                ActionChoice::Fold,
+                ActionChoice::Raise(120)
             ]))
         );
         assert_eq!(game.act(Action::Fold), Ok(Action::Fold));
-        assert_eq!(game.get_next_action_options(), None);
+        assert_eq!(game.get_next_action_choices(), None);
     }
 }
 
@@ -2958,12 +2969,9 @@ mod state_tests {
         state = state.step();
         assert!(matches!(state, PokerState::TakeAction(_)));
         // Call
-        assert_eq!(
-            state.take_action("0", Action::Call(10)),
-            Ok(Action::Call(10))
-        );
+        assert_eq!(state.take_action("0", Action::Call), Ok(Action::Call));
         // Check
-        assert_eq!(state.take_action("1", Action::Call(5)), Ok(Action::Call(5)));
+        assert_eq!(state.take_action("1", Action::Call), Ok(Action::Call));
         // Check
         assert_eq!(state.take_action("2", Action::Check), Ok(Action::Check));
         state = state.step();

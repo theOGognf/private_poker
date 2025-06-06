@@ -216,39 +216,23 @@ impl fmt::Display for User {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum Action {
     AllIn,
-    Call(Usd),
+    Call,
     Check,
     Fold,
     Raise(Usd),
 }
 
-// Can't really convert a usize into an Action safely, and it doesn't
-// really make sense to use a try- conversion version, so let's just
-// use the into trait.
-#[allow(clippy::from_over_into)]
-impl Into<usize> for Action {
-    fn into(self) -> usize {
-        match self {
-            Action::AllIn => 0,
-            Action::Call(_) => 1,
-            Action::Check => 2,
-            Action::Fold => 3,
-            Action::Raise(_) => 4,
-        }
-    }
-}
-
 impl fmt::Display for Action {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let repr = match self {
-            Action::AllIn => "all-in",
-            Action::Call(amount) => &format!("call ${amount}"),
-            Action::Check => "check",
-            Action::Fold => "fold",
-            Action::Raise(amount) => &format!("raise ${amount}"),
+            Action::AllIn => "all-ins (unhinged)",
+            Action::Call => "calls",
+            Action::Check => "checks",
+            Action::Fold => "folds",
+            Action::Raise(amount) => &format!("raises ${amount}"),
         };
         write!(f, "{repr}")
     }
@@ -258,51 +242,83 @@ impl From<Bet> for Action {
     fn from(value: Bet) -> Self {
         match value.action {
             BetAction::AllIn => Action::AllIn,
-            BetAction::Call => Action::Call(value.amount),
+            BetAction::Call => Action::Call,
             BetAction::Raise => Action::Raise(value.amount),
         }
     }
 }
 
-impl Action {
-    #[must_use]
-    pub fn to_action_string(&self) -> String {
-        match self {
-            Action::AllIn => format!("{self}s (unhinged)"),
-            Action::Check | Action::Fold => format!("{self}s"),
-            Action::Call(amount) => format!("calls ${amount}"),
-            Action::Raise(amount) => format!("raises ${amount}"),
-        }
-    }
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum ActionChoice {
+    AllIn,
+    Call(Usd),
+    Check,
+    Fold,
+    Raise(Usd),
+}
 
-    #[must_use]
-    pub fn to_option_string(&self) -> String {
+// Can't really convert a usize into an ActionChoice safely, and it doesn't
+// really make sense to use a try- conversion version, so let's just
+// use the into trait.
+#[allow(clippy::from_over_into)]
+impl Into<usize> for ActionChoice {
+    fn into(self) -> usize {
         match self {
-            Action::AllIn | Action::Check | Action::Fold => self.to_string(),
-            Action::Call(amount) => format!("call (== ${amount})"),
-            Action::Raise(amount) => format!("raise (>= ${amount})"),
+            ActionChoice::AllIn => 0,
+            ActionChoice::Call(_) => 1,
+            ActionChoice::Check => 2,
+            ActionChoice::Fold => 3,
+            ActionChoice::Raise(_) => 4,
         }
     }
 }
 
-// We don't care about the values within `Action::Call` and
-// `Action::Raise`. We just perform checks against the enum
-// variant to verify a user is choosing an action that's available
-// within their presented action options. Actual bet validation
-// is done during the `TakeAction` game state.
-impl Eq for Action {}
+impl fmt::Display for ActionChoice {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let repr = match self {
+            ActionChoice::AllIn => "all-in".to_string(),
+            ActionChoice::Call(amount) => format!("call (== ${amount})"),
+            ActionChoice::Check => "check".to_string(),
+            ActionChoice::Fold => "fold".to_string(),
+            ActionChoice::Raise(amount) => format!("raise (>= ${amount})"),
+        };
+        write!(f, "{repr}")
+    }
+}
 
-impl Hash for Action {
+// We don't care about the values within `ActionChoice::Call` and
+// `ActionChoice::Raise`. We just perform checks against the enum
+// variant to verify a user is choosing an action that's available
+// within their presented action choices. Actual bet validation
+// is done during the `TakeAction` game state.
+impl Eq for ActionChoice {}
+
+impl Hash for ActionChoice {
     fn hash<H: Hasher>(&self, state: &mut H) {
         discriminant(self).hash(state);
     }
 }
 
-impl PartialEq for Action {
+impl PartialEq for ActionChoice {
     fn eq(&self, other: &Self) -> bool {
         discriminant(self) == discriminant(other)
     }
 }
+
+impl From<ActionChoice> for Action {
+    fn from(value: ActionChoice) -> Self {
+        match value {
+            ActionChoice::AllIn => Action::AllIn,
+            ActionChoice::Call(_) => Action::Call,
+            ActionChoice::Check => Action::Check,
+            ActionChoice::Fold => Action::Fold,
+            ActionChoice::Raise(amount) => Action::Raise(amount),
+        }
+    }
+}
+
+/// Type alias for a set of action choices.
+pub type ActionChoices = HashSet<ActionChoice>;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum BetAction {

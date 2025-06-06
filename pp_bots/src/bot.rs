@@ -1,6 +1,6 @@
 use anyhow::{bail, Error};
 use private_poker::{
-    entities::{Action, GameView, SubHand, Usd, Usdf, Vote},
+    entities::{ActionChoice, ActionChoices, GameView, SubHand, Usd, Usdf, Vote},
     functional,
     messages::{ClientMessage, ServerMessage, UserCommand, UserState},
     utils, Client,
@@ -14,18 +14,18 @@ use std::{
 };
 
 type State = Vec<SubHand>;
-type ActionMasks = HashSet<Action>;
+type ActionMasks = ActionChoices;
 type ActionWeight = f32;
 type ActionWeights = [f32; 5];
 type Reward = f32;
 type Done = bool;
 
-const ACTIONS_ARRAY: [Action; 5] = [
-    Action::AllIn,
-    Action::Call(0),
-    Action::Check,
-    Action::Fold,
-    Action::Raise(0),
+const ACTION_OPTIONS_ARRAY: [ActionChoice; 5] = [
+    ActionChoice::AllIn,
+    ActionChoice::Call(0),
+    ActionChoice::Check,
+    ActionChoice::Fold,
+    ActionChoice::Raise(0),
 ];
 const Q_S_DEFAULT: ActionWeights = [0.2, 1.0, 1.0, 1.0, 0.2];
 
@@ -49,13 +49,13 @@ impl QLearning {
         }
     }
 
-    pub fn sample(&mut self, state: State, masks: ActionMasks) -> Action {
+    pub fn sample(&mut self, state: State, masks: ActionMasks) -> ActionChoice {
         let old_weights = self.table.entry(state).or_insert(Q_S_DEFAULT);
-        let new_weights: Vec<ActionWeight> = ACTIONS_ARRAY
+        let new_weights: Vec<ActionWeight> = ACTION_OPTIONS_ARRAY
             .iter()
             .enumerate()
-            .map(|(idx, action)| {
-                if masks.contains(action) {
+            .map(|(idx, action_choice)| {
+                if masks.contains(action_choice) {
                     old_weights[idx].exp()
                 } else {
                     0.0
@@ -67,11 +67,14 @@ impl QLearning {
             .update_weights(&new_weights)
             .expect("weights should be valid");
         let action_idx = self.dist.sample(&mut thread_rng());
-        let action = &ACTIONS_ARRAY[action_idx];
-        masks.get(action).expect("action should be valid").clone()
+        let action_choice = &ACTION_OPTIONS_ARRAY[action_idx];
+        masks
+            .get(action_choice)
+            .expect("action choice should be valid")
+            .clone()
     }
 
-    pub fn update_done(&mut self, state: State, action: Action, reward: Reward) {
+    pub fn update_done(&mut self, state: State, action: ActionChoice, reward: Reward) {
         let q_s = self.table.entry(state).or_insert(Q_S_DEFAULT);
         let action_idx: usize = action.into();
         q_s[action_idx] = reward;
@@ -80,7 +83,7 @@ impl QLearning {
     pub fn update_step(
         &mut self,
         state1: State,
-        action: Action,
+        action: ActionChoice,
         reward: Reward,
         state2: State,
         masks2: ActionMasks,
@@ -181,7 +184,10 @@ impl Bot {
         Ok((self.hand.clone(), masks))
     }
 
-    pub fn step(&mut self, action: Action) -> Result<(State, ActionMasks, Reward, Done), Error> {
+    pub fn step(
+        &mut self,
+        action_choice: ActionChoice,
+    ) -> Result<(State, ActionMasks, Reward, Done), Error> {
         let player = self
             .view
             .players
@@ -191,15 +197,15 @@ impl Bot {
         // Sleep some random amount so real users have time to process info.
         let dur = Duration::from_secs(thread_rng().gen_range(1..8));
         thread::sleep(dur);
-        let bet = match action {
-            Action::AllIn => player.user.money,
-            Action::Check => 0,
-            Action::Fold => 0,
-            Action::Call(amount) => amount,
-            Action::Raise(amount) => amount,
+        let bet = match action_choice {
+            ActionChoice::AllIn => player.user.money,
+            ActionChoice::Check => 0,
+            ActionChoice::Fold => 0,
+            ActionChoice::Call(amount) => amount,
+            ActionChoice::Raise(amount) => amount,
         };
-        self.client.take_action(action.clone())?;
-        if action == Action::Fold {
+        self.client.take_action(action_choice.clone().into())?;
+        if action_choice == ActionChoice::Fold {
             return Ok((self.hand.clone(), HashSet::new(), 0.0, true));
         }
         let remaining_money = player.user.money - bet;

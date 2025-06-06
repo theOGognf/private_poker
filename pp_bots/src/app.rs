@@ -71,21 +71,21 @@ fn worker(
     loop {
         let (mut state1, mut masks1) = env.reset()?;
         loop {
-            let action = {
+            let action_choice = {
                 let mut policy = policy.lock().expect("sample lock");
                 policy.sample(state1.clone(), masks1.clone())
             };
-            let (state2, masks2, reward, done) = env.step(action.clone())?;
+            let (state2, masks2, reward, done) = env.step(action_choice.clone())?;
             if done {
                 let mut policy = policy.lock().expect("done lock");
-                policy.update_done(state1.clone(), action.clone(), reward);
+                policy.update_done(state1.clone(), action_choice.clone(), reward);
                 break;
             }
             {
                 let mut policy = policy.lock().expect("step lock");
                 policy.update_step(
                     state1.clone(),
-                    action.clone(),
+                    action_choice.clone(),
                     reward,
                     state2.clone(),
                     masks2.clone(),

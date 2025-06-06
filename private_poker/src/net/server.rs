@@ -18,7 +18,7 @@ use super::{
     super::{
         entities::Vote,
         game::{
-            entities::{Action, GameView, Username},
+            entities::{Action, ActionChoices, GameView, Username},
             Game, GameEvent, GameSettings, PokerState, TakeAction,
         },
         utils::preprocess_username,
@@ -56,7 +56,7 @@ enum ServerData {
     /// Signaling it's a specific user's turn.
     TurnSignal {
         username: Username,
-        action_options: HashSet<Action>,
+        action_choices: ActionChoices,
     },
     /// Game state represented as a string.
     Status(String),
@@ -442,6 +442,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                             if let Ok(token) =
                                                 token_manager.get_token_with_username(username)
                                             {
+                                                messages_to_write.remove(&token);
                                                 if let Ok(mut stream) =
                                                     token_manager.recycle_token(token)
                                                 {
@@ -462,12 +463,12 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                 // is meant just for the client.
                                 ServerData::TurnSignal {
                                     username,
-                                    action_options,
+                                    action_choices,
                                 } => {
                                     if let Ok(token) =
                                         token_manager.get_token_with_username(&username)
                                     {
-                                        let msg = ServerMessage::TurnSignal(action_options);
+                                        let msg = ServerMessage::TurnSignal(action_choices);
                                         messages_to_write.entry(token).or_default().push_back(msg);
                                         tokens_to_reregister.insert(token);
                                     }
@@ -755,8 +756,8 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
             // and increase the timeout to give them time to make their
             // decision. We also keep track of their username so we
             // can tell if they don't make a decision in time.
-            match (state.get_next_action_username(), state.get_action_options()) {
-                (Some(username), Some(action_options)) => {
+            match (state.get_next_action_username(), state.get_action_choices()) {
+                (Some(username), Some(action_choices)) => {
                     // Check if the username from the last turn is the same as the
                     // username from this turn. If so, we need to check if there
                     // was a timeout.
@@ -783,7 +784,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                         } else {
                             // Let all users know whose turn it is.
                             let turn_signal =
-                                Game::<TakeAction>::action_options_to_string(&action_options);
+                                Game::<TakeAction>::action_choices_to_string(&action_choices);
                             let status =
                                 format!("it's {username}'s turn and they can {turn_signal}");
                             let msg = ServerData::Status(status.clone());
@@ -794,7 +795,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             info!("{status}");
                             let msg = ServerData::TurnSignal {
                                 username: username.clone(),
-                                action_options,
+                                action_choices,
                             };
                             tx_server.send(msg)?;
                             waker.wake()?;

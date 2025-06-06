@@ -2,7 +2,9 @@ use anyhow::{bail, Error};
 use chrono::{DateTime, Utc};
 use mio::{Events, Interest, Poll, Waker};
 use private_poker::{
-    entities::{Action, Card, GameView, Suit, Usd, User, Username, Vote},
+    entities::{
+        Action, ActionChoice, ActionChoices, Card, GameView, Suit, Usd, User, Username, Vote,
+    },
     functional,
     messages::UserState,
     net::{
@@ -65,7 +67,7 @@ vote reset
         reset everyone's money. Entering USER will vote to reset that specific
         user's money.
 ";
-const INVALID_ACTION_MESSAGE: &str = "can't do that now";
+const INVALID_RAISE_MESSAGE: &str = "invalid raise amount";
 const MAX_LOG_RECORDS: usize = 1024;
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 const UNRECOGNIZED_COMMAND_MESSAGE: &str = "unrecognized command";
@@ -232,43 +234,15 @@ impl App {
     fn handle_command(
         &mut self,
         user_input: &str,
-        action_options: &HashSet<Action>,
+        action_choices: &ActionChoices,
         tx_client: &Sender<ClientMessage>,
         waker: &Waker,
     ) -> Result<(), Error> {
         let result = match user_input.trim() {
-            "all-in" => {
-                if let Some(action) = action_options.get(&Action::AllIn) {
-                    Ok(UserCommand::TakeAction(action.clone()))
-                } else {
-                    Err(INVALID_ACTION_MESSAGE.to_string())
-                }
-            }
-            "call" => {
-                // Actions use their variant for comparisons,
-                // so we don't need to provide the correct call
-                // amount to see if it exists within the action
-                // options.
-                if let Some(action) = action_options.get(&Action::Call(0)) {
-                    Ok(UserCommand::TakeAction(action.clone()))
-                } else {
-                    Err(INVALID_ACTION_MESSAGE.to_string())
-                }
-            }
-            "check" => {
-                if let Some(action) = action_options.get(&Action::Check) {
-                    Ok(UserCommand::TakeAction(action.clone()))
-                } else {
-                    Err(INVALID_ACTION_MESSAGE.to_string())
-                }
-            }
-            "fold" => {
-                if let Some(action) = action_options.get(&Action::Fold) {
-                    Ok(UserCommand::TakeAction(action.clone()))
-                } else {
-                    Err(INVALID_ACTION_MESSAGE.to_string())
-                }
-            }
+            "all-in" => Ok(UserCommand::TakeAction(Action::AllIn)),
+            "call" => Ok(UserCommand::TakeAction(Action::Call)),
+            "check" => Ok(UserCommand::TakeAction(Action::Check)),
+            "fold" => Ok(UserCommand::TakeAction(Action::Fold)),
             "play" => Ok(UserCommand::ChangeState(UserState::Play)),
             "show" => Ok(UserCommand::ShowHand),
             "spectate" => Ok(UserCommand::ChangeState(UserState::Spectate)),
@@ -277,17 +251,18 @@ impl App {
                 let other: Vec<&str> = other.split_ascii_whitespace().collect();
                 match other.first() {
                     Some(&"raise") => {
-                        let result = match (action_options.get(&Action::Raise(0)), other.get(1)) {
-                            // Raise with a specific amount.
-                            (Some(_), Some(value)) => match value.parse::<Usd>() {
-                                Ok(amount) => Ok(Action::Raise(amount)),
-                                Err(_) => Err("invalid raise amount".to_string()),
-                            },
-                            // Valid raise without specified amount defaults to the default raise.
-                            (Some(action), None) => Ok(action.clone()),
-                            // Invalid action.
-                            (None, ..) => Err(INVALID_ACTION_MESSAGE.to_string()),
-                        };
+                        let result =
+                            match (action_choices.get(&ActionChoice::Raise(0)), other.get(1)) {
+                                // Raise with a specific amount.
+                                (None | Some(_), Some(value)) => match value.parse::<Usd>() {
+                                    Ok(amount) => Ok(Action::Raise(amount)),
+                                    Err(_) => Err(INVALID_RAISE_MESSAGE.to_string()),
+                                },
+                                // Valid raise without specified amount defaults to the default raise.
+                                (Some(action_choice), None) => Ok(action_choice.clone().into()),
+                                // Invalid action.
+                                (None, ..) => Err(INVALID_RAISE_MESSAGE.to_string()),
+                            };
                         result.map(UserCommand::TakeAction)
                     }
                     Some(&"vote") => match (other.get(1), other.get(2)) {
@@ -472,7 +447,7 @@ impl App {
             }
         });
 
-        let mut action_options = HashSet::new();
+        let mut action_choices = HashSet::new();
         let mut turn_warnings = TurnWarnings::new();
         loop {
             terminal.draw(|frame| self.draw(&view, frame))?;
@@ -499,7 +474,7 @@ impl App {
                                     self.log_handle.push(record.into());
                                     self.handle_command(
                                         &user_input,
-                                        &action_options,
+                                        &action_choices,
                                         &tx_client,
                                         &waker,
                                     )?;
@@ -562,8 +537,8 @@ impl App {
                         None
                     }
                     ServerMessage::Status(msg) => Some(Record::new(RecordKind::Game, msg)),
-                    ServerMessage::TurnSignal(new_action_options) => {
-                        action_options = new_action_options;
+                    ServerMessage::TurnSignal(new_action_choices) => {
+                        action_choices = new_action_choices;
                         turn_warnings.reset();
                         Some(Record::new(
                             RecordKind::Alert,
