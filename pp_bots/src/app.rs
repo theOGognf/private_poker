@@ -179,7 +179,7 @@ impl App {
                                 KeyCode::Char('d') if self.table_state.selected().is_some() => {
                                     if let Some(idx) = self.table_state.selected() {
                                         let worker =
-                                            self.workers.get_mut(idx).expect("worker exists");
+                                            self.workers.get_mut(idx).expect("worker should exist");
                                         worker.state = WorkerState::Deleted;
                                         worker.delete_signaler.send(())?;
                                     }

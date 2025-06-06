@@ -186,7 +186,7 @@ impl TurnWarnings {
     /// Check for a new warning.
     fn check(&mut self) -> Option<u8> {
         if self.idx > 0 {
-            let ceiling = self.warnings.last().expect("warnings immutable");
+            let ceiling = self.warnings.last().expect("warnings should be immutable");
             let warning = self.warnings[self.idx - 1];
             let dt = self.t.elapsed();
             let remaining = ceiling.saturating_sub(dt.as_secs() as u8);

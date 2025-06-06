@@ -765,7 +765,7 @@ macro_rules! impl_user_managers {
                 let user = if let Some(user) = self.data.spectators.take(username) {
                     user
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
-                    self.data.waitlist.remove(waitlist_idx).expect("waitlister exists")
+                    self.data.waitlist.remove(waitlist_idx).expect("waitlister should exist")
                 } else if let Some(player_idx) = self.data.players.iter().position(|p| p.user.name == username) {
                     self.data.player_queues.to_spectate.remove(username);
                     let player = self.data.players.remove(player_idx);
@@ -783,7 +783,7 @@ macro_rules! impl_user_managers {
                 let user = if let Some(user) = self.data.spectators.take(username) {
                     user
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
-                    self.data.waitlist.remove(waitlist_idx).expect("waitlister exists")
+                    self.data.waitlist.remove(waitlist_idx).expect("waitlister should exist")
                 } else if let Some(player_idx) = self.data.players.iter().position(|p| p.user.name == username) {
                     self.data.player_queues.to_spectate.remove(username);
                     let player = self.data.players.remove(player_idx);
@@ -802,10 +802,10 @@ macro_rules! impl_user_managers {
                     user.money = self.data.settings.buy_in;
                     self.data.spectators.insert(user);
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
-                    let user = self.data.waitlist.get_mut(waitlist_idx).expect("waitlister exists");
+                    let user = self.data.waitlist.get_mut(waitlist_idx).expect("waitlister should exist");
                     user.money = self.data.settings.buy_in;
                 } else if let Some(player_idx) = self.data.players.iter().position(|p| p.user.name == username) {
-                    let player = self.data.players.get_mut(player_idx).expect("player exists");
+                    let player = self.data.players.get_mut(player_idx).expect("player should exist");
                     player.user.money = self.data.settings.buy_in;
                 } else {
                     return Err(UserError::UserDoesNotExist);
@@ -840,7 +840,7 @@ macro_rules! impl_user_managers {
                 let user = if self.data.spectators.contains(username) {
                     return Ok(None);
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
-                    self.data.waitlist.remove(waitlist_idx).expect("waitlister exists")
+                    self.data.waitlist.remove(waitlist_idx).expect("waitlister should exist")
                 } else if let Some(player_idx) = self.data.players.iter().position(|p| p.user.name == username) {
                     self.data.player_queues.to_remove.remove(username);
                     let player = self.data.players.remove(player_idx);
@@ -873,7 +873,7 @@ macro_rules! impl_user_managers_with_queue {
                 let user = if let Some(user) = self.data.spectators.take(username) {
                     user
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
-                    self.data.waitlist.remove(waitlist_idx).expect("waitlister exists")
+                    self.data.waitlist.remove(waitlist_idx).expect("waitlister should exist")
                 } else if let Some(_) = self.data.players.iter().position(|p| p.user.name == username) {
                     self.queue_player_for_kick_with_event(username);
                     return Ok(Some(false));
@@ -894,7 +894,7 @@ macro_rules! impl_user_managers_with_queue {
                 let user = if let Some(user) = self.data.spectators.take(username) {
                     user
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
-                    self.data.waitlist.remove(waitlist_idx).expect("waitlister exists")
+                    self.data.waitlist.remove(waitlist_idx).expect("waitlister should exist")
                 } else if let Some(_) = self.data.players.iter().position(|p| p.user.name == username) {
                     self.queue_player_for_remove_with_event(username);
                     return Ok(Some(false));
@@ -911,7 +911,7 @@ macro_rules! impl_user_managers_with_queue {
                     user.money = self.data.settings.buy_in;
                     self.data.spectators.insert(user);
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
-                    let user = self.data.waitlist.get_mut(waitlist_idx).expect("waitlister exists");
+                    let user = self.data.waitlist.get_mut(waitlist_idx).expect("waitlister should exist");
                     user.money = self.data.settings.buy_in;
                 } else if let Some(_) = self.data.players.iter().position(|p| p.user.name == username) {
                     self.queue_player_for_reset_with_event(username);
@@ -938,7 +938,7 @@ macro_rules! impl_user_managers_with_queue {
                 let user = if self.data.spectators.contains(username) {
                     return Ok(None)
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
-                    self.data.waitlist.remove(waitlist_idx).expect("waitlister exists")
+                    self.data.waitlist.remove(waitlist_idx).expect("waitlister should exist")
                 } else if let Some(_) = self.data.players.iter().position(|p| p.user.name == username) {
                     self.queue_player_for_spectate_with_event(username);
                     return Ok(Some(false));
@@ -1023,8 +1023,16 @@ impl From<Game<SeatPlayers>> for Game<Lobby> {
 impl From<Game<SeatPlayers>> for Game<MoveButton> {
     fn from(mut value: Game<SeatPlayers>) -> Self {
         while !value.data.open_seats.is_empty() && !value.data.waitlist.is_empty() {
-            let open_seat_idx = value.data.open_seats.pop_front().expect("not empty");
-            let user = value.data.waitlist.pop_front().expect("not empty");
+            let open_seat_idx = value
+                .data
+                .open_seats
+                .pop_front()
+                .expect("open seats should exist");
+            let user = value
+                .data
+                .waitlist
+                .pop_front()
+                .expect("waitlisters should exist");
             if user.money < value.data.blinds.big {
                 value.spectate_user_with_event(user);
             } else {
@@ -1058,8 +1066,10 @@ impl From<Game<MoveButton>> for Game<CollectBlinds> {
             .clone()
             .cycle()
             .skip(value.data.play_positions.big_blind_idx + 1);
-        value.data.play_positions.big_blind_idx = seats.next().expect("big blind position exists");
-        value.data.starting_action_idx = seats.next().expect("starting action position exists");
+        value.data.play_positions.big_blind_idx =
+            seats.next().expect("big blind position should exist");
+        value.data.starting_action_idx =
+            seats.next().expect("starting action position should exist");
         value.data.play_positions.next_action_idx = Some(value.data.starting_action_idx);
         // Reverse the table search to find the small blind position relative
         // to the big blind position since the small blind must always trail the big
@@ -1069,7 +1079,7 @@ impl From<Game<MoveButton>> for Game<CollectBlinds> {
             .cycle()
             .skip(num_players - value.data.play_positions.big_blind_idx);
         value.data.play_positions.small_blind_idx =
-            seats.next().expect("small blind position exists");
+            seats.next().expect("small blind position should exist");
         Self {
             data: value.data,
             state: CollectBlinds {},
@@ -1138,7 +1148,7 @@ impl From<Game<Deal>> for Game<TakeAction> {
         // Deal 2 cards per player, looping over players and dealing them 1 card
         // at a time.
         while value.data.deck_idx < (2 * num_players) {
-            let deal_idx = seats.next().expect("dealing position exists");
+            let deal_idx = seats.next().expect("dealing position should exist");
             let player = &mut value.data.players[deal_idx];
             let card = value.data.deck[value.data.deck_idx];
             player.cards.push(card);
@@ -1974,7 +1984,7 @@ impl PokerState {
                 if game.is_ready_for_next_phase() {
                     PokerState::phase_transition(game)
                 } else {
-                    game.act(Action::Fold).expect("force folding is OK");
+                    game.act(Action::Fold).expect("force folding should be OK");
                     if game.is_ready_for_next_phase() {
                         PokerState::phase_transition(game)
                     } else {
