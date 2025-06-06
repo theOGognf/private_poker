@@ -3,6 +3,7 @@ use mio::net::TcpListener;
 use std::{thread, time::Duration};
 
 use private_poker::{
+    game::GameEvent,
     messages,
     server::{self, PokerConfig, ServerTimeouts},
     Client, UserError,
@@ -28,7 +29,7 @@ fn already_associated_err() {
     let (client, view) = Client::connect(username, &addr).unwrap();
     assert_eq!(view.spectators.len(), 1);
     assert_eq!(view.waitlist.len(), 0);
-    assert!(view.spectators.contains_key(&client.username));
+    assert!(view.spectators.contains(client.username.as_str()));
 
     // Try to connect, but the username is already taken.
     let addr = format!("127.0.0.1:{port}");
@@ -48,7 +49,7 @@ fn one_user_connects_to_lobby() {
     let (mut client, view) = Client::connect(username, &addr).unwrap();
     assert_eq!(view.spectators.len(), 1);
     assert_eq!(view.waitlist.len(), 0);
-    assert!(view.spectators.contains_key(&client.username));
+    assert!(view.spectators.contains(client.username.as_str()));
 
     // Request to join players.
     client.change_state(messages::UserState::Play).unwrap();
@@ -56,7 +57,9 @@ fn one_user_connects_to_lobby() {
     let view = Client::recv_view(&mut client.stream).unwrap();
     assert_eq!(view.spectators.len(), 0);
     assert_eq!(view.waitlist.len(), 1);
-    assert!(!view.spectators.contains_key(&client.username));
+    assert!(!view.spectators.contains(client.username.as_str()));
+    let event = Client::recv_event(&mut client.stream).unwrap();
+    assert_eq!(event, GameEvent::Waitlisted(username.to_string()));
 
     // Prematurely start the game.
     client.start_game().unwrap();
@@ -78,7 +81,9 @@ fn one_user_connects_to_lobby() {
     let view = Client::recv_view(&mut client.stream).unwrap();
     assert_eq!(view.spectators.len(), 1);
     assert_eq!(view.waitlist.len(), 0);
-    assert!(view.spectators.contains_key(&client.username));
+    assert!(view.spectators.contains(client.username.as_str()));
+    let event = Client::recv_event(&mut client.stream).unwrap();
+    assert_eq!(event, GameEvent::Spectated(username.to_string()));
 }
 
 #[test]

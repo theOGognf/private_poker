@@ -6,10 +6,16 @@
 use anyhow::{bail, Error};
 use std::{net::TcpStream, thread, time::Duration};
 
-use crate::game::{entities::Action, UserError};
-
 use super::{
-    messages::{ClientError, ClientMessage, GameView, ServerMessage, UserCommand, UserState},
+    super::{
+        entities::Vote,
+        game::{
+            entities::{Action, GameView},
+            GameEvent, UserError,
+        },
+        utils::preprocess_username,
+    },
+    messages::{ClientError, ClientMessage, ServerMessage, UserCommand, UserState},
     utils,
 };
 
@@ -23,6 +29,15 @@ pub struct Client {
 }
 
 impl Client {
+    pub fn cast_vote(&mut self, vote: Vote) -> Result<(), Error> {
+        let msg = ClientMessage {
+            username: self.username.clone(),
+            command: UserCommand::CastVote(vote),
+        };
+        utils::write_prefixed(&mut self.stream, &msg)?;
+        Ok(())
+    }
+
     pub fn change_state(&mut self, state: UserState) -> Result<(), Error> {
         let msg = ClientMessage {
             username: self.username.clone(),
@@ -33,6 +48,7 @@ impl Client {
     }
 
     pub fn connect(username: &str, addr: &str) -> Result<(Self, GameView), Error> {
+        let username = preprocess_username(username);
         let addr = addr.parse()?;
         let mut connect_timeouts = vec![
             Duration::from_secs(1),
@@ -45,7 +61,7 @@ impl Client {
                     stream.set_read_timeout(Some(READ_TIMEOUT))?;
                     stream.set_write_timeout(Some(WRITE_TIMEOUT))?;
                     let msg = ClientMessage {
-                        username: username.to_string(),
+                        username: username.clone(),
                         command: UserCommand::Connect,
                     };
                     utils::write_prefixed(&mut stream, &msg)?;
@@ -55,7 +71,7 @@ impl Client {
                         Ok(view) => {
                             return Ok((
                                 Self {
-                                    username: username.to_string(),
+                                    username,
                                     addr: addr.to_string(),
                                     stream,
                                 },
@@ -95,6 +111,16 @@ impl Client {
     pub fn recv_client_error(stream: &mut TcpStream) -> Result<ClientError, Error> {
         match utils::read_prefixed::<ServerMessage, TcpStream>(stream) {
             Ok(ServerMessage::ClientError(error)) => Ok(error),
+            Ok(response) => {
+                bail!("invalid server response: {response}")
+            }
+            Err(error) => bail!(error),
+        }
+    }
+
+    pub fn recv_event(stream: &mut TcpStream) -> Result<GameEvent, Error> {
+        match utils::read_prefixed::<ServerMessage, TcpStream>(stream) {
+            Ok(ServerMessage::GameEvent(event)) => Ok(event),
             Ok(response) => {
                 bail!("invalid server response: {response}")
             }

@@ -1,8 +1,8 @@
 use anyhow::{bail, Error};
 use private_poker::{
-    entities::{Action, SubHand, Usd, Usdf},
+    entities::{Action, GameView, SubHand, Usd, Usdf, Vote},
     functional,
-    messages::{GameView, ServerMessage, UserState},
+    messages::{ClientMessage, ServerMessage, UserCommand, UserState},
     utils, Client,
 };
 use rand::{distributions::WeightedIndex, prelude::Distribution, thread_rng, Rng};
@@ -129,22 +129,26 @@ impl Bot {
     pub fn reset(&mut self) -> Result<(State, ActionMasks), Error> {
         // Hand is only empty on the first connection. Naturally, we'll be in
         // spectate when we first connect, so check that our hand isn't empty
-        // before we try restarting our connection.
-        if !self.hand.is_empty() && self.view.spectators.contains_key(&self.client.username) {
-            // If we were moved to spectate, disconnect and then immediately
-            // reconnect to the game to get a fresh money stack.
-            self.client.stream.shutdown(std::net::Shutdown::Both).ok();
-            let (mut client, view) = Client::connect(&self.client.username, &self.client.addr)?;
-            client.stream.set_read_timeout(None)?;
-            client.change_state(UserState::Play)?;
-            self.client = client;
-            self.view = view;
+        // before we try voting to reset ourself.
+        if !self.hand.is_empty() && self.view.spectators.contains(self.client.username.as_str()) {
+            // If we were moved to spectate, vote to reset ourself.
+            let vote = Vote::Reset(Some(self.client.username.clone()));
+            self.client.cast_vote(vote)?
         }
 
         // Wait until it's our turn so we can get our hand and available
         // actions.
         let masks = loop {
             match utils::read_prefixed::<ServerMessage, TcpStream>(&mut self.client.stream) {
+                // Bots are good sports and follow other votes.
+                Ok(ServerMessage::Ack(ClientMessage {
+                    username,
+                    command: UserCommand::CastVote(vote),
+                })) => {
+                    if username != self.client.username {
+                        self.client.cast_vote(vote)?;
+                    }
+                }
                 Ok(ServerMessage::GameView(view)) => {
                     self.view = view;
                     if let Some(player) = self
@@ -197,6 +201,15 @@ impl Bot {
         // again so we can get masks and get the final reward for our action.
         let masks = loop {
             match utils::read_prefixed::<ServerMessage, TcpStream>(&mut self.client.stream) {
+                // Bots are good sports and follow other votes.
+                Ok(ServerMessage::Ack(ClientMessage {
+                    username,
+                    command: UserCommand::CastVote(vote),
+                })) => {
+                    if username != self.client.username {
+                        self.client.cast_vote(vote)?;
+                    }
+                }
                 Ok(ServerMessage::GameView(view)) => {
                     self.view = view;
                     if let Some(player) = self
@@ -218,7 +231,9 @@ impl Bot {
                         }
                     // We were forcibly moved to spectate because we don't have enough
                     // money. This means the current game is over.
-                    } else if let Some(user) = self.view.spectators.get(&self.client.username) {
+                    } else if let Some(user) =
+                        self.view.spectators.get(self.client.username.as_str())
+                    {
                         reward += ((user.money - remaining_money) as Usdf)
                             / (self.starting_money as Usdf);
                         return Ok((self.hand.clone(), HashSet::new(), reward, true));

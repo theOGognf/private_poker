@@ -23,7 +23,7 @@ mod widgets;
 
 use widgets::UserInput;
 
-use crate::bot::{Bot, QLearning};
+use super::bot::{Bot, QLearning};
 
 const EXIT: &str = "\
 exiting will remove all bots and erase their memory.

@@ -1,10 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt};
 
-pub use crate::game::entities::GameView;
-use crate::game::{
-    entities::{Action, Username},
-    Game, TakeAction, UserError,
+use super::super::game::{
+    entities::{Action, GameView, Username, Vote},
+    Game, GameEvent, TakeAction, UserError,
 };
 
 /// Errors due to the poker client's interaction with the poker server
@@ -45,10 +44,10 @@ pub enum UserCommand {
     ChangeState(UserState),
     /// A new user wants to connect to the game.
     Connect,
-    /// User wants to leave the game. This is really just a
+    /// User disconnected. This is really just a
     /// friendly courtesy and doesn't need to be sent by
     /// clients.
-    Leave,
+    Disconnect,
     /// User wants to show their hand. Can only occur if they're
     /// a player and the game is in a state that allows hands to
     /// be shown.
@@ -59,17 +58,20 @@ pub enum UserCommand {
     /// User wants to make a bet. Can only occur if they're a
     /// player and it's their turn.
     TakeAction(Action),
+    /// User wants to cast a vote.
+    CastVote(Vote),
 }
 
 impl fmt::Display for UserCommand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let repr = match &self {
-            UserCommand::ChangeState(state) => &format!("joined the {state}s"),
+            UserCommand::ChangeState(state) => &format!("requested to join the {state}s"),
             UserCommand::Connect => "connected",
-            UserCommand::Leave => "left the game",
+            UserCommand::Disconnect => "disconnected",
             UserCommand::ShowHand => "showed their hand",
             UserCommand::StartGame => "started the game",
             UserCommand::TakeAction(action) => &action.to_action_string(),
+            UserCommand::CastVote(vote) => &format!("voted to {vote}"),
         };
         write!(f, "{repr}")
     }
@@ -100,6 +102,8 @@ pub enum ServerMessage {
     /// An indication that the poker client caused an error, resulting in
     /// the client's message not being processed correctly.
     ClientError(ClientError),
+    /// An internal game event that can be shared with all clients.
+    GameEvent(GameEvent),
     /// The game state as viewed from the client's perspective.
     GameView(GameView),
     /// The game state represented as a string.
@@ -117,6 +121,7 @@ impl fmt::Display for ServerMessage {
         let repr = match &self {
             ServerMessage::Ack(msg) => msg.to_string(),
             ServerMessage::ClientError(error) => error.to_string(),
+            ServerMessage::GameEvent(event) => event.to_string(),
             ServerMessage::GameView(_) => "game view".to_string(),
             ServerMessage::Status(status) => status.to_string(),
             ServerMessage::TurnSignal(action_options) => {
