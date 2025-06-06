@@ -37,26 +37,33 @@ mod widgets;
 use widgets::{ScrollableList, UserInput};
 
 const HELP: &str = "\
-all-in                                                                                 
+all-in
         Go all-in, betting all your money on the hand.                                 
-call                                                                                   
+call
         Match the investment required to stay in the hand.                             
-check                                                                                  
+check
         Check, voting to move to the next card reveal(s).                              
-fold                                                                                   
+fold
         Fold, forfeiting your hand.                                                    
-play                                                                                   
+play
         Join the playing waitlist.                                                     
-raise                                                                                  
+raise
         Raise the investment required to stay in the hand. Entering without a value    
         defaults to the min raise amount. Entering AMOUNT will raise by AMOUNT, but    
         AMOUNT must be >= the min raise.                                               
-show                                                                                   
+show
         Show your hand. Only possible during the showdown.                             
-spectate                                                                               
+spectate
         Join spectators. If you're a player, you won't spectate until the game is over.
-start                                                                                  
+start
         Start the game. Requires 2+ players or waitlisters.
+vote kick USER
+        Vote to kick a user from the game. The vote will pass when a majority is
+        reached.
+vote reset
+        Vote to reset game money. Entering without a value defaults to voting to
+        reset everyone's money. Entering USER will vote to reset that specific
+        user's money.
 ";
 const INVALID_ACTION_MESSAGE: &str = "can't do that now";
 const MAX_LOG_RECORDS: usize = 1024;
@@ -213,6 +220,8 @@ pub struct App {
     addr: String,
     /// Whether to display the help menu window
     show_help_menu: bool,
+    /// Helps scroll through the help menu window if the terminal is small
+    help_handle: ScrollableList,
     /// History of recorded messages
     log_handle: ScrollableList,
     /// Current value of the input box
@@ -313,10 +322,20 @@ impl App {
     }
 
     pub fn new(username: Username, addr: String) -> Result<Self, Error> {
+        // Fill help menu with help text lines. Also add some whitespace as
+        // a jank way to add padding on the top and bottom.
+        let mut help_handle = ScrollableList::new(MAX_LOG_RECORDS);
+        help_handle.push("".into());
+        for line in HELP.lines() {
+            help_handle.push(line.into());
+        }
+        help_handle.push("".into());
+        help_handle.jump_to_first();
         Ok(Self {
             username,
             addr,
             show_help_menu: false,
+            help_handle,
             log_handle: ScrollableList::new(MAX_LOG_RECORDS),
             user_input: UserInput::new(),
         })
@@ -490,8 +509,20 @@ impl App {
                                 KeyCode::Delete => self.user_input.delete(),
                                 KeyCode::Left => self.user_input.move_left(),
                                 KeyCode::Right => self.user_input.move_right(),
-                                KeyCode::Up => self.log_handle.move_up(),
-                                KeyCode::Down => self.log_handle.move_down(),
+                                KeyCode::Up => {
+                                    if self.show_help_menu {
+                                        self.help_handle.move_up()
+                                    } else {
+                                        self.log_handle.move_up()
+                                    }
+                                }
+                                KeyCode::Down => {
+                                    if self.show_help_menu {
+                                        self.help_handle.move_down()
+                                    } else {
+                                        self.log_handle.move_down()
+                                    }
+                                }
                                 KeyCode::Home => self.user_input.jump_to_first(),
                                 KeyCode::End => self.user_input.jump_to_last(),
                                 KeyCode::Tab => self.show_help_menu = !self.show_help_menu,
@@ -762,19 +793,35 @@ impl App {
 
         // Render the help menu.
         if self.show_help_menu {
-            let vertical = Layout::vertical([Constraint::Max(24)]).flex(Flex::Center);
+            let vertical = Layout::vertical([Constraint::Max(29)]).flex(Flex::Center);
             let horizontal = Layout::horizontal([Constraint::Max(92)]).flex(Flex::Center);
             let [help_menu_area] = vertical.areas(frame.area());
             let [help_menu_area] = horizontal.areas(help_menu_area);
             frame.render_widget(Clear, help_menu_area); // clears out the background
 
             // Render help text.
-            let help_text = Paragraph::new(HELP).style(Style::default()).block(
-                block::Block::bordered()
-                    .title(" commands  ")
-                    .padding(Padding::uniform(1)),
+            let help_items = self.help_handle.list_items.clone();
+            let help_items = List::new(help_items)
+                .direction(ListDirection::BottomToTop)
+                .block(block::Block::bordered().title(" commands  "));
+            frame.render_stateful_widget(
+                help_items,
+                help_menu_area,
+                &mut self.help_handle.list_state,
             );
-            frame.render_widget(help_text, help_menu_area);
+
+            // Render help scrollbar.
+            frame.render_stateful_widget(
+                Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                    .symbols(scrollbar::VERTICAL)
+                    .begin_symbol(None)
+                    .end_symbol(None),
+                help_menu_area.inner(Margin {
+                    vertical: 1,
+                    horizontal: 1,
+                }),
+                &mut self.help_handle.scroll_state,
+            );
         }
     }
 }

@@ -44,7 +44,7 @@ impl QLearning {
     pub fn new(alpha: f32, gamma: f32) -> Self {
         Self {
             params: QLearningParams { alpha, gamma },
-            dist: WeightedIndex::new(Q_S_DEFAULT).expect("valid weights"),
+            dist: WeightedIndex::new(Q_S_DEFAULT).expect("weights should be valid"),
             table: HashMap::new(),
         }
     }
@@ -65,10 +65,10 @@ impl QLearning {
         let new_weights: Vec<(usize, &ActionWeight)> = new_weights.iter().enumerate().collect();
         self.dist
             .update_weights(&new_weights)
-            .expect("valid weights");
+            .expect("weights should be valid");
         let action_idx = self.dist.sample(&mut thread_rng());
         let action = &ACTIONS_ARRAY[action_idx];
-        masks.get(action).expect("valid action").clone()
+        masks.get(action).expect("action should be valid").clone()
     }
 
     pub fn update_done(&mut self, state: State, action: Action, reward: Reward) {
@@ -96,8 +96,8 @@ impl QLearning {
                         .enumerate()
                         .filter(|(idx, _)| idx_masks2.contains(idx))
                         .map(|(_, w)| w)
-                        .max_by(|a, b| a.partial_cmp(b).expect("valid weights"))
-                        .expect("valid weights")
+                        .max_by(|a, b| a.partial_cmp(b).expect("weights should be valid"))
+                        .expect("weights should be valid")
         };
         let q_s1 = self.table.entry(state1).or_insert(Q_S_DEFAULT);
         let action_idx: usize = action.into();
@@ -115,7 +115,10 @@ pub struct Bot {
 impl Bot {
     pub fn new(botname: &str, addr: &str) -> Result<Self, Error> {
         let (mut client, view) = Client::connect(botname, addr)?;
-        let user = view.spectators.get(botname).expect("user exists");
+        let user = view
+            .spectators
+            .get(client.username.as_str())
+            .expect("user should exist");
         client.stream.set_read_timeout(None)?;
         client.change_state(UserState::Play)?;
         Ok(Self {
@@ -146,7 +149,11 @@ impl Bot {
                     command: UserCommand::CastVote(vote),
                 })) => {
                     if username != self.client.username {
-                        self.client.cast_vote(vote)?;
+                        match vote {
+                            Vote::Kick(user_target) | Vote::Reset(Some(user_target))
+                                if user_target == self.client.username => {}
+                            _ => self.client.cast_vote(vote)?,
+                        }
                     }
                 }
                 Ok(ServerMessage::GameView(view)) => {
@@ -180,7 +187,7 @@ impl Bot {
             .players
             .iter()
             .find(|p| p.user.name == self.client.username)
-            .expect("player exists");
+            .expect("player should exist");
         // Sleep some random amount so real users have time to process info.
         let dur = Duration::from_secs(thread_rng().gen_range(1..8));
         thread::sleep(dur);
