@@ -1176,12 +1176,14 @@ impl Game<TakeAction> {
             &self.state.action_choices,
         ) {
             (Some(player_idx), Some(action_choices)) => {
+                // ActionChoice uses variant discriminates for hashes, so we
+                // don't need to care about the actual call/raise values.
                 let action_choice: ActionChoice = match action {
                     Action::AllIn => ActionChoice::AllIn,
                     Action::Call => ActionChoice::Call(0),
                     Action::Check => ActionChoice::Check,
                     Action::Fold => ActionChoice::Fold,
-                    Action::Raise(amount) => ActionChoice::Raise(amount),
+                    Action::Raise(_) => ActionChoice::Raise(0),
                 };
                 if !action_choices.contains(&action_choice) {
                     return Err(UserError::InvalidAction { action });
@@ -1190,6 +1192,7 @@ impl Game<TakeAction> {
                 let pot_call = self.data.pot.get_call();
                 let player_investment = self.data.pot.get_investment_by_player_idx(player_idx);
                 let player_call = pot_call - player_investment;
+                let player_raise = 2 * pot_call - player_investment;
                 // Convert the action to a valid bet. Sanitize the bet amount according
                 // to the player's intended action.
                 let mut bet = match action {
@@ -1211,9 +1214,13 @@ impl Game<TakeAction> {
                         player.state = PlayerState::Fold;
                         return Ok(action);
                     }
-                    Action::Raise(amount) => Bet {
+                    Action::Raise(Some(amount)) => Bet {
                         action: BetAction::Raise,
                         amount,
+                    },
+                    Action::Raise(None) => Bet {
+                        action: BetAction::Raise,
+                        amount: player_raise,
                     },
                 };
                 if bet.amount >= player.user.money {
@@ -2685,7 +2692,10 @@ mod game_tests {
         assert_eq!(game.act(Action::Check), Ok(Action::Check));
         let game: Game<River> = game.into();
         let mut game: Game<TakeAction> = game.into();
-        assert_eq!(game.act(Action::Raise(20)), Ok(Action::Raise(20)));
+        assert_eq!(
+            game.act(Action::Raise(Some(20))),
+            Ok(Action::Raise(Some(20)))
+        );
         assert_eq!(game.act(Action::Call), Ok(Action::Call));
         let game: Game<ShowHands> = game.into();
         let game: Game<DistributePot> = game.into();
@@ -2817,7 +2827,10 @@ mod game_tests {
             ]))
         );
         // Total call is 20
-        assert_eq!(game.act(Action::Raise(15)), Ok(Action::Raise(15)));
+        assert_eq!(
+            game.act(Action::Raise(Some(15))),
+            Ok(Action::Raise(Some(15)))
+        );
         assert_eq!(
             game.get_next_action_choices(),
             Some(HashSet::from([
@@ -2828,7 +2841,10 @@ mod game_tests {
             ]))
         );
         // Total call is 40
-        assert_eq!(game.act(Action::Raise(30)), Ok(Action::Raise(30)));
+        assert_eq!(
+            game.act(Action::Raise(Some(30))),
+            Ok(Action::Raise(Some(30)))
+        );
         assert_eq!(
             game.get_next_action_choices(),
             Some(HashSet::from([
@@ -2839,7 +2855,10 @@ mod game_tests {
             ]))
         );
         // Total call is 80
-        assert_eq!(game.act(Action::Raise(60)), Ok(Action::Raise(60)));
+        assert_eq!(
+            game.act(Action::Raise(Some(60))),
+            Ok(Action::Raise(Some(60)))
+        );
         assert_eq!(
             game.get_next_action_choices(),
             Some(HashSet::from([

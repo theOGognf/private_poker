@@ -2,9 +2,7 @@ use anyhow::{bail, Error};
 use chrono::{DateTime, Utc};
 use mio::{Events, Interest, Poll, Waker};
 use private_poker::{
-    entities::{
-        Action, ActionChoice, ActionChoices, Card, GameView, Suit, Usd, User, Username, Vote,
-    },
+    entities::{Action, Card, GameView, Suit, Usd, User, Username, Vote},
     functional,
     messages::UserState,
     net::{
@@ -26,7 +24,7 @@ use ratatui::{
     DefaultTerminal, Frame,
 };
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::VecDeque,
     io,
     net::TcpStream,
     sync::mpsc::{channel, Receiver, Sender},
@@ -234,7 +232,6 @@ impl App {
     fn handle_command(
         &mut self,
         user_input: &str,
-        action_choices: &ActionChoices,
         tx_client: &Sender<ClientMessage>,
         waker: &Waker,
     ) -> Result<(), Error> {
@@ -251,18 +248,14 @@ impl App {
                 let other: Vec<&str> = other.split_ascii_whitespace().collect();
                 match other.first() {
                     Some(&"raise") => {
-                        let result =
-                            match (action_choices.get(&ActionChoice::Raise(0)), other.get(1)) {
-                                // Raise with a specific amount.
-                                (None | Some(_), Some(value)) => match value.parse::<Usd>() {
-                                    Ok(amount) => Ok(Action::Raise(amount)),
-                                    Err(_) => Err(INVALID_RAISE_MESSAGE.to_string()),
-                                },
-                                // Valid raise without specified amount defaults to the default raise.
-                                (Some(action_choice), None) => Ok(action_choice.clone().into()),
-                                // Invalid action.
-                                (None, ..) => Err(INVALID_RAISE_MESSAGE.to_string()),
-                            };
+                        let result = match other.get(1) {
+                            // Raise with a specific amount.
+                            Some(value) => match value.parse::<Usd>() {
+                                Ok(amount) => Ok(Action::Raise(Some(amount))),
+                                Err(_) => Err(INVALID_RAISE_MESSAGE.to_string()),
+                            },
+                            None => Ok(Action::Raise(None)),
+                        };
                         result.map(UserCommand::TakeAction)
                     }
                     Some(&"vote") => match (other.get(1), other.get(2)) {
@@ -447,7 +440,6 @@ impl App {
             }
         });
 
-        let mut action_choices = HashSet::new();
         let mut turn_warnings = TurnWarnings::new();
         loop {
             terminal.draw(|frame| self.draw(&view, frame))?;
@@ -472,12 +464,7 @@ impl App {
                                     let user_input = self.user_input.submit();
                                     let record = Record::new(RecordKind::You, user_input.clone());
                                     self.log_handle.push(record.into());
-                                    self.handle_command(
-                                        &user_input,
-                                        &action_choices,
-                                        &tx_client,
-                                        &waker,
-                                    )?;
+                                    self.handle_command(&user_input, &tx_client, &waker)?;
                                 }
                                 KeyCode::Char(to_insert) => self.user_input.input(to_insert),
                                 KeyCode::Backspace => self.user_input.backspace(),
@@ -537,8 +524,7 @@ impl App {
                         None
                     }
                     ServerMessage::Status(msg) => Some(Record::new(RecordKind::Game, msg)),
-                    ServerMessage::TurnSignal(new_action_choices) => {
-                        action_choices = new_action_choices;
+                    ServerMessage::TurnSignal(_) => {
                         turn_warnings.reset();
                         Some(Record::new(
                             RecordKind::Alert,

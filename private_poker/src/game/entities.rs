@@ -222,7 +222,7 @@ pub enum Action {
     Call,
     Check,
     Fold,
-    Raise(Usd),
+    Raise(Option<Usd>),
 }
 
 impl fmt::Display for Action {
@@ -232,7 +232,8 @@ impl fmt::Display for Action {
             Action::Call => "calls",
             Action::Check => "checks",
             Action::Fold => "folds",
-            Action::Raise(amount) => &format!("raises ${amount}"),
+            Action::Raise(Some(amount)) => &format!("raises ${amount}"),
+            Action::Raise(None) => "raises",
         };
         write!(f, "{repr}")
     }
@@ -243,7 +244,7 @@ impl From<Bet> for Action {
         match value.action {
             BetAction::AllIn => Action::AllIn,
             BetAction::Call => Action::Call,
-            BetAction::Raise => Action::Raise(value.amount),
+            BetAction::Raise => Action::Raise(Some(value.amount)),
         }
     }
 }
@@ -312,7 +313,7 @@ impl From<ActionChoice> for Action {
             ActionChoice::Call(_) => Action::Call,
             ActionChoice::Check => Action::Check,
             ActionChoice::Fold => Action::Fold,
-            ActionChoice::Raise(amount) => Action::Raise(amount),
+            ActionChoice::Raise(amount) => Action::Raise(Some(amount)),
         }
     }
 }
