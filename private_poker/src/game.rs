@@ -313,25 +313,6 @@ pub struct Game<T> {
 
 /// General game methods that can or will be used at various stages of gameplay.
 impl<T> Game<T> {
-    #[must_use]
-    pub fn action_choices_to_string(action_choices: &ActionChoices) -> String {
-        let num_options = action_choices.len();
-        action_choices
-            .iter()
-            .enumerate()
-            .map(|(i, action_choice)| {
-                let repr = action_choice.to_string();
-                match i {
-                    0 if num_options == 1 => repr,
-                    0 if num_options == 2 => format!("{repr} "),
-                    0 if num_options >= 3 => format!("{repr}, "),
-                    i if i == num_options - 1 && num_options != 1 => format!("or {repr}"),
-                    _ => format!("{repr}, "),
-                }
-            })
-            .collect::<String>()
-    }
-
     fn as_view(&self, username: &str) -> GameView {
         let mut players = Vec::with_capacity(self.data.settings.max_players);
         for player in &self.data.players {
@@ -483,7 +464,7 @@ impl<T> Game<T> {
                 if self.data.player_counts.num_active > 1 && user.money > raise {
                     action_choices.insert(ActionChoice::Raise(raise));
                 }
-                Some(action_choices)
+                Some(ActionChoices(action_choices))
             }
             None => None,
         }
@@ -1177,16 +1158,7 @@ impl Game<TakeAction> {
             &self.state.action_choices,
         ) {
             (Some(player_idx), Some(action_choices)) => {
-                // ActionChoice uses variant discriminates for hashes, so we
-                // don't need to care about the actual call/raise values.
-                let action_choice: ActionChoice = match action {
-                    Action::AllIn => ActionChoice::AllIn,
-                    Action::Call => ActionChoice::Call(0),
-                    Action::Check => ActionChoice::Check,
-                    Action::Fold => ActionChoice::Fold,
-                    Action::Raise(_) => ActionChoice::Raise(0),
-                };
-                if !action_choices.contains(&action_choice) {
+                if !action_choices.contains(&action) {
                     return Err(UserError::InvalidAction { action });
                 }
                 let player = &mut self.data.players[player_idx];
@@ -2124,12 +2096,8 @@ impl From<GameSettings> for PokerState {
 
 #[cfg(test)]
 mod game_tests {
-    use std::collections::HashSet;
-
-    use crate::entities::PlayerState;
-
     use super::{
-        entities::{Action, ActionChoice, Card, Suit},
+        entities::{Action, ActionChoice, Card, PlayerState, Suit},
         BootPlayers, CollectBlinds, Deal, DistributePot, DivideDonations, Flop, Game, Lobby,
         MoveButton, RemovePlayers, River, SeatPlayers, ShowHands, TakeAction, Turn, UpdateBlinds,
         UserError,
@@ -2389,12 +2357,12 @@ mod game_tests {
         assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         assert_eq!(
             game.get_next_action_choices(),
-            Some(HashSet::from([ActionChoice::AllIn, ActionChoice::Fold,]))
+            Some([ActionChoice::AllIn, ActionChoice::Fold,].into())
         );
         assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         assert_eq!(
             game.get_next_action_choices(),
-            Some(HashSet::from([ActionChoice::AllIn, ActionChoice::Fold,]))
+            Some([ActionChoice::AllIn, ActionChoice::Fold,].into())
         );
         assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         let game: Game<Flop> = game.into();
@@ -2436,18 +2404,19 @@ mod game_tests {
         assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         assert_eq!(
             game.get_next_action_choices(),
-            Some(HashSet::from([
-                ActionChoice::AllIn,
-                ActionChoice::Call(195),
-                ActionChoice::Fold,
-            ]))
+            Some(
+                [
+                    ActionChoice::AllIn,
+                    ActionChoice::Call(195),
+                    ActionChoice::Fold,
+                ]
+                .into()
+            )
         );
         assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         assert_eq!(
             game.get_next_action_choices(),
-            Some(HashSet::from(
-                [ActionChoice::Call(390), ActionChoice::Fold,]
-            ))
+            Some([ActionChoice::Call(390), ActionChoice::Fold,].into())
         );
         assert_eq!(game.act(Action::Call), Ok(Action::Call));
         let game: Game<Flop> = game.into();
@@ -2722,22 +2691,25 @@ mod game_tests {
         let mut game = init_game_at_deal();
         assert_eq!(
             game.get_next_action_choices(),
-            Some(HashSet::from([
-                ActionChoice::AllIn,
-                ActionChoice::Call(10),
-                ActionChoice::Fold,
-                ActionChoice::Raise(20)
-            ]))
+            Some(
+                [
+                    ActionChoice::AllIn,
+                    ActionChoice::Call(10),
+                    ActionChoice::Fold,
+                    ActionChoice::Raise(20)
+                ]
+                .into()
+            )
         );
         assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         assert_eq!(
             game.get_next_action_choices(),
-            Some(HashSet::from([ActionChoice::AllIn, ActionChoice::Fold]))
+            Some([ActionChoice::AllIn, ActionChoice::Fold].into())
         );
         assert_eq!(game.act(Action::AllIn), Ok(Action::AllIn));
         assert_eq!(
             game.get_next_action_choices(),
-            Some(HashSet::from([ActionChoice::AllIn, ActionChoice::Fold]))
+            Some([ActionChoice::AllIn, ActionChoice::Fold].into())
         );
         assert_eq!(game.act(Action::Fold), Ok(Action::Fold));
         assert_eq!(game.get_next_action_choices(), None);
@@ -2748,32 +2720,41 @@ mod game_tests {
         let mut game = init_game_at_deal();
         assert_eq!(
             game.get_next_action_choices(),
-            Some(HashSet::from([
-                ActionChoice::AllIn,
-                ActionChoice::Call(10),
-                ActionChoice::Fold,
-                ActionChoice::Raise(20)
-            ]))
+            Some(
+                [
+                    ActionChoice::AllIn,
+                    ActionChoice::Call(10),
+                    ActionChoice::Fold,
+                    ActionChoice::Raise(20)
+                ]
+                .into()
+            )
         );
         assert_eq!(game.act(Action::Call), Ok(Action::Call));
         assert_eq!(
             game.get_next_action_choices(),
-            Some(HashSet::from([
-                ActionChoice::AllIn,
-                ActionChoice::Call(5),
-                ActionChoice::Fold,
-                ActionChoice::Raise(15)
-            ]))
+            Some(
+                [
+                    ActionChoice::AllIn,
+                    ActionChoice::Call(5),
+                    ActionChoice::Fold,
+                    ActionChoice::Raise(15)
+                ]
+                .into()
+            )
         );
         assert_eq!(game.act(Action::Call), Ok(Action::Call));
         assert_eq!(
             game.get_next_action_choices(),
-            Some(HashSet::from([
-                ActionChoice::AllIn,
-                ActionChoice::Check,
-                ActionChoice::Fold,
-                ActionChoice::Raise(20)
-            ]))
+            Some(
+                [
+                    ActionChoice::AllIn,
+                    ActionChoice::Check,
+                    ActionChoice::Fold,
+                    ActionChoice::Raise(20)
+                ]
+                .into()
+            )
         );
         assert_eq!(game.act(Action::Check), Ok(Action::Check));
         assert_eq!(game.get_next_action_choices(), None);
@@ -2784,22 +2765,28 @@ mod game_tests {
         let mut game = init_game_at_deal();
         assert_eq!(
             game.get_next_action_choices(),
-            Some(HashSet::from([
-                ActionChoice::AllIn,
-                ActionChoice::Call(10),
-                ActionChoice::Fold,
-                ActionChoice::Raise(20)
-            ]))
+            Some(
+                [
+                    ActionChoice::AllIn,
+                    ActionChoice::Call(10),
+                    ActionChoice::Fold,
+                    ActionChoice::Raise(20)
+                ]
+                .into()
+            )
         );
         assert_eq!(game.act(Action::Fold), Ok(Action::Fold));
         assert_eq!(
             game.get_next_action_choices(),
-            Some(HashSet::from([
-                ActionChoice::AllIn,
-                ActionChoice::Call(5),
-                ActionChoice::Fold,
-                ActionChoice::Raise(15)
-            ]))
+            Some(
+                [
+                    ActionChoice::AllIn,
+                    ActionChoice::Call(5),
+                    ActionChoice::Fold,
+                    ActionChoice::Raise(15)
+                ]
+                .into()
+            )
         );
         assert_eq!(game.act(Action::Fold), Ok(Action::Fold));
         assert_eq!(game.get_next_action_choices(), None);
@@ -2810,22 +2797,28 @@ mod game_tests {
         let mut game = init_game_at_deal();
         assert_eq!(
             game.get_next_action_choices(),
-            Some(HashSet::from([
-                ActionChoice::AllIn,
-                ActionChoice::Call(10),
-                ActionChoice::Fold,
-                ActionChoice::Raise(20)
-            ]))
+            Some(
+                [
+                    ActionChoice::AllIn,
+                    ActionChoice::Call(10),
+                    ActionChoice::Fold,
+                    ActionChoice::Raise(20)
+                ]
+                .into()
+            )
         );
         assert_eq!(game.act(Action::Fold), Ok(Action::Fold));
         assert_eq!(
             game.get_next_action_choices(),
-            Some(HashSet::from([
-                ActionChoice::AllIn,
-                ActionChoice::Call(5),
-                ActionChoice::Fold,
-                ActionChoice::Raise(15)
-            ]))
+            Some(
+                [
+                    ActionChoice::AllIn,
+                    ActionChoice::Call(5),
+                    ActionChoice::Fold,
+                    ActionChoice::Raise(15)
+                ]
+                .into()
+            )
         );
         // Total call is 20
         assert_eq!(
@@ -2834,12 +2827,15 @@ mod game_tests {
         );
         assert_eq!(
             game.get_next_action_choices(),
-            Some(HashSet::from([
-                ActionChoice::AllIn,
-                ActionChoice::Call(10),
-                ActionChoice::Fold,
-                ActionChoice::Raise(30)
-            ]))
+            Some(
+                [
+                    ActionChoice::AllIn,
+                    ActionChoice::Call(10),
+                    ActionChoice::Fold,
+                    ActionChoice::Raise(30)
+                ]
+                .into()
+            )
         );
         // Total call is 40
         assert_eq!(
@@ -2848,12 +2844,15 @@ mod game_tests {
         );
         assert_eq!(
             game.get_next_action_choices(),
-            Some(HashSet::from([
-                ActionChoice::AllIn,
-                ActionChoice::Call(20),
-                ActionChoice::Fold,
-                ActionChoice::Raise(60)
-            ]))
+            Some(
+                [
+                    ActionChoice::AllIn,
+                    ActionChoice::Call(20),
+                    ActionChoice::Fold,
+                    ActionChoice::Raise(60)
+                ]
+                .into()
+            )
         );
         // Total call is 80
         assert_eq!(
@@ -2862,12 +2861,15 @@ mod game_tests {
         );
         assert_eq!(
             game.get_next_action_choices(),
-            Some(HashSet::from([
-                ActionChoice::AllIn,
-                ActionChoice::Call(40),
-                ActionChoice::Fold,
-                ActionChoice::Raise(120)
-            ]))
+            Some(
+                [
+                    ActionChoice::AllIn,
+                    ActionChoice::Call(40),
+                    ActionChoice::Fold,
+                    ActionChoice::Raise(120)
+                ]
+                .into()
+            )
         );
         assert_eq!(game.act(Action::Fold), Ok(Action::Fold));
         assert_eq!(game.get_next_action_choices(), None);

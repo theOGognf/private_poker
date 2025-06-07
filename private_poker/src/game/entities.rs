@@ -319,7 +319,54 @@ impl From<ActionChoice> for Action {
 }
 
 /// Type alias for a set of action choices.
-pub type ActionChoices = HashSet<ActionChoice>;
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct ActionChoices(pub HashSet<ActionChoice>);
+
+impl ActionChoices {
+    pub fn contains(&self, action: &Action) -> bool {
+        // ActionChoice uses variant discriminates for hashes, so we
+        // don't need to care about the actual call/raise values.
+        let action_choice: ActionChoice = match action {
+            Action::AllIn => ActionChoice::AllIn,
+            Action::Call => ActionChoice::Call(0),
+            Action::Check => ActionChoice::Check,
+            Action::Fold => ActionChoice::Fold,
+            Action::Raise(_) => ActionChoice::Raise(0),
+        };
+        self.0.contains(&action_choice)
+    }
+}
+
+impl fmt::Display for ActionChoices {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let num_options = self.0.len();
+        let repr = self
+            .0
+            .iter()
+            .enumerate()
+            .map(|(i, action_choice)| {
+                let repr = action_choice.to_string();
+                match i {
+                    0 if num_options == 1 => repr,
+                    0 if num_options == 2 => format!("{repr} "),
+                    0 if num_options >= 3 => format!("{repr}, "),
+                    i if i == num_options - 1 && num_options != 1 => format!("or {repr}"),
+                    _ => format!("{repr}, "),
+                }
+            })
+            .collect::<String>();
+        write!(f, "{repr}")
+    }
+}
+
+impl<I> From<I> for ActionChoices
+where
+    I: IntoIterator<Item = ActionChoice>,
+{
+    fn from(iter: I) -> Self {
+        Self(iter.into_iter().collect::<HashSet<_>>())
+    }
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum BetAction {

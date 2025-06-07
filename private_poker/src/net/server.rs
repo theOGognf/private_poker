@@ -19,7 +19,7 @@ use super::{
         entities::Vote,
         game::{
             entities::{Action, ActionChoices, GameView, Username},
-            Game, GameEvent, GameSettings, PokerState, TakeAction,
+            GameEvent, GameSettings, PokerState,
         },
         utils::preprocess_username,
         UserError,
@@ -779,9 +779,8 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             break 'command;
                         }
                         // Let all users know whose turn it is.
-                        let turn_signal =
-                            Game::<TakeAction>::action_choices_to_string(&action_choices);
-                        let status = format!("it's {username}'s turn and they can {turn_signal}");
+                        let status =
+                            format!("it's {username}'s turn and they can {action_choices}");
                         let msg = ServerData::Status(status.clone());
                         tx_server.send(msg)?;
                         waker.wake()?;

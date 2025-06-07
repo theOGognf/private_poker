@@ -55,7 +55,7 @@ impl QLearning {
             .iter()
             .enumerate()
             .map(|(idx, action_choice)| {
-                if masks.contains(action_choice) {
+                if masks.0.contains(action_choice) {
                     old_weights[idx].exp()
                 } else {
                     0.0
@@ -69,6 +69,7 @@ impl QLearning {
         let action_idx = self.dist.sample(&mut thread_rng());
         let action_choice = &ACTION_OPTIONS_ARRAY[action_idx];
         masks
+            .0
             .get(action_choice)
             .expect("action choice should be valid")
             .clone()
@@ -90,7 +91,7 @@ impl QLearning {
     ) {
         let td_target = {
             let idx_masks2: HashSet<usize> =
-                masks2.into_iter().map(std::convert::Into::into).collect();
+                masks2.0.into_iter().map(std::convert::Into::into).collect();
             let q_s2 = self.table.entry(state2).or_insert(Q_S_DEFAULT);
             reward
                 + self.params.gamma
@@ -204,7 +205,7 @@ impl Bot {
         };
         self.client.take_action(action_choice.clone().into())?;
         if action_choice == &ActionChoice::Fold {
-            return Ok((self.hand.clone(), HashSet::new(), 0.0, true));
+            return Ok((self.hand.clone(), ActionChoices::default(), 0.0, true));
         }
         let remaining_money = player.user.money - bet;
         let mut reward = -(bet as Usdf) / (self.starting_money as Usdf);
@@ -233,7 +234,7 @@ impl Bot {
                         if player.cards.is_empty() {
                             reward += ((player.user.money - remaining_money) as Usdf)
                                 / (self.starting_money as Usdf);
-                            return Ok((self.hand.clone(), HashSet::new(), reward, true));
+                            return Ok((self.hand.clone(), ActionChoices::default(), reward, true));
                         }
                         let mut cards = self.view.board.clone();
                         cards.extend(player.cards.clone());
@@ -246,7 +247,7 @@ impl Bot {
                     {
                         reward += ((user.money - remaining_money) as Usdf)
                             / (self.starting_money as Usdf);
-                        return Ok((self.hand.clone(), HashSet::new(), reward, true));
+                        return Ok((self.hand.clone(), ActionChoices::default(), reward, true));
                     }
                 }
                 Ok(ServerMessage::TurnSignal(masks)) => break masks,

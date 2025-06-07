@@ -3,7 +3,7 @@ use std::fmt;
 
 use super::super::game::{
     entities::{Action, ActionChoices, GameView, Username, Vote},
-    Game, GameEvent, TakeAction, UserError,
+    GameEvent, UserError,
 };
 
 /// Errors due to the poker client's interaction with the poker server
@@ -124,9 +124,7 @@ impl fmt::Display for ServerMessage {
             ServerMessage::GameEvent(event) => event.to_string(),
             ServerMessage::GameView(_) => "game view".to_string(),
             ServerMessage::Status(status) => status.to_string(),
-            ServerMessage::TurnSignal(action_choices) => {
-                Game::<TakeAction>::action_choices_to_string(action_choices)
-            }
+            ServerMessage::TurnSignal(action_choices) => action_choices.to_string(),
             ServerMessage::UserError(error) => error.to_string(),
         };
         write!(f, "{repr}")
