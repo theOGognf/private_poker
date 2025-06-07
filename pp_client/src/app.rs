@@ -260,10 +260,10 @@ impl App {
                     }
                     Some(&"vote") => match (other.get(1), other.get(2)) {
                         (Some(&"kick"), Some(username)) => {
-                            Ok(UserCommand::CastVote(Vote::Kick(username.to_string())))
+                            Ok(UserCommand::CastVote(Vote::Kick((*username).to_string())))
                         }
                         (Some(&"reset"), Some(username)) => Ok(UserCommand::CastVote(Vote::Reset(
-                            Some(username.to_string()),
+                            Some((*username).to_string()),
                         ))),
                         (Some(&"reset"), None) => Ok(UserCommand::CastVote(Vote::Reset(None))),
                         _ => Err(UNRECOGNIZED_COMMAND_MESSAGE.to_string()),
@@ -289,7 +289,7 @@ impl App {
         Ok(())
     }
 
-    pub fn new(username: Username, addr: String) -> Result<Self, Error> {
+    pub fn new(username: Username, addr: String) -> Self {
         // Fill help menu with help text lines. Also add some whitespace as
         // a jank way to add padding on the top and bottom.
         let mut help_handle = ScrollableList::new(MAX_LOG_RECORDS);
@@ -299,14 +299,14 @@ impl App {
         }
         help_handle.push("".into());
         help_handle.jump_to_first();
-        Ok(Self {
+        Self {
             username,
             addr,
             show_help_menu: false,
             help_handle,
             log_handle: ScrollableList::new(MAX_LOG_RECORDS),
             user_input: UserInput::new(),
-        })
+        }
     }
 
     pub fn run(
@@ -473,16 +473,16 @@ impl App {
                                 KeyCode::Right => self.user_input.move_right(),
                                 KeyCode::Up => {
                                     if self.show_help_menu {
-                                        self.help_handle.move_up()
+                                        self.help_handle.move_up();
                                     } else {
-                                        self.log_handle.move_up()
+                                        self.log_handle.move_up();
                                     }
                                 }
                                 KeyCode::Down => {
                                     if self.show_help_menu {
-                                        self.help_handle.move_down()
+                                        self.help_handle.move_down();
                                     } else {
-                                        self.log_handle.move_down()
+                                        self.log_handle.move_down();
                                     }
                                 }
                                 KeyCode::Home => self.user_input.jump_to_first(),

@@ -211,13 +211,10 @@ impl TokenManager {
         }
     }
 
-    pub fn get_confirmed_username_with_token(
-        &self,
-        token: &Token,
-    ) -> Result<Username, ClientError> {
+    pub fn get_confirmed_username_with_token(&self, token: Token) -> Result<Username, ClientError> {
         match (
-            self.confirmed_tokens.contains_key(token),
-            self.tokens_to_usernames.get(token),
+            self.confirmed_tokens.contains_key(&token),
+            self.tokens_to_usernames.get(&token),
         ) {
             (true, Some(username)) => Ok(username.clone()),
             _ => Err(ClientError::Unassociated),
@@ -244,8 +241,7 @@ impl TokenManager {
             self.unconfirmed_usernames_to_tokens.get(username),
             self.confirmed_usernames_to_tokens.get(username),
         ) {
-            (Some(token), None) => Ok(*token),
-            (None, Some(token)) => Ok(*token),
+            (Some(token), None) | (None, Some(token)) => Ok(*token),
             _ => Err(ClientError::Unassociated),
         }
     }
@@ -705,7 +701,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
             for token in tokens_to_remove.drain() {
                 let repr = token_to_string(&token);
                 debug!("{repr} is being removed");
-                if let Ok(username) = token_manager.get_confirmed_username_with_token(&token) {
+                if let Ok(username) = token_manager.get_confirmed_username_with_token(token) {
                     let msg = ClientMessage {
                         username,
                         command: UserCommand::Disconnect,
@@ -781,28 +777,26 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             state.remove_user(&username)?;
 
                             break 'command;
-                        } else {
-                            // Let all users know whose turn it is.
-                            let turn_signal =
-                                Game::<TakeAction>::action_choices_to_string(&action_choices);
-                            let status =
-                                format!("it's {username}'s turn and they can {turn_signal}");
-                            let msg = ServerData::Status(status.clone());
-                            tx_server.send(msg)?;
-                            waker.wake()?;
-
-                            // Let player know it's their turn.
-                            info!("{status}");
-                            let msg = ServerData::TurnSignal {
-                                username: username.clone(),
-                                action_choices,
-                            };
-                            tx_server.send(msg)?;
-                            waker.wake()?;
-
-                            next_action_username = Some(username);
-                            timeout = config.server_timeouts.action;
                         }
+                        // Let all users know whose turn it is.
+                        let turn_signal =
+                            Game::<TakeAction>::action_choices_to_string(&action_choices);
+                        let status = format!("it's {username}'s turn and they can {turn_signal}");
+                        let msg = ServerData::Status(status.clone());
+                        tx_server.send(msg)?;
+                        waker.wake()?;
+
+                        // Let player know it's their turn.
+                        info!("{status}");
+                        let msg = ServerData::TurnSignal {
+                            username: username.clone(),
+                            action_choices,
+                        };
+                        tx_server.send(msg)?;
+                        waker.wake()?;
+
+                        next_action_username = Some(username);
+                        timeout = config.server_timeouts.action;
                     }
                 }
                 // If it's no one's turn and there's a timeout, then we must
@@ -939,7 +933,7 @@ mod tests {
 
         assert_eq!(token_manager.confirm_username(token), Ok(()));
         assert_eq!(
-            token_manager.get_confirmed_username_with_token(&token),
+            token_manager.get_confirmed_username_with_token(token),
             Ok(username.clone())
         );
         assert_eq!(token_manager.get_token_with_username(&username), Ok(token));

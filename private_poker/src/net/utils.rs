@@ -4,6 +4,7 @@ use std::io::{self, Read, Write};
 
 use super::super::constants::MAX_USER_INPUT_LENGTH;
 
+#[must_use]
 pub fn preprocess_username(username: &str) -> String {
     let mut username: String = username
         .chars()

@@ -65,17 +65,17 @@ struct Worker {
 
 fn worker(
     mut env: Bot,
-    policy: Arc<Mutex<QLearning>>,
-    interrupt: Receiver<()>,
+    policy: &Arc<Mutex<QLearning>>,
+    interrupt: &Receiver<()>,
 ) -> Result<(), Error> {
     loop {
         let (mut state1, mut masks1) = env.reset()?;
         loop {
             let action_choice = {
                 let mut policy = policy.lock().expect("sample lock");
-                policy.sample(state1.clone(), masks1.clone())
+                policy.sample(state1.clone(), &masks1)
             };
-            let (state2, masks2, reward, done) = env.step(action_choice.clone())?;
+            let (state2, masks2, reward, done) = env.step(&action_choice)?;
             if done {
                 let mut policy = policy.lock().expect("done lock");
                 policy.update_done(state1.clone(), action_choice.clone(), reward);
@@ -149,7 +149,7 @@ impl App {
                                                 botname: botname.clone(),
                                                 state: WorkerState::Active,
                                                 handle: thread::spawn(move || {
-                                                    worker(env, policy, rx_worker)
+                                                    worker(env, &policy, &rx_worker)
                                                 }),
                                                 delete_signaler: tx_server,
                                             };

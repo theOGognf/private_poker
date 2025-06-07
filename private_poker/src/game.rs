@@ -615,11 +615,12 @@ impl<T> Game<T> {
             // Check if player already exists but is queued for removal.
             // This probably means the user disconnected and is trying
             // to reconnect.
-            if self.data.player_queues.to_remove.remove(username) {
-                return Ok(false);
+            let result = if self.data.player_queues.to_remove.remove(username) {
+                Ok(false)
             } else {
-                return Err(UserError::UserAlreadyExists);
-            }
+                Err(UserError::UserAlreadyExists)
+            };
+            return result;
         }
         // Check the ledger for some memory of the user's money stack.
         // There are a couple of flaws with this. If a user runs out
@@ -1461,7 +1462,7 @@ impl From<Game<ShowHands>> for Game<DistributePot> {
             .data
             .players
             .iter()
-            .map(|p| if p.state == PlayerState::Fold { 0 } else { 1 })
+            .map(|p| usize::from(p.state != PlayerState::Fold))
             .sum();
         if num_players_remaining > 1 {
             for player_idx in value.data.pot.investments.keys() {

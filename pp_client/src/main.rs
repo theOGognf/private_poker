@@ -59,7 +59,7 @@ fn main() -> Result<(), Error> {
         stream,
     } = client;
     let terminal = ratatui::init();
-    let app_result = App::new(username, addr)?.run(stream, view, terminal);
+    let app_result = App::new(username, addr).run(stream, view, terminal);
     ratatui::restore();
     app_result
 }

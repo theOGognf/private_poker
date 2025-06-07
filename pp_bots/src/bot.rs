@@ -49,7 +49,7 @@ impl QLearning {
         }
     }
 
-    pub fn sample(&mut self, state: State, masks: ActionMasks) -> ActionChoice {
+    pub fn sample(&mut self, state: State, masks: &ActionMasks) -> ActionChoice {
         let old_weights = self.table.entry(state).or_insert(Q_S_DEFAULT);
         let new_weights: Vec<ActionWeight> = ACTION_OPTIONS_ARRAY
             .iter()
@@ -139,7 +139,7 @@ impl Bot {
         if !self.hand.is_empty() && self.view.spectators.contains(self.client.username.as_str()) {
             // If we were moved to spectate, vote to reset ourself.
             let vote = Vote::Reset(Some(self.client.username.clone()));
-            self.client.cast_vote(vote)?
+            self.client.cast_vote(vote)?;
         }
 
         // Wait until it's our turn so we can get our hand and available
@@ -186,7 +186,7 @@ impl Bot {
 
     pub fn step(
         &mut self,
-        action_choice: ActionChoice,
+        action_choice: &ActionChoice,
     ) -> Result<(State, ActionMasks, Reward, Done), Error> {
         let player = self
             .view
@@ -199,13 +199,11 @@ impl Bot {
         thread::sleep(dur);
         let bet = match action_choice {
             ActionChoice::AllIn => player.user.money,
-            ActionChoice::Check => 0,
-            ActionChoice::Fold => 0,
-            ActionChoice::Call(amount) => amount,
-            ActionChoice::Raise(amount) => amount,
+            ActionChoice::Check | ActionChoice::Fold => 0,
+            ActionChoice::Call(amount) | ActionChoice::Raise(amount) => *amount,
         };
         self.client.take_action(action_choice.clone().into())?;
-        if action_choice == ActionChoice::Fold {
+        if action_choice == &ActionChoice::Fold {
             return Ok((self.hand.clone(), HashSet::new(), 0.0, true));
         }
         let remaining_money = player.user.money - bet;
@@ -236,12 +234,11 @@ impl Bot {
                             reward += ((player.user.money - remaining_money) as Usdf)
                                 / (self.starting_money as Usdf);
                             return Ok((self.hand.clone(), HashSet::new(), reward, true));
-                        } else {
-                            let mut cards = self.view.board.clone();
-                            cards.extend(player.cards.clone());
-                            functional::prepare_hand(&mut cards);
-                            self.hand = functional::eval(&cards);
                         }
+                        let mut cards = self.view.board.clone();
+                        cards.extend(player.cards.clone());
+                        functional::prepare_hand(&mut cards);
+                        self.hand = functional::eval(&cards);
                     // We were forcibly moved to spectate because we don't have enough
                     // money. This means the current game is over.
                     } else if let Some(user) =
