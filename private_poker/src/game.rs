@@ -35,8 +35,8 @@ pub enum UserError {
     GameAlreadyStarting,
     #[error("need >= ${big_blind} for the big blind")]
     InsufficientFunds { big_blind: Usd },
-    #[error("{action} is invalid")]
-    InvalidAction { action: Action },
+    #[error("invalid action")]
+    InvalidAction,
     #[error("illegal {bet}")]
     InvalidBet { bet: Bet },
     #[error("need 2+ players")]
@@ -1159,7 +1159,7 @@ impl Game<TakeAction> {
         ) {
             (Some(player_idx), Some(action_choices)) => {
                 if !action_choices.contains(&action) {
-                    return Err(UserError::InvalidAction { action });
+                    return Err(UserError::InvalidAction);
                 }
                 let player = &mut self.data.players[player_idx];
                 let pot_call = self.data.pot.get_call();
