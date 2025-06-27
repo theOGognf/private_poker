@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use super::super::game::{
-    entities::{Action, ActionChoices, GameView, Username, Vote},
     GameEvent, UserError,
+    entities::{Action, ActionChoices, GameView, Username, Vote},
 };
 
 /// Errors due to the poker client's interaction with the poker server

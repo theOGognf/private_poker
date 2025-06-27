@@ -1,28 +1,28 @@
-use anyhow::{bail, Error};
+use anyhow::{Error, bail};
 use log::{debug, error, info, warn};
 use mio::{
-    net::{TcpListener, TcpStream},
     Events, Interest, Poll, Token, Waker,
+    net::{TcpListener, TcpStream},
 };
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::max,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
     io,
-    sync::mpsc::{channel, Receiver, Sender},
+    sync::mpsc::{Receiver, Sender, channel},
     thread,
     time::{Duration, Instant},
 };
 
 use super::{
     super::{
+        UserError,
         entities::Vote,
         game::{
-            entities::{Action, ActionChoices, GameView, Username},
             GameEvent, GameSettings, PokerState,
+            entities::{Action, ActionChoices, GameView, Username},
         },
         utils::preprocess_username,
-        UserError,
     },
     messages::{ClientError, ClientMessage, ServerMessage, UserCommand, UserState},
     utils::{read_prefixed, write_prefixed},
@@ -260,7 +260,7 @@ impl TokenManager {
 
     /// Create a new token.
     pub fn new_token(&mut self) -> Token {
-        let token = if let Some(token) = self.recycled_tokens.pop_first() {
+        if let Some(token) = self.recycled_tokens.pop_first() {
             token
         } else {
             let newest = match (
@@ -273,8 +273,7 @@ impl TokenManager {
                 (None, None) => &WAKER,
             };
             Token(newest.0 + 1)
-        };
-        token
+        }
     }
 
     /// Recycle tokens that've gone stale because the client has yet
@@ -573,7 +572,9 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                                     // be written. This should be infrequent.
                                                     io::ErrorKind::WriteZero => {
                                                         let repr = token_to_string(&token);
-                                                        debug!("{repr} got a zero write, but will retry");
+                                                        debug!(
+                                                            "{repr} got a zero write, but will retry"
+                                                        );
                                                         messages.push_front(msg);
                                                         continue;
                                                     }
@@ -890,8 +891,8 @@ mod tests {
     use std::time::Duration;
 
     use mio::{
-        net::{TcpListener, TcpStream},
         Token,
+        net::{TcpListener, TcpStream},
     };
 
     use crate::net::messages::ClientError;

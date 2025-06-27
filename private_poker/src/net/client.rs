@@ -3,15 +3,15 @@
 //! This client is blocking and so is primarily used as a testing utility
 //! rather than an actual poker client.
 
-use anyhow::{bail, Error};
+use anyhow::{Error, bail};
 use std::{net::TcpStream, thread, time::Duration};
 
 use super::{
     super::{
         entities::Vote,
         game::{
-            entities::{Action, GameView},
             GameEvent, UserError,
+            entities::{Action, GameView},
         },
         utils::preprocess_username,
     },
@@ -76,7 +76,7 @@ impl Client {
                                     stream,
                                 },
                                 view,
-                            ))
+                            ));
                         }
                         Err(error) => bail!(error),
                     }

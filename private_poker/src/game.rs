@@ -1,7 +1,7 @@
 use rand::{seq::SliceRandom, thread_rng};
 use serde::{Deserialize, Serialize};
 use std::{
-    cmp::{max, min, Ordering},
+    cmp::{Ordering, max, min},
     collections::{HashMap, HashSet, VecDeque},
     fmt,
 };
@@ -13,10 +13,10 @@ pub mod functional;
 
 use constants::{DEFAULT_MAX_USERS, MAX_PLAYERS};
 use entities::{
-    Action, ActionChoice, ActionChoices, Bet, BetAction, Blinds, Card, GameView, GameViews,
-    PlayPositions, Player, PlayerCounts, PlayerQueues, PlayerState, PlayerView, Pot, PotView,
-    SeatIndex, SubHand, Usd, Usdf, User, Username, Vote, DEFAULT_BUY_IN, DEFAULT_MIN_BIG_BLIND,
-    DEFAULT_MIN_SMALL_BLIND,
+    Action, ActionChoice, ActionChoices, Bet, BetAction, Blinds, Card, DEFAULT_BUY_IN,
+    DEFAULT_MIN_BIG_BLIND, DEFAULT_MIN_SMALL_BLIND, GameView, GameViews, PlayPositions, Player,
+    PlayerCounts, PlayerQueues, PlayerState, PlayerView, Pot, PotView, SeatIndex, SubHand, Usd,
+    Usdf, User, Username, Vote,
 };
 
 #[derive(Debug, Deserialize, Eq, Error, PartialEq, Serialize)]
@@ -1713,7 +1713,7 @@ impl fmt::Display for PokerState {
             PokerState::Lobby(_) => "in lobby",
             PokerState::SeatPlayers(_) => "seating players",
             PokerState::MoveButton(_) => "moving button",
-            PokerState::CollectBlinds(ref game) => {
+            PokerState::CollectBlinds(game) => {
                 let big_blind = game.data.blinds.big;
                 let big_blind_username = &game.data.players[game.data.play_positions.big_blind_idx]
                     .user
@@ -1723,10 +1723,12 @@ impl fmt::Display for PokerState {
                     [game.data.play_positions.small_blind_idx]
                     .user
                     .name;
-                &format!("collecting ${big_blind} from {big_blind_username} and ${small_blind} from {small_blind_username}")
+                &format!(
+                    "collecting ${big_blind} from {big_blind_username} and ${small_blind} from {small_blind_username}"
+                )
             }
             PokerState::Deal(_) => "dealing cards",
-            PokerState::TakeAction(ref game) => {
+            PokerState::TakeAction(game) => {
                 if game.is_ready_for_next_phase() {
                     "end of betting round"
                 } else {
@@ -1736,14 +1738,14 @@ impl fmt::Display for PokerState {
             PokerState::Flop(_) => "the flop",
             PokerState::Turn(_) => "the turn",
             PokerState::River(_) => "the river",
-            PokerState::ShowHands(ref game) => {
+            PokerState::ShowHands(game) => {
                 let num_pots = game.get_num_pots();
                 match num_pots {
                     1 => "showing main pot",
                     i => &format!("showing side pot #{}", i - 1),
                 }
             }
-            PokerState::DistributePot(ref game) => {
+            PokerState::DistributePot(game) => {
                 let num_pots = game.get_num_pots();
                 match num_pots {
                     1 => "distributing main pot",
@@ -1762,48 +1764,48 @@ impl fmt::Display for PokerState {
 impl PokerState {
     pub fn cast_vote(&mut self, username: &str, vote: Vote) -> Result<Option<Vote>, UserError> {
         match self {
-            PokerState::Lobby(ref mut game) => game.cast_vote(username, vote),
-            PokerState::SeatPlayers(ref mut game) => game.cast_vote(username, vote),
-            PokerState::MoveButton(ref mut game) => game.cast_vote(username, vote),
-            PokerState::CollectBlinds(ref mut game) => game.cast_vote(username, vote),
-            PokerState::Deal(ref mut game) => game.cast_vote(username, vote),
-            PokerState::TakeAction(ref mut game) => game.cast_vote(username, vote),
-            PokerState::Flop(ref mut game) => game.cast_vote(username, vote),
-            PokerState::Turn(ref mut game) => game.cast_vote(username, vote),
-            PokerState::River(ref mut game) => game.cast_vote(username, vote),
-            PokerState::ShowHands(ref mut game) => game.cast_vote(username, vote),
-            PokerState::DistributePot(ref mut game) => game.cast_vote(username, vote),
-            PokerState::RemovePlayers(ref mut game) => game.cast_vote(username, vote),
-            PokerState::DivideDonations(ref mut game) => game.cast_vote(username, vote),
-            PokerState::UpdateBlinds(ref mut game) => game.cast_vote(username, vote),
-            PokerState::BootPlayers(ref mut game) => game.cast_vote(username, vote),
+            PokerState::Lobby(game) => game.cast_vote(username, vote),
+            PokerState::SeatPlayers(game) => game.cast_vote(username, vote),
+            PokerState::MoveButton(game) => game.cast_vote(username, vote),
+            PokerState::CollectBlinds(game) => game.cast_vote(username, vote),
+            PokerState::Deal(game) => game.cast_vote(username, vote),
+            PokerState::TakeAction(game) => game.cast_vote(username, vote),
+            PokerState::Flop(game) => game.cast_vote(username, vote),
+            PokerState::Turn(game) => game.cast_vote(username, vote),
+            PokerState::River(game) => game.cast_vote(username, vote),
+            PokerState::ShowHands(game) => game.cast_vote(username, vote),
+            PokerState::DistributePot(game) => game.cast_vote(username, vote),
+            PokerState::RemovePlayers(game) => game.cast_vote(username, vote),
+            PokerState::DivideDonations(game) => game.cast_vote(username, vote),
+            PokerState::UpdateBlinds(game) => game.cast_vote(username, vote),
+            PokerState::BootPlayers(game) => game.cast_vote(username, vote),
         }
     }
 
     pub fn drain_events(&mut self) -> VecDeque<GameEvent> {
         match self {
-            PokerState::Lobby(ref mut game) => game.drain_events(),
-            PokerState::SeatPlayers(ref mut game) => game.drain_events(),
-            PokerState::MoveButton(ref mut game) => game.drain_events(),
-            PokerState::CollectBlinds(ref mut game) => game.drain_events(),
-            PokerState::Deal(ref mut game) => game.drain_events(),
-            PokerState::TakeAction(ref mut game) => game.drain_events(),
-            PokerState::Flop(ref mut game) => game.drain_events(),
-            PokerState::Turn(ref mut game) => game.drain_events(),
-            PokerState::River(ref mut game) => game.drain_events(),
-            PokerState::ShowHands(ref mut game) => game.drain_events(),
-            PokerState::DistributePot(ref mut game) => game.drain_events(),
-            PokerState::RemovePlayers(ref mut game) => game.drain_events(),
-            PokerState::DivideDonations(ref mut game) => game.drain_events(),
-            PokerState::UpdateBlinds(ref mut game) => game.drain_events(),
-            PokerState::BootPlayers(ref mut game) => game.drain_events(),
+            PokerState::Lobby(game) => game.drain_events(),
+            PokerState::SeatPlayers(game) => game.drain_events(),
+            PokerState::MoveButton(game) => game.drain_events(),
+            PokerState::CollectBlinds(game) => game.drain_events(),
+            PokerState::Deal(game) => game.drain_events(),
+            PokerState::TakeAction(game) => game.drain_events(),
+            PokerState::Flop(game) => game.drain_events(),
+            PokerState::Turn(game) => game.drain_events(),
+            PokerState::River(game) => game.drain_events(),
+            PokerState::ShowHands(game) => game.drain_events(),
+            PokerState::DistributePot(game) => game.drain_events(),
+            PokerState::RemovePlayers(game) => game.drain_events(),
+            PokerState::DivideDonations(game) => game.drain_events(),
+            PokerState::UpdateBlinds(game) => game.drain_events(),
+            PokerState::BootPlayers(game) => game.drain_events(),
         }
     }
 
     #[must_use]
     pub fn get_action_choices(&self) -> Option<ActionChoices> {
         match self {
-            PokerState::TakeAction(ref game) => game.get_action_choices(),
+            PokerState::TakeAction(game) => game.get_action_choices(),
             _ => None,
         }
     }
@@ -1811,7 +1813,7 @@ impl PokerState {
     #[must_use]
     pub fn get_next_action_username(&self) -> Option<Username> {
         match self {
-            PokerState::TakeAction(ref game) => game.get_next_action_username(),
+            PokerState::TakeAction(game) => game.get_next_action_username(),
             _ => None,
         }
     }
@@ -1819,27 +1821,27 @@ impl PokerState {
     #[must_use]
     pub fn get_views(&self) -> GameViews {
         match self {
-            PokerState::Lobby(ref game) => game.get_views(),
-            PokerState::SeatPlayers(ref game) => game.get_views(),
-            PokerState::MoveButton(ref game) => game.get_views(),
-            PokerState::CollectBlinds(ref game) => game.get_views(),
-            PokerState::Deal(ref game) => game.get_views(),
-            PokerState::TakeAction(ref game) => game.get_views(),
-            PokerState::Flop(ref game) => game.get_views(),
-            PokerState::Turn(ref game) => game.get_views(),
-            PokerState::River(ref game) => game.get_views(),
-            PokerState::ShowHands(ref game) => game.get_views(),
-            PokerState::DistributePot(ref game) => game.get_views(),
-            PokerState::RemovePlayers(ref game) => game.get_views(),
-            PokerState::DivideDonations(ref game) => game.get_views(),
-            PokerState::UpdateBlinds(ref game) => game.get_views(),
-            PokerState::BootPlayers(ref game) => game.get_views(),
+            PokerState::Lobby(game) => game.get_views(),
+            PokerState::SeatPlayers(game) => game.get_views(),
+            PokerState::MoveButton(game) => game.get_views(),
+            PokerState::CollectBlinds(game) => game.get_views(),
+            PokerState::Deal(game) => game.get_views(),
+            PokerState::TakeAction(game) => game.get_views(),
+            PokerState::Flop(game) => game.get_views(),
+            PokerState::Turn(game) => game.get_views(),
+            PokerState::River(game) => game.get_views(),
+            PokerState::ShowHands(game) => game.get_views(),
+            PokerState::DistributePot(game) => game.get_views(),
+            PokerState::RemovePlayers(game) => game.get_views(),
+            PokerState::DivideDonations(game) => game.get_views(),
+            PokerState::UpdateBlinds(game) => game.get_views(),
+            PokerState::BootPlayers(game) => game.get_views(),
         }
     }
 
     pub fn init_start(&mut self, username: &str) -> Result<(), UserError> {
         match self {
-            PokerState::Lobby(ref mut game) => {
+            PokerState::Lobby(game) => {
                 if game.contains_waitlister(username) || game.contains_player(username) {
                     game.init_start()?;
                     Ok(())
@@ -1872,49 +1874,49 @@ impl PokerState {
 
     pub fn reset_all_money(&mut self) {
         match self {
-            PokerState::Lobby(ref mut game) => {
+            PokerState::Lobby(game) => {
                 game.reset_all_money();
             }
-            PokerState::SeatPlayers(ref mut game) => {
+            PokerState::SeatPlayers(game) => {
                 game.reset_all_money();
             }
-            PokerState::MoveButton(ref mut game) => {
+            PokerState::MoveButton(game) => {
                 game.reset_all_money();
             }
-            PokerState::CollectBlinds(ref mut game) => {
+            PokerState::CollectBlinds(game) => {
                 game.reset_all_money();
             }
-            PokerState::Deal(ref mut game) => {
+            PokerState::Deal(game) => {
                 game.reset_all_money();
             }
-            PokerState::TakeAction(ref mut game) => {
+            PokerState::TakeAction(game) => {
                 game.reset_all_money();
             }
-            PokerState::Flop(ref mut game) => {
+            PokerState::Flop(game) => {
                 game.reset_all_money();
             }
-            PokerState::Turn(ref mut game) => {
+            PokerState::Turn(game) => {
                 game.reset_all_money();
             }
-            PokerState::River(ref mut game) => {
+            PokerState::River(game) => {
                 game.reset_all_money();
             }
-            PokerState::ShowHands(ref mut game) => {
+            PokerState::ShowHands(game) => {
                 game.reset_all_money();
             }
-            PokerState::DistributePot(ref mut game) => {
+            PokerState::DistributePot(game) => {
                 game.reset_all_money();
             }
-            PokerState::RemovePlayers(ref mut game) => {
+            PokerState::RemovePlayers(game) => {
                 game.reset_all_money();
             }
-            PokerState::DivideDonations(ref mut game) => {
+            PokerState::DivideDonations(game) => {
                 game.reset_all_money();
             }
-            PokerState::UpdateBlinds(ref mut game) => {
+            PokerState::UpdateBlinds(game) => {
                 game.reset_all_money();
             }
-            PokerState::BootPlayers(ref mut game) => {
+            PokerState::BootPlayers(game) => {
                 game.reset_all_money();
             }
         }
@@ -1922,16 +1924,16 @@ impl PokerState {
 
     pub fn show_hand(&mut self, username: &str) -> Result<(), UserError> {
         match self {
-            PokerState::ShowHands(ref mut game) => {
+            PokerState::ShowHands(game) => {
                 game.show_hand(username)?;
             }
-            PokerState::DistributePot(ref mut game) => {
+            PokerState::DistributePot(game) => {
                 game.show_hand(username)?;
             }
-            PokerState::RemovePlayers(ref mut game) => {
+            PokerState::RemovePlayers(game) => {
                 game.show_hand(username)?;
             }
-            PokerState::UpdateBlinds(ref mut game) => {
+            PokerState::UpdateBlinds(game) => {
                 game.show_hand(username)?;
             }
             _ => return Err(UserError::CannotShowHand),
@@ -2010,7 +2012,7 @@ impl PokerState {
 
     pub fn take_action(&mut self, username: &str, action: Action) -> Result<Action, UserError> {
         match self {
-            PokerState::TakeAction(ref mut game)
+            PokerState::TakeAction(game)
                 if !game.is_ready_for_next_phase() && game.is_turn(username) =>
             {
                 let sanitized_action = game.act(action)?;
@@ -2026,49 +2028,49 @@ macro_rules! impl_user_managers {
         impl PokerState {
             $(pub fn $name(&mut self, username: &str) -> Result<(), UserError> {
                 match self {
-                    PokerState::Lobby(ref mut game) => {
+                    PokerState::Lobby(game) => {
                         game.$name(username)?;
                     },
-                    PokerState::SeatPlayers(ref mut game) => {
+                    PokerState::SeatPlayers(game) => {
                         game.$name(username)?;
                     },
-                    PokerState::MoveButton(ref mut game)  => {
+                    PokerState::MoveButton(game)  => {
                         game.$name(username)?;
                     },
-                    PokerState::CollectBlinds(ref mut game)  => {
+                    PokerState::CollectBlinds(game)  => {
                         game.$name(username)?;
                     },
-                    PokerState::Deal(ref mut game)  => {
+                    PokerState::Deal(game)  => {
                         game.$name(username)?;
                     },
-                    PokerState::TakeAction(ref mut game) => {
+                    PokerState::TakeAction(game) => {
                         game.$name(username)?;
                     },
-                    PokerState::Flop(ref mut game)  => {
+                    PokerState::Flop(game)  => {
                         game.$name(username)?;
                     },
-                    PokerState::Turn(ref mut game)  => {
+                    PokerState::Turn(game)  => {
                         game.$name(username)?;
                     },
-                    PokerState::River(ref mut game)  => {
+                    PokerState::River(game)  => {
                         game.$name(username)?;
                     },
-                    PokerState::ShowHands(ref mut game)  => {
+                    PokerState::ShowHands(game)  => {
                         game.$name(username)?;
                     },
-                    PokerState::DistributePot(ref mut game)  => {
+                    PokerState::DistributePot(game)  => {
                         game.$name(username)?;
                     },
-                    PokerState::RemovePlayers(ref mut game)  => {
+                    PokerState::RemovePlayers(game)  => {
                         game.$name(username)?;
                     },
-                    PokerState::DivideDonations(ref mut game)  => {
+                    PokerState::DivideDonations(game)  => {
                         game.$name(username)?;
                     },
-                    PokerState::UpdateBlinds(ref mut game)  => {
+                    PokerState::UpdateBlinds(game)  => {
                         game.$name(username)?;
                     },
-                    PokerState::BootPlayers(ref mut game) => {
+                    PokerState::BootPlayers(game) => {
                         game.$name(username)?;
                     },
                 }
@@ -2097,10 +2099,10 @@ impl From<GameSettings> for PokerState {
 #[cfg(test)]
 mod game_tests {
     use super::{
-        entities::{Action, ActionChoice, Card, PlayerState, Suit},
         BootPlayers, CollectBlinds, Deal, DistributePot, DivideDonations, Flop, Game, Lobby,
         MoveButton, RemovePlayers, River, SeatPlayers, ShowHands, TakeAction, Turn, UpdateBlinds,
         UserError,
+        entities::{Action, ActionChoice, Card, PlayerState, Suit},
     };
 
     fn init_2_player_game() -> Game<SeatPlayers> {
@@ -2878,7 +2880,7 @@ mod game_tests {
 
 #[cfg(test)]
 mod state_tests {
-    use super::{entities::Action, PokerState, UserError};
+    use super::{PokerState, UserError, entities::Action};
 
     fn init_state() -> PokerState {
         let mut state = PokerState::new();

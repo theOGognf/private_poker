@@ -9,9 +9,9 @@ use ctrlc::set_handler;
 use log::info;
 use pico_args::Arguments;
 use private_poker::{
+    DEFAULT_MAX_USERS, GameSettings, MAX_PLAYERS,
     entities::Usd,
     server::{self, PokerConfig},
-    GameSettings, DEFAULT_MAX_USERS, MAX_PLAYERS,
 };
 
 const HELP: &str = "\

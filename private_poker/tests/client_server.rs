@@ -3,10 +3,10 @@ use mio::net::TcpListener;
 use std::{thread, time::Duration};
 
 use private_poker::{
+    Client, UserError,
     game::GameEvent,
     messages,
     server::{self, PokerConfig, ServerTimeouts},
-    Client, UserError,
 };
 
 fn get_random_open_port() -> u16 {

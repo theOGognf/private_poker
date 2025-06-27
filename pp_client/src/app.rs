@@ -1,4 +1,4 @@
-use anyhow::{bail, Error};
+use anyhow::{Error, bail};
 use chrono::{DateTime, Utc};
 use mio::{Events, Interest, Poll, Waker};
 use private_poker::{
@@ -12,22 +12,22 @@ use private_poker::{
     },
 };
 use ratatui::{
+    DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     layout::{Alignment, Constraint, Flex, Layout, Margin, Position},
     style::{Style, Stylize},
     symbols::scrollbar,
     text::{Line, Span, Text},
     widgets::{
-        block, Block, Cell, Clear, List, ListDirection, ListItem, Padding, Paragraph, Row,
-        Scrollbar, ScrollbarOrientation, Table,
+        Block, Cell, Clear, List, ListDirection, ListItem, Padding, Paragraph, Row, Scrollbar,
+        ScrollbarOrientation, Table, block,
     },
-    DefaultTerminal, Frame,
 };
 use std::{
     collections::VecDeque,
     io,
     net::TcpStream,
-    sync::mpsc::{channel, Receiver, Sender},
+    sync::mpsc::{Receiver, Sender, channel},
     thread,
     time::{Duration, Instant},
 };
@@ -444,56 +444,54 @@ impl App {
         loop {
             terminal.draw(|frame| self.draw(&view, frame))?;
 
-            if event::poll(POLL_TIMEOUT)? {
-                if let Event::Key(KeyEvent {
+            if event::poll(POLL_TIMEOUT)?
+                && let Event::Key(KeyEvent {
                     code,
                     modifiers,
                     kind,
                     ..
                 }) = event::read()?
-                {
-                    if kind == KeyEventKind::Press {
-                        match modifiers {
-                            KeyModifiers::CONTROL => match code {
-                                KeyCode::Home => self.log_handle.jump_to_first(),
-                                KeyCode::End => self.log_handle.jump_to_last(),
-                                _ => {}
-                            },
-                            KeyModifiers::NONE => match code {
-                                KeyCode::Enter => {
-                                    let user_input = self.user_input.submit();
-                                    let record = Record::new(RecordKind::You, user_input.clone());
-                                    self.log_handle.push(record.into());
-                                    self.handle_command(&user_input, &tx_client, &waker)?;
-                                }
-                                KeyCode::Char(to_insert) => self.user_input.input(to_insert),
-                                KeyCode::Backspace => self.user_input.backspace(),
-                                KeyCode::Delete => self.user_input.delete(),
-                                KeyCode::Left => self.user_input.move_left(),
-                                KeyCode::Right => self.user_input.move_right(),
-                                KeyCode::Up => {
-                                    if self.show_help_menu {
-                                        self.help_handle.move_up();
-                                    } else {
-                                        self.log_handle.move_up();
-                                    }
-                                }
-                                KeyCode::Down => {
-                                    if self.show_help_menu {
-                                        self.help_handle.move_down();
-                                    } else {
-                                        self.log_handle.move_down();
-                                    }
-                                }
-                                KeyCode::Home => self.user_input.jump_to_first(),
-                                KeyCode::End => self.user_input.jump_to_last(),
-                                KeyCode::Tab => self.show_help_menu = !self.show_help_menu,
-                                KeyCode::Esc => return Ok(()),
-                                _ => {}
-                            },
-                            _ => {}
+                && kind == KeyEventKind::Press
+            {
+                match modifiers {
+                    KeyModifiers::CONTROL => match code {
+                        KeyCode::Home => self.log_handle.jump_to_first(),
+                        KeyCode::End => self.log_handle.jump_to_last(),
+                        _ => {}
+                    },
+                    KeyModifiers::NONE => match code {
+                        KeyCode::Enter => {
+                            let user_input = self.user_input.submit();
+                            let record = Record::new(RecordKind::You, user_input.clone());
+                            self.log_handle.push(record.into());
+                            self.handle_command(&user_input, &tx_client, &waker)?;
                         }
-                    }
+                        KeyCode::Char(to_insert) => self.user_input.input(to_insert),
+                        KeyCode::Backspace => self.user_input.backspace(),
+                        KeyCode::Delete => self.user_input.delete(),
+                        KeyCode::Left => self.user_input.move_left(),
+                        KeyCode::Right => self.user_input.move_right(),
+                        KeyCode::Up => {
+                            if self.show_help_menu {
+                                self.help_handle.move_up();
+                            } else {
+                                self.log_handle.move_up();
+                            }
+                        }
+                        KeyCode::Down => {
+                            if self.show_help_menu {
+                                self.help_handle.move_down();
+                            } else {
+                                self.log_handle.move_down();
+                            }
+                        }
+                        KeyCode::Home => self.user_input.jump_to_first(),
+                        KeyCode::End => self.user_input.jump_to_last(),
+                        KeyCode::Tab => self.show_help_menu = !self.show_help_menu,
+                        KeyCode::Esc => return Ok(()),
+                        _ => {}
+                    },
+                    _ => {}
                 }
             }
 

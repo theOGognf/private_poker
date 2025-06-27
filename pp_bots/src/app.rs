@@ -1,8 +1,8 @@
 use std::{
     fmt::Display,
     sync::{
-        mpsc::{channel, Receiver, Sender},
         Arc, Mutex,
+        mpsc::{Receiver, Sender, channel},
     },
     thread::{self, JoinHandle},
     time::Duration,
@@ -11,12 +11,12 @@ use std::{
 use anyhow::Error;
 
 use ratatui::{
+    DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     layout::{Alignment, Constraint, Flex, Layout, Position},
     style::{Style, Stylize},
     text::{Line, Text},
-    widgets::{block, Cell, Clear, Padding, Paragraph, Row, Table, TableState},
-    DefaultTerminal, Frame,
+    widgets::{Cell, Clear, Padding, Paragraph, Row, Table, TableState, block},
 };
 
 mod widgets;
@@ -125,75 +125,73 @@ impl App {
         loop {
             terminal.draw(|frame| self.draw(frame))?;
 
-            if event::poll(POLL_TIMEOUT)? {
-                if let Event::Key(KeyEvent { code, kind, .. }) = event::read()? {
-                    if kind == KeyEventKind::Press {
-                        match self.popup_menu {
-                            Some(PopupMenu::BotCreation) => match code {
-                                KeyCode::Char(to_insert) => self.user_input.input(to_insert),
-                                KeyCode::Delete => self.user_input.delete(),
-                                KeyCode::Backspace => self.user_input.backspace(),
-                                KeyCode::Left => self.user_input.move_left(),
-                                KeyCode::Right => self.user_input.move_right(),
-                                KeyCode::Home => self.user_input.jump_to_first(),
-                                KeyCode::End => self.user_input.jump_to_last(),
-                                KeyCode::Enter if !self.user_input.value.is_empty() => {
-                                    let botname = self.user_input.submit();
-                                    let addr = self.addr.clone();
-                                    match Bot::new(&botname, &addr) {
-                                        Ok(env) => {
-                                            let policy = self.policy.clone();
-                                            let (tx_server, rx_worker): (Sender<()>, Receiver<()>) =
-                                                channel();
-                                            let worker = Worker {
-                                                botname: botname.clone(),
-                                                state: WorkerState::Active,
-                                                handle: thread::spawn(move || {
-                                                    worker(env, &policy, &rx_worker)
-                                                }),
-                                                delete_signaler: tx_server,
-                                            };
-                                            self.workers.push(worker);
-                                            self.table_state.select(Some(self.workers.len() - 1));
-                                            self.popup_menu = None;
-                                        }
-                                        Err(msg) => {
-                                            self.popup_menu =
-                                                Some(PopupMenu::Error(msg.to_string()));
-                                        }
-                                    }
-                                }
-                                KeyCode::Esc => {
-                                    self.user_input.clear();
+            if event::poll(POLL_TIMEOUT)?
+                && let Event::Key(KeyEvent { code, kind, .. }) = event::read()?
+                && kind == KeyEventKind::Press
+            {
+                match self.popup_menu {
+                    Some(PopupMenu::BotCreation) => match code {
+                        KeyCode::Char(to_insert) => self.user_input.input(to_insert),
+                        KeyCode::Delete => self.user_input.delete(),
+                        KeyCode::Backspace => self.user_input.backspace(),
+                        KeyCode::Left => self.user_input.move_left(),
+                        KeyCode::Right => self.user_input.move_right(),
+                        KeyCode::Home => self.user_input.jump_to_first(),
+                        KeyCode::End => self.user_input.jump_to_last(),
+                        KeyCode::Enter if !self.user_input.value.is_empty() => {
+                            let botname = self.user_input.submit();
+                            let addr = self.addr.clone();
+                            match Bot::new(&botname, &addr) {
+                                Ok(env) => {
+                                    let policy = self.policy.clone();
+                                    let (tx_server, rx_worker): (Sender<()>, Receiver<()>) =
+                                        channel();
+                                    let worker = Worker {
+                                        botname: botname.clone(),
+                                        state: WorkerState::Active,
+                                        handle: thread::spawn(move || {
+                                            worker(env, &policy, &rx_worker)
+                                        }),
+                                        delete_signaler: tx_server,
+                                    };
+                                    self.workers.push(worker);
+                                    self.table_state.select(Some(self.workers.len() - 1));
                                     self.popup_menu = None;
                                 }
-                                _ => {}
-                            },
-                            Some(PopupMenu::Error(_)) => self.popup_menu = None,
-                            Some(PopupMenu::Exit) => match code {
-                                KeyCode::Enter => return Ok(()),
-                                KeyCode::Esc => self.popup_menu = None,
-                                _ => {}
-                            },
-                            None => match code {
-                                KeyCode::Char('d') if self.table_state.selected().is_some() => {
-                                    if let Some(idx) = self.table_state.selected() {
-                                        let worker =
-                                            self.workers.get_mut(idx).expect("worker should exist");
-                                        worker.state = WorkerState::Deleted;
-                                        worker.delete_signaler.send(())?;
-                                    }
+                                Err(msg) => {
+                                    self.popup_menu = Some(PopupMenu::Error(msg.to_string()));
                                 }
-                                KeyCode::Char('i') => {
-                                    self.popup_menu = Some(PopupMenu::BotCreation);
-                                }
-                                KeyCode::Esc => self.popup_menu = Some(PopupMenu::Exit),
-                                KeyCode::Down => self.table_state.select_next(),
-                                KeyCode::Up => self.table_state.select_previous(),
-                                _ => {}
-                            },
+                            }
                         }
-                    }
+                        KeyCode::Esc => {
+                            self.user_input.clear();
+                            self.popup_menu = None;
+                        }
+                        _ => {}
+                    },
+                    Some(PopupMenu::Error(_)) => self.popup_menu = None,
+                    Some(PopupMenu::Exit) => match code {
+                        KeyCode::Enter => return Ok(()),
+                        KeyCode::Esc => self.popup_menu = None,
+                        _ => {}
+                    },
+                    None => match code {
+                        KeyCode::Char('d') if self.table_state.selected().is_some() => {
+                            if let Some(idx) = self.table_state.selected() {
+                                let worker =
+                                    self.workers.get_mut(idx).expect("worker should exist");
+                                worker.state = WorkerState::Deleted;
+                                worker.delete_signaler.send(())?;
+                            }
+                        }
+                        KeyCode::Char('i') => {
+                            self.popup_menu = Some(PopupMenu::BotCreation);
+                        }
+                        KeyCode::Esc => self.popup_menu = Some(PopupMenu::Exit),
+                        KeyCode::Down => self.table_state.select_next(),
+                        KeyCode::Up => self.table_state.select_previous(),
+                        _ => {}
+                    },
                 }
             }
 

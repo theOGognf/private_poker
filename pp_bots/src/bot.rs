@@ -1,11 +1,12 @@
-use anyhow::{bail, Error};
+use anyhow::{Error, bail};
 use private_poker::{
+    Client,
     entities::{ActionChoice, ActionChoices, GameView, SubHand, Usd, Usdf, Vote},
     functional,
     messages::{ClientMessage, ServerMessage, UserCommand, UserState},
-    utils, Client,
+    utils,
 };
-use rand::{distributions::WeightedIndex, prelude::Distribution, thread_rng, Rng};
+use rand::{Rng, distributions::WeightedIndex, prelude::Distribution, thread_rng};
 use std::{
     collections::{HashMap, HashSet},
     net::TcpStream,

@@ -1,5 +1,5 @@
-use bincode::{deserialize, serialize, ErrorKind};
-use serde::{de::DeserializeOwned, Serialize};
+use bincode::{ErrorKind, deserialize, serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use std::io::{self, Read, Write};
 
 use super::super::constants::MAX_USER_INPUT_LENGTH;

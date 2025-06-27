@@ -9,7 +9,7 @@
 use anyhow::Error;
 
 use pico_args::Arguments;
-use private_poker::{entities::Username, Client};
+use private_poker::{Client, entities::Username};
 
 mod app;
 use app::App;

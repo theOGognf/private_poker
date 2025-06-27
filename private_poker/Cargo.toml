@@ -1,7 +1,7 @@
 [package]
 name = "private_poker"
 version = "1.0.2"
-edition = "2021"
+edition = "2024"
 description = "A poker library"
 repository = "https://github.com/theOGognf/private_poker"
 readme = "README.md"

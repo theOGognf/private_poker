@@ -178,45 +178,42 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                 let one_pairs = subhands_per_rank.entry(Rank::OnePair).or_default();
                 one_pairs.insert(one_pair_subhand);
 
-                // Check if a pair also occurs, then both pairs
-                // make a two pair.
-                if let Some(next_best_one_pair) = one_pairs.iter().nth_back(1) {
-                    // Ignore the case where a high ace and low ace get counted together
-                    // as a two pair.
-                    if *value != 14 || next_best_one_pair.values != vec![1, 1] {
-                        let mut two_pair_cards = vec![*value; 2];
-                        two_pair_cards.extend(next_best_one_pair.values.clone());
-                        let two_pair_subhand = SubHand {
-                            rank: Rank::TwoPair,
-                            values: two_pair_cards,
-                        };
-                        subhands_per_rank
-                            .entry(Rank::TwoPair)
-                            .or_default()
-                            .insert(two_pair_subhand);
-                    }
+                // Check if a pair also occurs, then both pairs make a two pair.
+                // Ignore the case where a high ace and low ace get counted
+                // together as a two pair.
+                if let Some(next_best_one_pair) = one_pairs.iter().nth_back(1)
+                    && (*value != 14 || next_best_one_pair.values != vec![1, 1])
+                {
+                    let mut two_pair_cards = vec![*value; 2];
+                    two_pair_cards.extend(next_best_one_pair.values.clone());
+                    let two_pair_subhand = SubHand {
+                        rank: Rank::TwoPair,
+                        values: two_pair_cards,
+                    };
+                    subhands_per_rank
+                        .entry(Rank::TwoPair)
+                        .or_default()
+                        .insert(two_pair_subhand);
                 }
 
                 // Check if a three of a kind also occurs, then the pair
-                // and three of a kind make a full house.
-                if let Some(three_of_a_kinds) = subhands_per_rank.get(&Rank::ThreeOfAKind) {
-                    if let Some(best_three_of_a_kind) = three_of_a_kinds.iter().next() {
-                        // Ignore the case where a high ace and low ace get counted together
-                        // as a full house.
-                        if *value != 14 || best_three_of_a_kind.values != vec![1, 1, 1] {
-                            let mut full_house_cards = best_three_of_a_kind.values.clone();
-                            full_house_cards.extend(vec![*value; 2]);
-                            let full_house_subhand = SubHand {
-                                rank: Rank::FullHouse,
-                                values: full_house_cards,
-                            };
+                // and three of a kind make a full house. Ignore the case where
+                // a high ace and low ace get counted together as a full house.
+                if let Some(three_of_a_kinds) = subhands_per_rank.get(&Rank::ThreeOfAKind)
+                    && let Some(best_three_of_a_kind) = three_of_a_kinds.iter().next()
+                    && (*value != 14 || best_three_of_a_kind.values != vec![1, 1, 1])
+                {
+                    let mut full_house_cards = best_three_of_a_kind.values.clone();
+                    full_house_cards.extend(vec![*value; 2]);
+                    let full_house_subhand = SubHand {
+                        rank: Rank::FullHouse,
+                        values: full_house_cards,
+                    };
 
-                            subhands_per_rank
-                                .entry(Rank::FullHouse)
-                                .or_default()
-                                .insert(full_house_subhand);
-                        }
-                    }
+                    subhands_per_rank
+                        .entry(Rank::FullHouse)
+                        .or_default()
+                        .insert(full_house_subhand);
                 }
             }
 
@@ -237,46 +234,42 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                     .or_default()
                     .insert(three_of_a_kind_subhand);
 
-                // Check if a pair also occurs, then the three of a kind
-                // and the pair make a full house.
-                if let Some(one_pairs) = subhands_per_rank.get(&Rank::OnePair) {
-                    if let Some(best_one_pair) = one_pairs.iter().next_back() {
-                        // Ignore the case where a high ace and low ace get counted together
-                        // as a full house.
-                        if *value != 14 || best_one_pair.values != vec![1, 1] {
-                            let mut full_house_cards = vec![*value; 3];
-                            full_house_cards.extend(best_one_pair.values.clone());
-                            let full_house_subhand = SubHand {
-                                rank: Rank::FullHouse,
-                                values: full_house_cards,
-                            };
-                            subhands_per_rank
-                                .entry(Rank::FullHouse)
-                                .or_default()
-                                .insert(full_house_subhand);
-                        }
-                    }
+                // Check if a pair also occurs, then the three of a kind and
+                // the pair make a full house. Ignore the case where a high
+                // ace and low ace get counted together as a full house.
+                if let Some(one_pairs) = subhands_per_rank.get(&Rank::OnePair)
+                    && let Some(best_one_pair) = one_pairs.iter().next_back()
+                    && (*value != 14 || best_one_pair.values != vec![1, 1])
+                {
+                    let mut full_house_cards = vec![*value; 3];
+                    full_house_cards.extend(best_one_pair.values.clone());
+                    let full_house_subhand = SubHand {
+                        rank: Rank::FullHouse,
+                        values: full_house_cards,
+                    };
+                    subhands_per_rank
+                        .entry(Rank::FullHouse)
+                        .or_default()
+                        .insert(full_house_subhand);
                 }
 
-                // Check if another three of a kind occurs, then both three
-                // of a kinds make a full house.
-                if let Some(three_of_a_kinds) = subhands_per_rank.get(&Rank::ThreeOfAKind) {
-                    if let Some(next_best_three_of_a_kind) = three_of_a_kinds.iter().nth_back(1) {
-                        // Ignore the case where a high ace and low ace get counted together
-                        // as a full house.
-                        if *value != 14 || next_best_three_of_a_kind.values != vec![1, 1, 1] {
-                            let mut full_house_cards = vec![*value; 3];
-                            full_house_cards.extend(vec![next_best_three_of_a_kind.values[0]; 2]);
-                            let full_house_subhand = SubHand {
-                                rank: Rank::FullHouse,
-                                values: full_house_cards,
-                            };
-                            subhands_per_rank
-                                .entry(Rank::FullHouse)
-                                .or_default()
-                                .insert(full_house_subhand);
-                        }
-                    }
+                // Check if another three of a kind occurs, then both three of
+                // a kinds make a full house. Ignore the case where a high ace
+                // and low ace get counted together as a full house.
+                if let Some(three_of_a_kinds) = subhands_per_rank.get(&Rank::ThreeOfAKind)
+                    && let Some(next_best_three_of_a_kind) = three_of_a_kinds.iter().nth_back(1)
+                    && (*value != 14 || next_best_three_of_a_kind.values != vec![1, 1, 1])
+                {
+                    let mut full_house_cards = vec![*value; 3];
+                    full_house_cards.extend(vec![next_best_three_of_a_kind.values[0]; 2]);
+                    let full_house_subhand = SubHand {
+                        rank: Rank::FullHouse,
+                        values: full_house_cards,
+                    };
+                    subhands_per_rank
+                        .entry(Rank::FullHouse)
+                        .or_default()
+                        .insert(full_house_subhand);
                 }
             }
 
@@ -310,10 +303,10 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
     // Can only keep the best subhand for each except for high cards.
     // There can be up to 5 high cards in the final hand.
     while let Some((rank, mut subhands)) = subhands_per_rank.pop_last() {
-        if let Some(best_subhand) = hands.peek() {
-            if best_subhand.rank >= Rank::Straight {
-                break;
-            }
+        if let Some(best_subhand) = hands.peek()
+            && best_subhand.rank >= Rank::Straight
+        {
+            break;
         }
         if rank == Rank::HighCard {
             while let Some(best_subhand) = subhands.pop_last() {
@@ -338,10 +331,10 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
             cards_in_hand.extend(subhand.values.clone());
             hand.push(subhand);
         }
-        if let Some(best_subhand) = hand.first() {
-            if best_subhand.rank >= Rank::Straight || num_cards >= 5 {
-                break;
-            }
+        if let Some(best_subhand) = hand.first()
+            && (best_subhand.rank >= Rank::Straight || num_cards >= 5)
+        {
+            break;
         }
     }
     hand
