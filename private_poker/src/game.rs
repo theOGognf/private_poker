@@ -328,14 +328,6 @@ impl<T> Game<T> {
             };
             players.push(player_view);
         }
-        // Action index doesn't matter if the turn is being transitioned.
-        let next_action_idx = if self.is_ready_for_next_phase() {
-            None
-        } else {
-            self.data.play_positions.next_action_idx
-        };
-        let mut play_positions = self.data.play_positions.clone();
-        play_positions.next_action_idx = next_action_idx;
         GameView {
             donations: self.data.donations,
             blinds: self.data.blinds.clone(),
@@ -347,7 +339,7 @@ impl<T> Game<T> {
             pot: PotView {
                 size: self.data.pot.get_size(),
             },
-            play_positions,
+            play_positions: self.data.play_positions.clone(),
         }
     }
 
@@ -423,30 +415,21 @@ impl<T> Game<T> {
     /// Return the index of the player who has the next action, or
     /// nothing if no one has the next turn.
     fn get_next_action_idx(&self, new_phase: bool) -> Option<SeatIndex> {
-        if self.is_end_of_round() {
-            return None;
-        }
-        match self.data.play_positions.next_action_idx {
-            Some(action_idx) => self
-                .data
-                .players
-                .iter()
-                .enumerate()
-                .cycle()
-                .skip(action_idx + usize::from(!new_phase))
-                .find(|(_, p)| p.state == PlayerState::Wait)
-                .map(|(next_action_idx, _)| next_action_idx),
-            None => None,
-        }
+        let starting_idx = match self.data.play_positions.next_action_idx {
+            Some(idx) => idx + usize::from(!new_phase),
+            None => return None,
+        };
+
+        let num_players = self.data.players.len();
+        (0..num_players)
+            .map(|player_idx| (starting_idx + player_idx) % num_players)
+            .find(|&player_idx| self.data.players[player_idx].state == PlayerState::Wait)
     }
 
     /// Return the set of possible actions the next player can
     /// make, or nothing if there are no actions possible for the current
     /// state.
     fn get_next_action_choices(&self) -> Option<ActionChoices> {
-        if self.is_ready_for_next_phase() {
-            return None;
-        }
         match self.data.play_positions.next_action_idx {
             Some(action_idx) => {
                 let mut action_choices = HashSet::from([ActionChoice::Fold]);
@@ -1148,6 +1131,9 @@ impl Game<TakeAction> {
     pub fn act(&mut self, action: Action) -> Result<Action, UserError> {
         let sanitized_action = self.affect(action)?;
         self.data.play_positions.next_action_idx = self.get_next_action_idx(false);
+        if self.is_ready_for_next_phase() {
+            self.data.play_positions.next_action_idx = None;
+        }
         self.state.action_choices = self.get_next_action_choices();
         Ok(sanitized_action)
     }
