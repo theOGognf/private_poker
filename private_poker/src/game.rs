@@ -15,8 +15,8 @@ use constants::{DEFAULT_MAX_USERS, MAX_PLAYERS};
 use entities::{
     Action, ActionChoice, ActionChoices, Bet, BetAction, Blinds, Card, DEFAULT_BUY_IN,
     DEFAULT_MIN_BIG_BLIND, DEFAULT_MIN_SMALL_BLIND, GameView, GameViews, PlayPositions, Player,
-    PlayerCounts, PlayerQueues, PlayerState, PlayerView, Pot, PotView, SeatIndex, SubHand, Usd,
-    Usdf, User, Username, Vote,
+    PlayerCounts, PlayerQueues, PlayerState, PlayerView, Pot, PotView, SeatIndex, Usd, Usdf, User,
+    Username, Vote,
 };
 
 #[derive(Debug, Deserialize, Eq, Error, PartialEq, Serialize)]
@@ -262,33 +262,10 @@ pub struct Turn {}
 pub struct River {}
 
 #[derive(Clone, Debug)]
-pub struct ShowHands {
-    /// Temporarily maps player seats to poker hand evaluations so a player's
-    /// hand doesn't have to be evaluated multiple times per game.
-    hand_eval_cache: HashMap<SeatIndex, Vec<SubHand>>,
-}
-
-impl Default for ShowHands {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ShowHands {
-    #[must_use]
-    pub fn new() -> Self {
-        ShowHands {
-            hand_eval_cache: HashMap::with_capacity(MAX_PLAYERS),
-        }
-    }
-}
+pub struct ShowHands {}
 
 #[derive(Debug)]
-pub struct DistributePot {
-    /// Temporarily maps player seats to poker hand evaluations so a player's
-    /// hand doesn't have to be evaluated multiple times per game.
-    hand_eval_cache: HashMap<SeatIndex, Vec<SubHand>>,
-}
+pub struct DistributePot {}
 
 #[derive(Debug)]
 pub struct RemovePlayers {}
@@ -1278,7 +1255,7 @@ impl From<Game<TakeAction>> for Game<ShowHands> {
     fn from(value: Game<TakeAction>) -> Self {
         Self {
             data: value.data,
-            state: ShowHands::new(),
+            state: ShowHands {},
         }
     }
 }
@@ -1376,7 +1353,7 @@ impl From<Game<River>> for Game<ShowHands> {
         value.step();
         Self {
             data: value.data,
-            state: ShowHands::new(),
+            state: ShowHands {},
         }
     }
 }
@@ -1432,9 +1409,7 @@ impl From<Game<ShowHands>> for Game<DistributePot> {
         }
         Self {
             data: value.data,
-            state: DistributePot {
-                hand_eval_cache: value.state.hand_eval_cache,
-            },
+            state: DistributePot {},
         }
     }
 }
@@ -1474,18 +1449,11 @@ impl Game<DistributePot> {
                 let player = &mut self.data.players[**player_idx];
                 if player.state != PlayerState::Fold {
                     seats_in_pot.push(*player_idx);
-                    let hand_eval = || {
-                        let mut cards = player.cards.clone();
-                        cards.extend(self.data.board.clone());
-                        functional::prepare_hand(&mut cards);
-                        functional::eval(&cards)
-                    };
-                    let hand = self
-                        .state
-                        .hand_eval_cache
-                        .entry(**player_idx)
-                        .or_insert_with(hand_eval);
-                    hands_in_pot.push(hand.clone());
+                    let mut cards = player.cards.clone();
+                    cards.extend(self.data.board.clone());
+                    functional::prepare_hand(&mut cards);
+                    let hand = functional::eval(&cards);
+                    hands_in_pot.push(hand);
                 }
             }
             let winner_indices = functional::argmax(&hands_in_pot);
@@ -1525,9 +1493,7 @@ impl From<Game<DistributePot>> for Game<ShowHands> {
         value.distribute();
         Self {
             data: value.data,
-            state: ShowHands {
-                hand_eval_cache: value.state.hand_eval_cache,
-            },
+            state: ShowHands {},
         }
     }
 }
