@@ -1578,21 +1578,19 @@ impl From<Game<DivideDonations>> for Game<UpdateBlinds> {
 /// any other action.
 impl From<Game<UpdateBlinds>> for Game<BootPlayers> {
     fn from(mut value: Game<UpdateBlinds>) -> Self {
-        let min_money = value
+        let min_playable_money = value
             .data
             .spectators
             .iter()
             .map(|u| u.money)
             .chain(value.data.waitlist.iter().map(|u| u.money))
             .chain(value.data.players.iter().map(|p| p.user.money))
-            .filter(|money| *money >= value.data.blinds.big)
+            .filter(|money| *money >= value.data.settings.min_big_blind)
             .min()
-            .unwrap_or(Usd::MAX);
-        if min_money < Usd::MAX {
-            let multiple = max(1, min_money / value.data.settings.buy_in);
-            value.data.blinds.small = multiple * value.data.settings.min_small_blind;
-            value.data.blinds.big = multiple * value.data.settings.min_big_blind;
-        }
+            .unwrap_or(value.data.settings.min_big_blind);
+        let multiple = max(1, min_playable_money / value.data.settings.buy_in);
+        value.data.blinds.small = multiple * value.data.settings.min_small_blind;
+        value.data.blinds.big = multiple * value.data.settings.min_big_blind;
         Self {
             data: value.data,
             state: BootPlayers {},
