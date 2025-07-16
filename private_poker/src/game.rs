@@ -1,4 +1,3 @@
-use rand::{seq::SliceRandom, thread_rng};
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::{Ordering, max, min},
@@ -14,9 +13,9 @@ pub mod functional;
 use constants::{DEFAULT_MAX_USERS, MAX_PLAYERS};
 use entities::{
     Action, ActionChoice, ActionChoices, Bet, BetAction, Blinds, Card, DEFAULT_BUY_IN,
-    DEFAULT_MIN_BIG_BLIND, DEFAULT_MIN_SMALL_BLIND, GameView, GameViews, PlayPositions, Player,
-    PlayerCounts, PlayerQueues, PlayerState, PlayerView, Pot, PotView, SeatIndex, Usd, Usdf, User,
-    Username, Vote,
+    DEFAULT_MIN_BIG_BLIND, DEFAULT_MIN_SMALL_BLIND, Deck, GameView, GameViews, PlayPositions,
+    Player, PlayerCounts, PlayerQueues, PlayerState, PlayerView, Pot, PotView, SeatIndex, Usd,
+    Usdf, User, Username, Vote,
 };
 
 #[derive(Debug, Deserialize, Eq, Error, PartialEq, Serialize)]
@@ -143,7 +142,7 @@ impl Default for GameSettings {
 pub struct GameData {
     /// Deck of cards. This is instantiated once and reshuffled
     /// each deal.
-    deck: [Card; 52],
+    deck: Deck,
     /// Pot split remainder when the pot can't be split equally amongst
     /// all winners. This money is eventually split equally amongst all
     /// users at a particular game state once it can be split equally.
@@ -162,8 +161,6 @@ pub struct GameData {
     /// Queues of players to do things with at a later point of
     /// an active game.
     player_queues: PlayerQueues,
-    deck_idx: usize,
-    starting_action_idx: SeatIndex,
     pub play_positions: PlayPositions,
     /// Stack of game events that give more insight as to what kind
     /// of game updates occur due to user actions or game state
@@ -191,7 +188,7 @@ impl GameData {
 impl From<GameSettings> for GameData {
     fn from(value: GameSettings) -> Self {
         Self {
-            deck: functional::new_deck(),
+            deck: Deck::default(),
             donations: 0.0,
             blinds: Blinds {
                 small: value.min_small_blind,
@@ -206,8 +203,6 @@ impl From<GameSettings> for GameData {
             player_counts: PlayerCounts::default(),
             pot: Pot::new(value.max_players),
             player_queues: PlayerQueues::default(),
-            deck_idx: 0,
-            starting_action_idx: 2,
             play_positions: PlayPositions::default(),
             events: VecDeque::new(),
             ledger: HashMap::with_capacity(value.max_users),
@@ -601,7 +596,8 @@ impl<T> Game<T> {
         }) {
             player.state = PlayerState::Wait;
         }
-        self.data.play_positions.next_action_idx = Some(self.data.starting_action_idx);
+        self.data.play_positions.next_action_idx =
+            Some(self.data.play_positions.starting_action_idx);
         self.data.play_positions.next_action_idx = self.get_next_action_idx(true);
         self.get_next_action_choices()
     }
@@ -1010,9 +1006,10 @@ impl From<Game<MoveButton>> for Game<CollectBlinds> {
             .skip(value.data.play_positions.big_blind_idx + 1);
         value.data.play_positions.big_blind_idx =
             seats.next().expect("big blind position should exist");
-        value.data.starting_action_idx =
+        value.data.play_positions.starting_action_idx =
             seats.next().expect("starting action position should exist");
-        value.data.play_positions.next_action_idx = Some(value.data.starting_action_idx);
+        value.data.play_positions.next_action_idx =
+            Some(value.data.play_positions.starting_action_idx);
         // Reverse the table search to find the small blind position relative
         // to the big blind position since the small blind must always trail the big
         // blind.
@@ -1080,8 +1077,7 @@ impl From<Game<CollectBlinds>> for Game<Deal> {
 /// Shuffle the game's deck and deal 2 cards to each player.
 impl From<Game<Deal>> for Game<TakeAction> {
     fn from(mut value: Game<Deal>) -> Self {
-        value.data.deck.shuffle(&mut thread_rng());
-        value.data.deck_idx = 0;
+        value.data.deck.shuffle();
 
         let num_players = value.get_num_players();
         let mut seats = (0..num_players)
@@ -1089,12 +1085,11 @@ impl From<Game<Deal>> for Game<TakeAction> {
             .skip(value.data.play_positions.small_blind_idx);
         // Deal 2 cards per player, looping over players and dealing them 1 card
         // at a time.
-        while value.data.deck_idx < (2 * num_players) {
+        for _ in 0..(2 * num_players) {
             let deal_idx = seats.next().expect("dealing position should exist");
             let player = &mut value.data.players[deal_idx];
-            let card = value.data.deck[value.data.deck_idx];
+            let card = value.data.deck.deal_card();
             player.cards.push(card);
-            value.data.deck_idx += 1;
         }
         let action_choices = value.prepare_for_next_phase();
         Self {
@@ -1263,9 +1258,8 @@ impl From<Game<TakeAction>> for Game<ShowHands> {
 impl Game<Flop> {
     fn step(&mut self) {
         for _ in 0..3 {
-            let card = self.data.deck[self.data.deck_idx];
+            let card = self.data.deck.deal_card();
             self.data.board.push(card);
-            self.data.deck_idx += 1;
         }
     }
 }
@@ -1296,9 +1290,8 @@ impl From<Game<Flop>> for Game<Turn> {
 
 impl Game<Turn> {
     fn step(&mut self) {
-        let card = self.data.deck[self.data.deck_idx];
+        let card = self.data.deck.deal_card();
         self.data.board.push(card);
-        self.data.deck_idx += 1;
     }
 }
 
@@ -1328,9 +1321,8 @@ impl From<Game<Turn>> for Game<River> {
 
 impl Game<River> {
     fn step(&mut self) {
-        let card = self.data.deck[self.data.deck_idx];
+        let card = self.data.deck.deal_card();
         self.data.board.push(card);
-        self.data.deck_idx += 1;
     }
 }
 
@@ -2165,7 +2157,7 @@ mod game_tests {
     fn deal() {
         let game = init_game_at_deal();
         assert_eq!(game.get_num_community_cards(), 0);
-        assert_eq!(game.data.deck_idx, 2 * game.get_num_users());
+        assert_eq!(game.data.deck.deck_idx, 2 * game.get_num_users());
         for player in &game.data.players {
             assert_eq!(player.cards.len(), 2);
         }
@@ -2453,10 +2445,10 @@ mod game_tests {
         let game = init_game_at_move_button();
         assert_eq!(game.data.play_positions.small_blind_idx, 1);
         assert_eq!(game.data.play_positions.big_blind_idx, 2);
-        assert_eq!(game.data.starting_action_idx, 0);
+        assert_eq!(game.data.play_positions.starting_action_idx, 0);
         assert_eq!(
             game.data.play_positions.next_action_idx,
-            Some(game.data.starting_action_idx)
+            Some(game.data.play_positions.starting_action_idx)
         );
     }
 

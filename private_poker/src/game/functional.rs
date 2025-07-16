@@ -340,33 +340,6 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
     hand
 }
 
-/// Create a new, unshuffled deck of cards.
-/// Shuffle the deck using `rand::shuffle`.
-///
-/// # Examples
-///
-/// ```
-/// use private_poker::functional::new_deck;
-/// use rand::thread_rng;
-/// use rand::seq::SliceRandom;
-///
-/// let mut deck = new_deck();
-/// deck.shuffle(&mut thread_rng());
-/// ```
-#[must_use]
-pub fn new_deck() -> [Card; 52] {
-    let mut deck: [Card; 52] = [Card(0, Suit::Wild); 52];
-    for (i, value) in (1u8..14u8).enumerate() {
-        for (j, suit) in [Suit::Club, Suit::Spade, Suit::Diamond, Suit::Heart]
-            .into_iter()
-            .enumerate()
-        {
-            deck[4 * i + j] = Card(value, suit);
-        }
-    }
-    deck
-}
-
 /// Prepare a hand for evaluation by sorting it and adding high
 /// aces to it so aces can be treated as 1s in addition to 14s.
 ///

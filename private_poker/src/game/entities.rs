@@ -1,3 +1,4 @@
+use rand::{seq::SliceRandom, thread_rng};
 use serde::{Deserialize, Serialize};
 use std::{
     borrow::Borrow,
@@ -109,6 +110,40 @@ impl fmt::Display for SubHand {
     }
 }
 
+#[derive(Debug)]
+pub struct Deck {
+    cards: [Card; 52],
+    pub deck_idx: usize,
+}
+
+impl Deck {
+    pub fn deal_card(&mut self) -> Card {
+        let card = self.cards[self.deck_idx];
+        self.deck_idx += 1;
+        card
+    }
+
+    pub fn shuffle(&mut self) {
+        self.cards.shuffle(&mut thread_rng());
+        self.deck_idx = 0;
+    }
+}
+
+impl Default for Deck {
+    fn default() -> Self {
+        let mut cards: [Card; 52] = [Card(0, Suit::Wild); 52];
+        for (i, value) in (1u8..14u8).enumerate() {
+            for (j, suit) in [Suit::Club, Suit::Spade, Suit::Diamond, Suit::Heart]
+                .into_iter()
+                .enumerate()
+            {
+                cards[4 * i + j] = Card(value, suit);
+            }
+        }
+        Self { cards, deck_idx: 0 }
+    }
+}
+
 /// Type alias for whole dollars. All bets and player stacks are represented
 /// as whole dollars (there's no point arguing over pennies).
 ///
@@ -132,6 +167,7 @@ pub type SeatIndex = usize;
 pub struct PlayPositions {
     pub small_blind_idx: SeatIndex,
     pub big_blind_idx: SeatIndex,
+    pub starting_action_idx: SeatIndex,
     pub next_action_idx: Option<SeatIndex>,
 }
 
@@ -140,6 +176,7 @@ impl Default for PlayPositions {
         Self {
             small_blind_idx: 0,
             big_blind_idx: 1,
+            starting_action_idx: 2,
             next_action_idx: None,
         }
     }
