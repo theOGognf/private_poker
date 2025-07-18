@@ -21,20 +21,23 @@ use super::entities::{Card, Rank, SubHand, Suit, Value};
 /// ```
 #[must_use]
 pub fn argmax(hands: &[Vec<SubHand>]) -> Vec<usize> {
-    let mut max = vec![SubHand {
-        rank: Rank::HighCard,
-        values: vec![0],
-    }];
     let mut argmaxes: Vec<usize> = Vec::new();
+    let mut best_hand: Option<&[SubHand]> = None;
     for (i, hand) in hands.iter().enumerate() {
-        match hand.cmp(&max) {
-            Ordering::Equal => argmaxes.push(i),
-            Ordering::Greater => {
-                argmaxes.clear();
+        match best_hand {
+            Some(current_best_hand) => match hand.as_slice().cmp(current_best_hand) {
+                Ordering::Equal => argmaxes.push(i),
+                Ordering::Greater => {
+                    argmaxes.clear();
+                    argmaxes.push(i);
+                    best_hand = Some(hand);
+                }
+                Ordering::Less => {}
+            },
+            None => {
                 argmaxes.push(i);
-                max.clone_from(hand);
+                best_hand = Some(hand);
             }
-            _ => {}
         }
     }
     argmaxes
