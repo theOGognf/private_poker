@@ -1,4 +1,4 @@
-![TUI][0]
+![Demo][0]
 
 <div align="center">
     <i>A poker library, server, client, and TUI.</i>
@@ -170,7 +170,7 @@ exercise for forkers:
 - [@Mac-Genius][4] for TUI feedback
 - [@shazow][5] for inspiring me with [`ssh-chat`][6]
 
-[0]: assets/tui.png?raw=true
+[0]: assets/demo.gif?raw=true
 [1]: https://hub.docker.com/r/ognf/poker
 [2]: https://github.com/Ilikemath642
 [3]: https://github.com/zachstruck
