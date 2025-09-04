@@ -517,8 +517,8 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                     token if !tokens_to_remove.contains(&token) => {
                         // Maybe received an event for a TCP connection.
                         if let Ok(stream) = token_manager.get_mut_stream_with_token(&token) {
-                            if event.is_writable() {
-                                if let Some(messages) = messages_to_write.get_mut(&token) {
+                            if event.is_writable()
+                                && let Some(messages) = messages_to_write.get_mut(&token) {
                                     // Need to handle the case where there's an unresponsive or
                                     // misbehaving client that doesn't let us write messages to
                                     // them. If their message queue reaches a certain size, queue
@@ -586,7 +586,6 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                         }
                                     }
                                 }
-                            }
 
                             if event.is_readable() {
                                 // We can (maybe) read from the connection.
