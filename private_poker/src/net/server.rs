@@ -518,74 +518,73 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                         // Maybe received an event for a TCP connection.
                         if let Ok(stream) = token_manager.get_mut_stream_with_token(&token) {
                             if event.is_writable()
-                                && let Some(messages) = messages_to_write.get_mut(&token) {
-                                    // Need to handle the case where there's an unresponsive or
-                                    // misbehaving client that doesn't let us write messages to
-                                    // them. If their message queue reaches a certain size, queue
-                                    // them for removal.
-                                    if messages.len() >= max_network_events {
-                                        let repr = token_to_string(&token);
-                                        error!("{repr} has not been receiving and will be removed");
-                                        tokens_to_remove.insert(token);
-                                        continue;
-                                    }
-                                    while let Some(msg) = messages.pop_front() {
-                                        match write_prefixed::<ServerMessage, TcpStream>(
-                                            stream, &msg,
-                                        ) {
-                                            Ok(()) => {
-                                                // Client errors are strict and result in the removal of a connection.
-                                                if let ServerMessage::ClientError(_) = msg {
-                                                    let repr = token_to_string(&token);
-                                                    debug!("{repr}: {msg}");
-                                                    tokens_to_remove.insert(token);
-                                                    break;
-                                                }
-                                            }
-                                            Err(error) => {
-                                                match error.kind() {
-                                                    // `write_prefixed` uses `write_all` under the hood, so we know
-                                                    // that if any of these occur, then the connection was probably
-                                                    // dropped at some point.
-                                                    io::ErrorKind::BrokenPipe
-                                                    | io::ErrorKind::ConnectionAborted
-                                                    | io::ErrorKind::ConnectionReset
-                                                    | io::ErrorKind::TimedOut
-                                                    | io::ErrorKind::UnexpectedEof => {
-                                                        let repr = token_to_string(&token);
-                                                        debug!("{repr} connection dropped");
-                                                        tokens_to_remove.insert(token);
-                                                    }
-                                                    // Would block "errors" are the OS's way of saying that the
-                                                    // connection is not actually ready to perform this I/O operation.
-                                                    io::ErrorKind::WouldBlock => {
-                                                        // The message couldn't be sent, so we need to push it back
-                                                        // onto the queue so we don't accidentally forget about it.
-                                                        messages.push_front(msg);
-                                                    }
-                                                    // Retry writing in the case that the full message couldn't
-                                                    // be written. This should be infrequent.
-                                                    io::ErrorKind::WriteZero => {
-                                                        let repr = token_to_string(&token);
-                                                        debug!(
-                                                            "{repr} got a zero write, but will retry"
-                                                        );
-                                                        messages.push_front(msg);
-                                                        continue;
-                                                    }
-                                                    // Other errors we'll consider fatal.
-                                                    _ => bail!(error),
-                                                }
-                                                poll.registry().reregister(
-                                                    stream,
-                                                    token,
-                                                    Interest::READABLE,
-                                                )?;
+                                && let Some(messages) = messages_to_write.get_mut(&token)
+                            {
+                                // Need to handle the case where there's an unresponsive or
+                                // misbehaving client that doesn't let us write messages to
+                                // them. If their message queue reaches a certain size, queue
+                                // them for removal.
+                                if messages.len() >= max_network_events {
+                                    let repr = token_to_string(&token);
+                                    error!("{repr} has not been receiving and will be removed");
+                                    tokens_to_remove.insert(token);
+                                    continue;
+                                }
+                                while let Some(msg) = messages.pop_front() {
+                                    match write_prefixed::<ServerMessage, TcpStream>(stream, &msg) {
+                                        Ok(()) => {
+                                            // Client errors are strict and result in the removal of a connection.
+                                            if let ServerMessage::ClientError(_) = msg {
+                                                let repr = token_to_string(&token);
+                                                debug!("{repr}: {msg}");
+                                                tokens_to_remove.insert(token);
                                                 break;
                                             }
                                         }
+                                        Err(error) => {
+                                            match error.kind() {
+                                                // `write_prefixed` uses `write_all` under the hood, so we know
+                                                // that if any of these occur, then the connection was probably
+                                                // dropped at some point.
+                                                io::ErrorKind::BrokenPipe
+                                                | io::ErrorKind::ConnectionAborted
+                                                | io::ErrorKind::ConnectionReset
+                                                | io::ErrorKind::TimedOut
+                                                | io::ErrorKind::UnexpectedEof => {
+                                                    let repr = token_to_string(&token);
+                                                    debug!("{repr} connection dropped");
+                                                    tokens_to_remove.insert(token);
+                                                }
+                                                // Would block "errors" are the OS's way of saying that the
+                                                // connection is not actually ready to perform this I/O operation.
+                                                io::ErrorKind::WouldBlock => {
+                                                    // The message couldn't be sent, so we need to push it back
+                                                    // onto the queue so we don't accidentally forget about it.
+                                                    messages.push_front(msg);
+                                                }
+                                                // Retry writing in the case that the full message couldn't
+                                                // be written. This should be infrequent.
+                                                io::ErrorKind::WriteZero => {
+                                                    let repr = token_to_string(&token);
+                                                    debug!(
+                                                        "{repr} got a zero write, but will retry"
+                                                    );
+                                                    messages.push_front(msg);
+                                                    continue;
+                                                }
+                                                // Other errors we'll consider fatal.
+                                                _ => bail!(error),
+                                            }
+                                            poll.registry().reregister(
+                                                stream,
+                                                token,
+                                                Interest::READABLE,
+                                            )?;
+                                            break;
+                                        }
                                     }
                                 }
+                            }
 
                             if event.is_readable() {
                                 // We can (maybe) read from the connection.
