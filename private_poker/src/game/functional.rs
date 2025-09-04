@@ -331,7 +331,7 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
             || (subhand.rank == Rank::HighCard && !cards_in_hand.contains(&subhand.values[0]))
         {
             num_cards += subhand.values.len();
-            cards_in_hand.extend(subhand.values.clone());
+            cards_in_hand.extend(&subhand.values);
             hand.push(subhand);
         }
         if let Some(best_subhand) = hand.first()

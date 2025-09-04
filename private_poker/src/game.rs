@@ -529,10 +529,10 @@ impl<T> Game<T> {
     /// a user trying to take an action can actually take an action, or
     /// if they're violating rules of play.
     pub fn is_turn(&self, username: &str) -> bool {
-        match self.data.play_positions.next_action_idx {
-            Some(action_idx) => self.data.players[action_idx].user.name == username,
-            None => false,
-        }
+        self.data
+            .play_positions
+            .next_action_idx
+            .is_some_and(|idx| self.data.players[idx].user.name == username)
     }
 
     #[must_use]

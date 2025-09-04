@@ -192,58 +192,55 @@ impl TokenManager {
     /// game accepted their username and relieves the token from potential
     /// expiration.
     pub fn confirm_username(&mut self, token: Token) -> Result<(), ClientError> {
-        match self.tokens_to_usernames.get(&token) {
-            Some(username) => match self.unconfirmed_usernames_to_tokens.remove_entry(username) {
-                Some((username, token)) => match self.unconfirmed_tokens.remove(&token) {
-                    Some(unconfirmed_client) => {
-                        self.confirmed_tokens
-                            .insert(token, unconfirmed_client.stream);
-                        self.confirmed_usernames_to_tokens.insert(username, token);
-                        Ok(())
-                    }
-                    None => unreachable!(
-                        "an unconfirmed username always corresponds to an unconfirmed token"
-                    ),
-                },
-                None => Err(ClientError::Unassociated),
-            },
-            None => Err(ClientError::Unassociated),
-        }
+        let username = self
+            .tokens_to_usernames
+            .get(&token)
+            .ok_or(ClientError::Unassociated)?;
+
+        let (username, token) = self
+            .unconfirmed_usernames_to_tokens
+            .remove_entry(username)
+            .ok_or(ClientError::Unassociated)?;
+
+        let unconfirmed_client = self
+            .unconfirmed_tokens
+            .remove(&token)
+            .expect("an unconfirmed username should correspond to an unconfirmed token");
+
+        self.confirmed_tokens
+            .insert(token, unconfirmed_client.stream);
+        self.confirmed_usernames_to_tokens.insert(username, token);
+
+        Ok(())
     }
 
     pub fn get_confirmed_username_with_token(&self, token: Token) -> Result<Username, ClientError> {
-        match (
-            self.confirmed_tokens.contains_key(&token),
-            self.tokens_to_usernames.get(&token),
-        ) {
-            (true, Some(username)) => Ok(username.clone()),
-            _ => Err(ClientError::Unassociated),
-        }
+        self.confirmed_tokens
+            .get(&token)
+            .and_then(|_| self.tokens_to_usernames.get(&token))
+            .cloned()
+            .ok_or(ClientError::Unassociated)
     }
 
     pub fn get_mut_stream_with_token(
         &mut self,
         token: &Token,
     ) -> Result<&mut TcpStream, ClientError> {
-        match (
-            self.unconfirmed_tokens.get_mut(token),
-            self.confirmed_tokens.get_mut(token),
-        ) {
-            (Some(unconfirmed_client), None) => Ok(&mut unconfirmed_client.stream),
-            (None, Some(stream)) => Ok(stream),
-            (None, None) => Err(ClientError::DoesNotExist),
-            _ => unreachable!("a token must be either unconfirmed or confirmed"),
+        if let Some(unconfirmed) = self.unconfirmed_tokens.get_mut(token) {
+            return Ok(&mut unconfirmed.stream);
         }
+        if let Some(stream) = self.confirmed_tokens.get_mut(token) {
+            return Ok(stream);
+        }
+        Err(ClientError::DoesNotExist)
     }
 
     pub fn get_token_with_username(&self, username: &str) -> Result<Token, ClientError> {
-        match (
-            self.unconfirmed_usernames_to_tokens.get(username),
-            self.confirmed_usernames_to_tokens.get(username),
-        ) {
-            (Some(token), None) | (None, Some(token)) => Ok(*token),
-            _ => Err(ClientError::Unassociated),
-        }
+        self.unconfirmed_usernames_to_tokens
+            .get(username)
+            .or_else(|| self.confirmed_usernames_to_tokens.get(username))
+            .copied()
+            .ok_or(ClientError::Unassociated)
     }
 
     pub fn new(token_association_timeout: Duration) -> Self {
@@ -295,13 +292,12 @@ impl TokenManager {
         }
         let mut recyclables = VecDeque::new();
         for token in tokens_to_recycle {
-            match self.unconfirmed_tokens.remove(&token) {
-                Some(unconfirmed_client) => {
-                    recyclables.push_back((token, unconfirmed_client.stream));
-                }
-                None => unreachable!("an unassociated token is always unconfirmed"),
-            }
+            let unconfirmed_client = self
+                .unconfirmed_tokens
+                .remove(&token)
+                .expect("an unassociated token should be unconfirmed");
             self.recycled_tokens.insert(token);
+            recyclables.push_back((token, unconfirmed_client.stream));
         }
         recyclables
     }
@@ -313,15 +309,14 @@ impl TokenManager {
             self.unconfirmed_usernames_to_tokens.remove(&username);
             self.confirmed_usernames_to_tokens.remove(&username);
         }
-        let stream = match (
-            self.unconfirmed_tokens.remove(&token),
-            self.confirmed_tokens.remove(&token),
-        ) {
-            (Some(unconfirmed), None) => unconfirmed.stream,
-            (None, Some(stream)) => stream,
-            (None, None) => return Err(ClientError::DoesNotExist),
-            _ => unreachable!("a token must be either unconfirmed or confirmed"),
-        };
+
+        let stream = self
+            .unconfirmed_tokens
+            .remove(&token)
+            .map(|u| u.stream)
+            .or_else(|| self.confirmed_tokens.remove(&token))
+            .ok_or(ClientError::DoesNotExist)?;
+
         self.recycled_tokens.insert(token);
         Ok(stream)
     }
@@ -753,59 +748,56 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
             // and increase the timeout to give them time to make their
             // decision. We also keep track of their username so we
             // can tell if they don't make a decision in time.
-            match (state.get_next_action_username(), state.get_action_choices()) {
-                (Some(username), Some(action_choices)) => {
-                    // Check if the username from the last turn is the same as the
-                    // username from this turn. If so, we need to check if there
-                    // was a timeout.
-                    if let Some(ref last_username) = next_action_username {
-                        // If there's a timeout, then that means the user didn't
-                        // make a decision in time, and they have to fold.
-                        if timeout.as_secs() == 0 && &username == last_username {
-                            // Ack that they will fold (the poker state will
-                            // fold for them).
-                            warn!("{username} ran out of time and will be forced to fold");
-                            let command = UserCommand::TakeAction(Action::Fold);
-                            let msg = ServerData::Ack(ClientMessage {
-                                username: username.clone(),
-                                command,
-                            });
-                            tx_server.send(msg)?;
-                            waker.wake()?;
-
-                            // Force remove them so they don't disrupt future games.
-                            warn!("{username} will be removed at the end of the game");
-                            state.remove_user(&username)?;
-
-                            break 'command;
-                        }
-                        // Let all users know whose turn it is.
-                        let status =
-                            format!("it's {username}'s turn and they can {action_choices}");
-                        let msg = ServerData::Status(status.clone());
-                        tx_server.send(msg)?;
-                        waker.wake()?;
-
-                        // Let player know it's their turn.
-                        info!("{status}");
-                        let msg = ServerData::TurnSignal {
+            if let Some(username) = state.get_next_action_username()
+                && let Some(action_choices) = state.get_action_choices()
+            {
+                // Check if the username from the last turn is the same as the
+                // username from this turn. If so, we need to check if there
+                // was a timeout.
+                if let Some(ref last_username) = next_action_username {
+                    // If there's a timeout, then that means the user didn't
+                    // make a decision in time, and they have to fold.
+                    if timeout.as_secs() == 0 && &username == last_username {
+                        // Ack that they will fold (the poker state will
+                        // fold for them).
+                        warn!("{username} ran out of time and will be forced to fold");
+                        let command = UserCommand::TakeAction(Action::Fold);
+                        let msg = ServerData::Ack(ClientMessage {
                             username: username.clone(),
-                            action_choices,
-                        };
+                            command,
+                        });
                         tx_server.send(msg)?;
                         waker.wake()?;
 
-                        next_action_username = Some(username);
-                        timeout = config.server_timeouts.action;
-                    }
-                }
-                // If it's no one's turn and there's a timeout, then we must
-                // break to update the poker state.
-                _ => {
-                    if timeout.as_secs() == 0 {
+                        // Force remove them so they don't disrupt future games.
+                        warn!("{username} will be removed at the end of the game");
+                        state.remove_user(&username)?;
+
                         break 'command;
                     }
+                    // Let all users know whose turn it is.
+                    let status = format!("it's {username}'s turn and they can {action_choices}");
+                    let msg = ServerData::Status(status.clone());
+                    tx_server.send(msg)?;
+                    waker.wake()?;
+
+                    // Let player know it's their turn.
+                    info!("{status}");
+                    let msg = ServerData::TurnSignal {
+                        username: username.clone(),
+                        action_choices,
+                    };
+                    tx_server.send(msg)?;
+                    waker.wake()?;
+
+                    next_action_username = Some(username);
+                    timeout = config.server_timeouts.action;
                 }
+            }
+            // If it's no one's turn and there's a timeout, then we must
+            // break to update the poker state.
+            else if timeout.as_secs() == 0 {
+                break 'command;
             }
 
             // Use the timeout duration to process events from the server's
