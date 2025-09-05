@@ -1,6 +1,6 @@
 # pp_client
 
-![TUI][0]
+![Demo][0]
 
 A poker client and TUI. Connect to a poker server with:
 
@@ -17,7 +17,7 @@ Poker servers are hosted with [pp_server][2].
 - [Bots crate][3]
 - [All-in-one Docker image (recommended)][4]
 
-[0]: https://github.com/theOGognf/private_poker/blob/main/assets/tui.png?raw=true
+[0]: https://github.com/theOGognf/private_poker/blob/main/assets/demo.gif?raw=true
 [1]: https://crates.io/crates/private_poker
 [2]: https://crates.io/crates/pp_server
 [3]: https://crates.io/crates/pp_bots
