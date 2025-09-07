@@ -322,6 +322,21 @@ impl TokenManager {
     }
 }
 
+/// Server data sender and waker need to be triggered at the same time, so just
+/// wrap them in the same struct to minimize mistakes.
+struct ServerDataSender {
+    sender: Sender<ServerData>,
+    waker: Waker,
+}
+
+impl ServerDataSender {
+    fn send(&self, msg: ServerData) -> Result<(), Error> {
+        self.sender.send(msg)?;
+        self.waker.wake()?;
+        Ok(())
+    }
+}
+
 /// Run the poker server in two separate threads. The parent thread manages
 /// the poker game state while the child thread manages non-blocking networking
 /// IO.
@@ -334,6 +349,11 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
 
     let mut poll = Poll::new()?;
     let waker = Waker::new(poll.registry(), WAKER)?;
+
+    let server_data_sender = ServerDataSender {
+        sender: tx_server,
+        waker,
+    };
 
     // This thread is where the actual networking happens for non-blocking IO.
     // A server is bound to the address and manages connections to clients.
@@ -729,15 +749,13 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
             info!("{repr}");
             status = repr;
             let msg = ServerData::Status(status.clone());
-            tx_server.send(msg)?;
-            waker.wake()?;
+            server_data_sender.send(msg)?;
         }
         state = state.step();
 
         let views = state.get_views();
         let msg = ServerData::Views(views);
-        tx_server.send(msg)?;
-        waker.wake()?;
+        server_data_sender.send(msg)?;
 
         let mut next_action_username = state.get_next_action_username();
         let mut timeout = config.server_timeouts.step;
@@ -764,8 +782,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                             username: username.clone(),
                             command,
                         });
-                        tx_server.send(msg)?;
-                        waker.wake()?;
+                        server_data_sender.send(msg)?;
 
                         // Force remove them so they don't disrupt future games.
                         warn!("{username} will be removed at the end of the game");
@@ -776,8 +793,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                     // Let all users know whose turn it is.
                     let status = format!("it's {username}'s turn and they can {action_choices}");
                     let msg = ServerData::Status(status.clone());
-                    tx_server.send(msg)?;
-                    waker.wake()?;
+                    server_data_sender.send(msg)?;
 
                     // Let player know it's their turn.
                     info!("{status}");
@@ -785,8 +801,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                         username: username.clone(),
                         action_choices,
                     };
-                    tx_server.send(msg)?;
-                    waker.wake()?;
+                    server_data_sender.send(msg)?;
 
                     next_action_username = Some(username);
                     timeout = config.server_timeouts.action;
@@ -805,8 +820,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                 for event in state.drain_events() {
                     info!("{event}");
                     let msg = ServerData::Event(event);
-                    tx_server.send(msg)?;
-                    waker.wake()?;
+                    server_data_sender.send(msg)?;
                 }
                 let start = Instant::now();
                 if let Ok(mut msg) = rx_client.recv_timeout(timeout) {
@@ -826,20 +840,16 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                 *action = new_action;
                             }),
                         UserCommand::CastVote(ref vote) => {
-                            let result = state.cast_vote(&msg.username, vote.clone());
-                            match result {
-                                Ok(Some(vote)) => match vote {
-                                    Vote::Kick(username) => state.kick_user(&username),
-                                    Vote::Reset(None) => {
-                                        state.reset_all_money();
-                                        Ok(())
-                                    }
-                                    Vote::Reset(Some(username)) => {
-                                        state.reset_user_money(&username)
-                                    }
-                                },
-                                Ok(None) => Ok(()),
-                                Err(err) => Err(err),
+                            match state.cast_vote(&msg.username, vote.clone())? {
+                                Some(Vote::Kick(username)) => state.kick_user(&username),
+                                Some(Vote::Reset(None)) => {
+                                    state.reset_all_money();
+                                    Ok(())
+                                }
+                                Some(Vote::Reset(Some(username))) => {
+                                    state.reset_user_money(&username)
+                                }
+                                None => Ok(()),
                             }
                         }
                     };
@@ -852,12 +862,10 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                         Ok(()) => {
                             info!("{msg}");
                             let msg = ServerData::Ack(msg);
-                            tx_server.send(msg)?;
-                            waker.wake()?;
+                            server_data_sender.send(msg)?;
 
                             let msg = ServerData::Views(state.get_views());
-                            tx_server.send(msg)?;
-                            waker.wake()?;
+                            server_data_sender.send(msg)?;
                         }
                         Err(error) => {
                             error!("{error}: {msg}");
@@ -865,8 +873,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                 username: msg.username,
                                 error,
                             };
-                            tx_server.send(msg)?;
-                            waker.wake()?;
+                            server_data_sender.send(msg)?;
                         }
                     }
                 }
