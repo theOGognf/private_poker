@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     borrow::Borrow,
     collections::{BTreeSet, HashMap, HashSet, VecDeque},
-    fmt,
+    fmt::{self},
     hash::{Hash, Hasher},
     mem::discriminant,
 };
@@ -90,24 +90,6 @@ impl fmt::Display for Rank {
 pub struct SubHand {
     pub rank: Rank,
     pub values: Vec<Value>,
-}
-
-impl fmt::Display for SubHand {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let repr = self
-            .values
-            .iter()
-            .map(|v| match v {
-                1 | 14 => "A".to_string(),
-                11 => "J".to_string(),
-                12 => "Q".to_string(),
-                13 => "K".to_string(),
-                v => v.to_string(),
-            })
-            .collect::<Vec<_>>()
-            .join(" ");
-        write!(f, "{} {repr}", self.rank)
-    }
 }
 
 #[derive(Debug)]
@@ -228,6 +210,13 @@ pub struct Blinds {
     pub big: Usd,
 }
 
+impl fmt::Display for Blinds {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let repr = format!("${}/{}", self.big, self.small);
+        write!(f, "{repr}")
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct User {
     pub name: Username,
@@ -243,13 +232,6 @@ impl Hash for User {
 impl Borrow<str> for User {
     fn borrow(&self) -> &str {
         &self.name
-    }
-}
-
-impl fmt::Display for User {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let money = format!("${}", self.money);
-        write!(f, "{:16} {:>5}", self.name, money)
     }
 }
 

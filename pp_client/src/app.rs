@@ -70,47 +70,33 @@ const MAX_LOG_RECORDS: usize = 1024;
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 const UNRECOGNIZED_COMMAND_MESSAGE: &str = "unrecognized command";
 
-fn blinds_to_string(view: &GameView) -> String {
-    format!(" blinds: ${}/{}  ", view.blinds.big, view.blinds.small)
-}
-
-fn board_to_vec_of_spans(view: &GameView) -> Vec<Span<'_>> {
-    if view.board.is_empty() {
-        return vec![];
-    }
-    std::iter::once(" board: ".into())
-        .chain(
-            view.board
-                .iter()
-                .flat_map(|card| vec![card_to_span(card), "  ".into()]),
-        )
+fn make_board_spans(view: &GameView) -> Vec<Span<'_>> {
+    (!view.board.is_empty())
+        .then(|| {
+            std::iter::once(" board: ".into()).chain(
+                view.board
+                    .iter()
+                    .flat_map(|card| vec![make_card_span(card), "  ".into()]),
+            )
+        })
+        .into_iter()
+        .flatten()
         .collect()
 }
 
-fn card_to_span(card: &Card) -> Span<'_> {
-    let Card(value, suit) = card;
-    let value = match value {
-        1 | 14 => "A".to_string(),
-        11 => "J".to_string(),
-        12 => "Q".to_string(),
-        13 => "K".to_string(),
-        v => v.to_string(),
-    };
-    let padded_value = format!("{value:>2}");
+fn make_card_span(card: &Card) -> Span<'_> {
+    let Card(.., suit) = card;
+    let repr = card.to_string();
     match suit {
-        Suit::Club => format!("{padded_value}/c").light_green(),
-        Suit::Diamond => format!("{padded_value}/d").light_blue(),
-        Suit::Heart => format!("{padded_value}/h").light_red(),
-        Suit::Spade => format!("{padded_value}/s").into(),
-        Suit::Wild => format!("{padded_value}/w").light_magenta(),
+        Suit::Club => repr.light_green(),
+        Suit::Diamond => repr.light_blue(),
+        Suit::Heart => repr.light_red(),
+        Suit::Spade => repr.into(),
+        Suit::Wild => repr.light_magenta(),
     }
 }
 
-fn pot_to_string(view: &GameView) -> String {
-    format!(" pot: {}  ", view.pot)
-}
-
-fn user_to_row(username: &str, user: &User) -> Row<'static> {
+fn make_user_row(username: &str, user: &User) -> Row<'static> {
     let mut row = Row::new(vec![
         Cell::new(Text::from(user.name.clone()).alignment(Alignment::Left)),
         Cell::new(Text::from(format!("${}", user.money)).alignment(Alignment::Right)),
@@ -569,7 +555,7 @@ impl App {
         let spectators = Table::new(
             spectators
                 .iter()
-                .map(|user| user_to_row(&self.username, user)),
+                .map(|user| make_user_row(&self.username, user)),
             [Constraint::Percentage(50), Constraint::Percentage(50)],
         )
         .block(
@@ -583,7 +569,7 @@ impl App {
         let waitlisters = Table::new(
             view.waitlist
                 .iter()
-                .map(|user| user_to_row(&self.username, user)),
+                .map(|user| make_user_row(&self.username, user)),
             [Constraint::Percentage(50), Constraint::Percentage(50)],
         )
         .block(
@@ -601,7 +587,6 @@ impl App {
                     Some(next_action_idx) if player_idx == next_action_idx => "→",
                     _ => "",
                 };
-                let move_repr = Text::from(move_repr);
 
                 // Indicator for what blind each player pays.
                 let button_repr = if player_idx == view.play_positions.big_blind_idx {
@@ -611,36 +596,32 @@ impl App {
                 } else {
                     ""
                 };
-                let button_repr = Text::from(button_repr);
 
                 // Username column.
                 let username_repr = player.user.name.clone();
-                let username_repr = Text::from(username_repr);
 
                 // Money column.
                 let money_repr = format!("${}", player.user.money);
-                let money_repr = Text::from(money_repr);
 
                 // State column.
                 let state_repr = player.state.to_string();
-                let state_repr = Text::from(state_repr);
 
                 // This is the final row representation for the table entry.
                 let mut row = vec![
-                    Cell::new(move_repr.alignment(Alignment::Center)),
-                    Cell::new(button_repr.alignment(Alignment::Left)),
-                    Cell::new(username_repr.alignment(Alignment::Left)),
-                    Cell::new(money_repr.alignment(Alignment::Right)),
-                    Cell::new(state_repr.alignment(Alignment::Center)),
+                    Cell::new(Text::from(move_repr).alignment(Alignment::Center)),
+                    Cell::new(Text::from(button_repr).alignment(Alignment::Left)),
+                    Cell::new(Text::from(username_repr).alignment(Alignment::Left)),
+                    Cell::new(Text::from(money_repr).alignment(Alignment::Right)),
+                    Cell::new(Text::from(state_repr).alignment(Alignment::Center)),
                 ];
 
                 // Player cards styled according to suit.
                 for card_idx in 0..2 {
                     let card_repr = match player.cards.get(card_idx) {
-                        Some(card) => Text::from(card_to_span(card)),
-                        None => Text::from(""),
+                        Some(card) => make_card_span(card),
+                        None => "".into(),
                     };
-                    let card_cell = Cell::new(card_repr.alignment(Alignment::Right));
+                    let card_cell = Cell::new(Text::from(card_repr).alignment(Alignment::Right));
                     row.push(card_cell);
                 }
 
@@ -658,8 +639,7 @@ impl App {
                         String::new()
                     }
                 };
-                let hand_repr = Text::from(hand_repr).alignment(Alignment::Right);
-                let hand_cell = Cell::new(hand_repr);
+                let hand_cell = Cell::new(Text::from(hand_repr).alignment(Alignment::Right));
                 row.push(hand_cell);
 
                 let mut row = Row::new(row);
@@ -683,17 +663,17 @@ impl App {
             block::Block::bordered()
                 .padding(Padding::uniform(1))
                 .title(
-                    block::Title::from(board_to_vec_of_spans(view))
+                    block::Title::from(make_board_spans(view))
                         .position(block::Position::Top)
                         .alignment(Alignment::Left),
                 )
                 .title(
-                    block::Title::from(blinds_to_string(view))
+                    block::Title::from(format!(" blinds: {}  ", view.blinds))
                         .position(block::Position::Bottom)
                         .alignment(Alignment::Right),
                 )
                 .title(
-                    block::Title::from(pot_to_string(view))
+                    block::Title::from(format!(" pot: {}  ", view.pot))
                         .position(block::Position::Bottom)
                         .alignment(Alignment::Left),
                 ),
@@ -745,9 +725,7 @@ impl App {
             "Esc".bold().white(),
             " to exit".into(),
         ];
-        let help_style = Style::default();
-        let help_message = Text::from(Line::from(help_message)).patch_style(help_style);
-        let help_message = Paragraph::new(help_message);
+        let help_message = Paragraph::new(Line::from(help_message));
         frame.render_widget(help_message, help_area);
 
         // Render the help menu.

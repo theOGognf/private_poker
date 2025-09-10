@@ -914,10 +914,10 @@ impl_user_managers_with_queue!(
 
 impl Game<Lobby> {
     pub fn init_start(&mut self) -> Result<(), UserError> {
-        if self.state.start_game {
-            Err(UserError::GameAlreadyStarting)
-        } else if self.get_num_potential_players() < 2 {
+        if self.get_num_potential_players() < 2 {
             Err(UserError::NotEnoughPlayers)
+        } else if self.state.start_game {
+            Err(UserError::GameAlreadyStarting)
         } else {
             self.state.start_game = true;
             Ok(())
