@@ -551,12 +551,13 @@ impl<T> Game<T> {
             // Check if player already exists but is queued for removal.
             // This probably means the user disconnected and is trying
             // to reconnect.
-            let result = if self.data.player_queues.to_remove.remove(username) {
-                Ok(false)
-            } else {
-                Err(UserError::UserAlreadyExists)
-            };
-            return result;
+            return self
+                .data
+                .player_queues
+                .to_remove
+                .remove(username)
+                .then_some(false)
+                .ok_or(UserError::UserAlreadyExists);
         }
         // Check the ledger for some memory of the user's money stack.
         // There are a couple of flaws with this. If a user runs out

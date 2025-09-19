@@ -617,10 +617,10 @@ impl App {
 
                 // Player cards styled according to suit.
                 for card_idx in 0..2 {
-                    let card_repr = match player.cards.get(card_idx) {
-                        Some(card) => make_card_span(card),
-                        None => "".into(),
-                    };
+                    let card_repr = player
+                        .cards
+                        .get(card_idx)
+                        .map_or_else(|| "".into(), make_card_span);
                     let card_cell = Cell::new(Text::from(card_repr).alignment(Alignment::Right));
                     row.push(card_cell);
                 }
@@ -633,11 +633,8 @@ impl App {
                     cards.extend(player.cards.clone());
                     functional::prepare_hand(&mut cards);
                     let hand = functional::eval(&cards);
-                    if let Some(subhand) = hand.first() {
-                        format!("({})", subhand.rank)
-                    } else {
-                        String::new()
-                    }
+                    hand.first()
+                        .map_or_else(String::new, |subhand| format!("({})", subhand.rank))
                 };
                 let hand_cell = Cell::new(Text::from(hand_repr).alignment(Alignment::Right));
                 row.push(hand_cell);

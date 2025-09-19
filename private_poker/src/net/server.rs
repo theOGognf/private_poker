@@ -257,9 +257,7 @@ impl TokenManager {
 
     /// Create a new token.
     pub fn new_token(&mut self) -> Token {
-        if let Some(token) = self.recycled_tokens.pop_first() {
-            token
-        } else {
+        self.recycled_tokens.pop_first().unwrap_or_else(|| {
             let newest = match (
                 self.unconfirmed_tokens.last_key_value(),
                 self.confirmed_tokens.last_key_value(),
@@ -270,7 +268,7 @@ impl TokenManager {
                 (None, None) => &WAKER,
             };
             Token(newest.0 + 1)
-        }
+        })
     }
 
     /// Recycle tokens that've gone stale because the client has yet
