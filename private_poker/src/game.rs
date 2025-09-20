@@ -387,11 +387,11 @@ impl<T> Game<T> {
     /// Return the index of the player who has the next action, or
     /// nothing if no one has the next turn.
     fn get_next_action_idx(&self, new_phase: bool) -> Option<SeatIndex> {
-        let starting_idx = match self.data.play_positions.next_action_idx {
-            Some(idx) => idx + usize::from(!new_phase),
-            None => return None,
-        };
-
+        let starting_idx = self
+            .data
+            .play_positions
+            .next_action_idx
+            .map(|idx| idx + usize::from(!new_phase))?;
         let num_players = self.data.players.len();
         (0..num_players)
             .map(|player_idx| (starting_idx + player_idx) % num_players)
@@ -516,13 +516,13 @@ impl<T> Game<T> {
     /// Return whether the game is ready to evaluate all the hands
     /// remaining in the pot. Used to help signal state transitions.
     pub fn is_ready_for_showdown(&self) -> bool {
-        match self.data.play_positions.next_action_idx {
-            Some(action_idx) => {
-                self.data.player_counts.num_active <= 1
-                    && self.data.pot.get_call_by_player_idx(action_idx) == 0
-            }
-            None => self.data.player_counts.num_active <= 1,
-        }
+        let no_turns_left = self.data.player_counts.num_active <= 1;
+        self.data
+            .play_positions
+            .next_action_idx
+            .map_or(no_turns_left, |action_idx| {
+                no_turns_left && self.data.pot.get_call_by_player_idx(action_idx) == 0
+            })
     }
 
     /// Return whether it's the user's turn. This helps determine whether
