@@ -583,18 +583,19 @@ impl App {
         let table = Table::new(
             view.players.iter().enumerate().map(|(player_idx, player)| {
                 // Indicator if it's the player's move.
-                let move_repr = match view.play_positions.next_action_idx {
-                    Some(next_action_idx) if player_idx == next_action_idx => "→",
-                    _ => "",
+                let move_repr = if let Some(next_action_idx) = view.play_positions.next_action_idx
+                    && player_idx == next_action_idx
+                {
+                    "→"
+                } else {
+                    ""
                 };
 
                 // Indicator for what blind each player pays.
-                let button_repr = if player_idx == view.play_positions.big_blind_idx {
-                    "BB"
-                } else if player_idx == view.play_positions.small_blind_idx {
-                    "SB"
-                } else {
-                    ""
+                let button_repr = match player_idx {
+                    idx if idx == view.play_positions.big_blind_idx => "BB",
+                    idx if idx == view.play_positions.small_blind_idx => "SB",
+                    _ => "",
                 };
 
                 // Username column.
