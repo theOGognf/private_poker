@@ -1,7 +1,7 @@
 use anyhow::{Error, bail};
 use private_poker::{
     Client,
-    entities::{ActionChoice, ActionChoices, GameView, SubHand, Usd, Usdf, Vote},
+    entities::{ActionChoice, ActionChoices, GameView, SubHand, Usd, Vote},
     functional,
     messages::{ClientMessage, ServerMessage, UserCommand, UserState},
     utils,
@@ -79,7 +79,7 @@ impl QLearning {
     pub fn update_done(&mut self, state: State, action: ActionChoice, reward: Reward) {
         let q_s = self.table.entry(state).or_insert(Q_S_DEFAULT);
         let action_idx: usize = action.into();
-        q_s[action_idx] = reward;
+        q_s[action_idx] = reward as ActionWeight;
     }
 
     pub fn update_step(
@@ -94,7 +94,7 @@ impl QLearning {
             let idx_masks2: HashSet<usize> =
                 masks2.0.into_iter().map(std::convert::Into::into).collect();
             let q_s2 = self.table.entry(state2).or_insert(Q_S_DEFAULT);
-            reward
+            (reward as ActionWeight)
                 + self.params.gamma
                     * q_s2
                         .iter()
@@ -209,7 +209,7 @@ impl Bot {
             return Ok((self.hand.clone(), ActionChoices::default(), 0.0, true));
         }
         let remaining_money = player.user.money - bet;
-        let mut reward = -(bet as Usdf) / (self.starting_money as Usdf);
+        let mut reward = -(bet as Reward) / (self.starting_money as Reward);
         // We have to wait until the game is over or wait until it's our turn
         // again so we can get masks and get the final reward for our action.
         let masks = loop {
@@ -233,8 +233,8 @@ impl Bot {
                     {
                         // If we don't have anymore cards, then the game is over.
                         if player.cards.is_empty() {
-                            reward += ((player.user.money - remaining_money) as Usdf)
-                                / (self.starting_money as Usdf);
+                            reward += ((player.user.money as Reward) - (remaining_money as Reward))
+                                / (self.starting_money as Reward);
                             return Ok((self.hand.clone(), ActionChoices::default(), reward, true));
                         }
                         let mut cards = self.view.board.clone();
@@ -246,8 +246,8 @@ impl Bot {
                     } else if let Some(user) =
                         self.view.spectators.get(self.client.username.as_str())
                     {
-                        reward += ((user.money - remaining_money) as Usdf)
-                            / (self.starting_money as Usdf);
+                        reward += ((user.money as Reward) - (remaining_money as Reward))
+                            / (self.starting_money as Reward);
                         return Ok((self.hand.clone(), ActionChoices::default(), reward, true));
                     }
                 }

@@ -15,7 +15,7 @@ use entities::{
     Action, ActionChoice, ActionChoices, Bet, BetAction, Blinds, Card, DEFAULT_BUY_IN,
     DEFAULT_MIN_BIG_BLIND, DEFAULT_MIN_SMALL_BLIND, Deck, GameView, GameViews, PlayPositions,
     Player, PlayerCounts, PlayerQueues, PlayerState, PlayerView, Pot, PotView, SeatIndex, Usd,
-    Usdf, User, Username, Vote,
+    User, Username, Vote,
 };
 
 #[derive(Debug, Deserialize, Eq, Error, PartialEq, Serialize)]
@@ -66,7 +66,6 @@ pub enum GameEvent {
     ResetAllMoneyQueue,
     ResetAllMoney,
     PassedVote(Vote),
-    SplitDonations(Usd),
     SplitPot(Username, Usd),
     JoinedTable(Username),
 }
@@ -94,7 +93,6 @@ impl fmt::Display for GameEvent {
             Self::ResetAllMoneyQueue => "everyone's money will be reset after the game".to_string(),
             Self::ResetAllMoney => "reset everyone's money".to_string(),
             Self::PassedVote(vote) => format!("vote to {vote} passed"),
-            Self::SplitDonations(amount) => format!("each user gets ${amount}"),
             Self::SplitPot(username, amount) => format!("{username} won ${amount}"),
             Self::JoinedTable(username) => format!("{username} joined the table"),
         };
@@ -114,7 +112,7 @@ pub struct GameSettings {
 impl GameSettings {
     #[must_use]
     pub fn new(max_players: usize, max_users: usize, buy_in: Usd) -> Self {
-        let min_big_blind = buy_in / 20;
+        let min_big_blind = buy_in / 60;
         let min_small_blind = min_big_blind / 2;
         Self {
             buy_in,
@@ -143,10 +141,6 @@ pub struct GameData {
     /// Deck of cards. This is instantiated once and reshuffled
     /// each deal.
     deck: Deck,
-    /// Pot split remainder when the pot can't be split equally amongst
-    /// all winners. This money is eventually split equally amongst all
-    /// users at a particular game state once it can be split equally.
-    pub donations: Usdf,
     pub blinds: Blinds,
     pub spectators: HashSet<User>,
     pub waitlist: VecDeque<User>,
@@ -189,7 +183,6 @@ impl From<GameSettings> for GameData {
     fn from(value: GameSettings) -> Self {
         Self {
             deck: Deck::default(),
-            donations: 0.0,
             blinds: Blinds {
                 small: value.min_small_blind,
                 big: value.min_big_blind,
@@ -266,9 +259,6 @@ pub struct DistributePot {}
 pub struct RemovePlayers {}
 
 #[derive(Debug)]
-pub struct DivideDonations {}
-
-#[derive(Debug)]
 pub struct UpdateBlinds {}
 
 #[derive(Debug)]
@@ -301,7 +291,6 @@ impl<T> Game<T> {
             players.push(player_view);
         }
         GameView {
-            donations: self.data.donations,
             blinds: self.data.blinds.clone(),
             spectators: self.data.spectators.clone(),
             waitlist: self.data.waitlist.clone(),
@@ -896,7 +885,6 @@ impl_user_managers!(
     Game<Lobby>,
     Game<SeatPlayers>,
     Game<RemovePlayers>,
-    Game<DivideDonations>,
     Game<UpdateBlinds>,
     Game<BootPlayers>
 );
@@ -1380,7 +1368,6 @@ impl_show_hands!(
     Game<ShowHands>,
     Game<DistributePot>,
     Game<RemovePlayers>,
-    Game<DivideDonations>,
     Game<UpdateBlinds>
 );
 
@@ -1451,26 +1438,18 @@ impl Game<DistributePot> {
             }
             let winner_indices = functional::argmax(&hands_in_pot);
 
-            // Finally, split the pot amongst all the winners. There's
-            // a possibility for the pot to not split perfectly
-            // amongst all players; in this case, the remainder is
-            // put in the donations and will eventually be redistributed
-            // amongst remaining users. This also encourages users to
-            // stay in the game so they can be donated these breadcrumbs
-            // and continue playing with them.
+            // Finally, split the pot amongst all the winners. Pot remainder
+            // goes to the house (disappears).
             let num_winners = winner_indices.len();
             let pot_split = pot_size / num_winners as Usd;
-            let mut pot_remainder = pot_size as Usdf;
             for winner_idx in winner_indices {
                 let winner_player_idx = seats_in_pot[winner_idx];
                 let player = &mut self.data.players[*winner_player_idx];
                 player.user.money += pot_split;
-                pot_remainder -= pot_split as Usdf;
                 self.data
                     .events
                     .push_back(GameEvent::SplitPot(player.user.name.clone(), pot_split));
             }
-            self.data.donations += pot_remainder;
         }
 
         // Remove null investments.
@@ -1502,7 +1481,7 @@ impl From<Game<DistributePot>> for Game<RemovePlayers> {
     }
 }
 
-impl From<Game<RemovePlayers>> for Game<DivideDonations> {
+impl From<Game<RemovePlayers>> for Game<UpdateBlinds> {
     fn from(mut value: Game<RemovePlayers>) -> Self {
         while let Some(username) = value.data.player_queues.to_remove.pop_first() {
             // It is possible for a user to leave in this state but right before
@@ -1514,47 +1493,6 @@ impl From<Game<RemovePlayers>> for Game<DivideDonations> {
         while let Some(username) = value.data.player_queues.to_kick.pop_first() {
             // See above comment for why this is OK.
             value.kick_user(&username).ok();
-        }
-        Self {
-            data: value.data,
-            state: DivideDonations {},
-        }
-    }
-}
-
-/// Empty the community donations pot and split it equally amongst
-/// all users. The community donations pot is filled with money from
-/// users that left the game. Redistributing the money back to remaining
-/// users helps keep games going. It especially helps to continue
-/// gameplay if a user aggregates most of the money and then leaves.
-impl From<Game<DivideDonations>> for Game<UpdateBlinds> {
-    fn from(mut value: Game<DivideDonations>) -> Self {
-        let num_users = value.get_num_users();
-        if num_users > 0 && value.data.donations > 0 as Usdf {
-            let donation_per_user = value.data.donations as Usd / num_users as Usd;
-            let mut spectators: Vec<User> = value.data.spectators.drain().collect();
-            for user in spectators
-                .iter_mut()
-                .chain(value.data.waitlist.iter_mut())
-                .chain(value.data.players.iter_mut().map(|p| &mut p.user))
-            {
-                user.money += donation_per_user;
-                value.data.donations -= donation_per_user as Usdf;
-            }
-            for user in spectators {
-                value.data.spectators.insert(user);
-            }
-            value
-                .data
-                .events
-                .push_back(GameEvent::SplitDonations(donation_per_user));
-        }
-        if value.data.reset_all_money_after_game {
-            value.data.player_queues.to_reset.clear();
-            value.reset_all_money();
-        }
-        while let Some(username) = value.data.player_queues.to_reset.pop_first() {
-            value.reset_user_money(&username).ok();
         }
         Self {
             data: value.data,
@@ -1571,6 +1509,13 @@ impl From<Game<DivideDonations>> for Game<UpdateBlinds> {
 /// any other action.
 impl From<Game<UpdateBlinds>> for Game<BootPlayers> {
     fn from(mut value: Game<UpdateBlinds>) -> Self {
+        if value.data.reset_all_money_after_game {
+            value.data.player_queues.to_reset.clear();
+            value.reset_all_money();
+        }
+        while let Some(username) = value.data.player_queues.to_reset.pop_first() {
+            value.reset_user_money(&username).ok();
+        }
         let min_playable_money = value
             .data
             .spectators
@@ -1639,7 +1584,6 @@ pub enum PokerState {
     ShowHands(Game<ShowHands>),
     DistributePot(Game<DistributePot>),
     RemovePlayers(Game<RemovePlayers>),
-    DivideDonations(Game<DivideDonations>),
     UpdateBlinds(Game<UpdateBlinds>),
     BootPlayers(Game<BootPlayers>),
 }
@@ -1696,7 +1640,6 @@ impl fmt::Display for PokerState {
                 }
             }
             PokerState::RemovePlayers(_) => "updating players that joined spectators or left",
-            PokerState::DivideDonations(_) => "dividing donations",
             PokerState::UpdateBlinds(_) => "updating blinds",
             PokerState::BootPlayers(_) => "spectating players that can't afford the big blind",
         };
@@ -1719,7 +1662,6 @@ impl PokerState {
             PokerState::ShowHands(game) => game.cast_vote(username, vote),
             PokerState::DistributePot(game) => game.cast_vote(username, vote),
             PokerState::RemovePlayers(game) => game.cast_vote(username, vote),
-            PokerState::DivideDonations(game) => game.cast_vote(username, vote),
             PokerState::UpdateBlinds(game) => game.cast_vote(username, vote),
             PokerState::BootPlayers(game) => game.cast_vote(username, vote),
         }
@@ -1739,7 +1681,6 @@ impl PokerState {
             PokerState::ShowHands(game) => game.drain_events(),
             PokerState::DistributePot(game) => game.drain_events(),
             PokerState::RemovePlayers(game) => game.drain_events(),
-            PokerState::DivideDonations(game) => game.drain_events(),
             PokerState::UpdateBlinds(game) => game.drain_events(),
             PokerState::BootPlayers(game) => game.drain_events(),
         }
@@ -1776,7 +1717,6 @@ impl PokerState {
             PokerState::ShowHands(game) => game.get_views(),
             PokerState::DistributePot(game) => game.get_views(),
             PokerState::RemovePlayers(game) => game.get_views(),
-            PokerState::DivideDonations(game) => game.get_views(),
             PokerState::UpdateBlinds(game) => game.get_views(),
             PokerState::BootPlayers(game) => game.get_views(),
         }
@@ -1851,9 +1791,6 @@ impl PokerState {
                 game.reset_all_money();
             }
             PokerState::RemovePlayers(game) => {
-                game.reset_all_money();
-            }
-            PokerState::DivideDonations(game) => {
                 game.reset_all_money();
             }
             PokerState::UpdateBlinds(game) => {
@@ -1946,8 +1883,7 @@ impl PokerState {
                     PokerState::RemovePlayers(game.into())
                 }
             }
-            PokerState::RemovePlayers(game) => PokerState::DivideDonations(game.into()),
-            PokerState::DivideDonations(game) => PokerState::UpdateBlinds(game.into()),
+            PokerState::RemovePlayers(game) => PokerState::UpdateBlinds(game.into()),
             PokerState::UpdateBlinds(game) => PokerState::BootPlayers(game.into()),
             PokerState::BootPlayers(game) => PokerState::Lobby(game.into()),
         }
@@ -2007,9 +1943,6 @@ macro_rules! impl_user_managers {
                     PokerState::RemovePlayers(game)  => {
                         game.$name(username)?;
                     },
-                    PokerState::DivideDonations(game)  => {
-                        game.$name(username)?;
-                    },
                     PokerState::UpdateBlinds(game)  => {
                         game.$name(username)?;
                     },
@@ -2042,9 +1975,8 @@ impl From<GameSettings> for PokerState {
 #[cfg(test)]
 mod game_tests {
     use super::{
-        BootPlayers, CollectBlinds, Deal, DistributePot, DivideDonations, Flop, Game, Lobby,
-        MoveButton, RemovePlayers, River, SeatPlayers, ShowHands, TakeAction, Turn, UpdateBlinds,
-        UserError,
+        BootPlayers, CollectBlinds, Deal, DistributePot, Flop, Game, Lobby, MoveButton,
+        RemovePlayers, River, SeatPlayers, ShowHands, TakeAction, Turn, UpdateBlinds, UserError,
         entities::{Action, ActionChoice, Card, PlayerState, Suit},
     };
 
@@ -2491,7 +2423,6 @@ mod game_tests {
         game.data.players[2].cards = vec![Card(2, Suit::Heart), Card(5, Suit::Heart)];
         let game: Game<DistributePot> = game.into();
         let game: Game<RemovePlayers> = game.into();
-        let game: Game<DivideDonations> = game.into();
         let game: Game<UpdateBlinds> = game.into();
         let game: Game<BootPlayers> = game.into();
         assert_eq!(game.data.blinds.big, 3 * game.data.settings.min_big_blind);
@@ -2513,12 +2444,11 @@ mod game_tests {
         game.data.players[2].cards = vec![Card(2, Suit::Heart), Card(5, Suit::Heart)];
         let game: Game<DistributePot> = game.into();
         let game: Game<RemovePlayers> = game.into();
-        let mut game: Game<DivideDonations> = game.into();
+        let mut game: Game<UpdateBlinds> = game.into();
         assert_eq!(game.remove_user("0"), Ok(Some(true)));
         assert!(!game.contains_user("0"));
         assert!(game.contains_player("1"));
         assert!(game.contains_player("2"));
-        let game: Game<UpdateBlinds> = game.into();
         for i in 0..2 {
             assert_eq!(game.data.players[i].user.money, game.data.settings.buy_in);
         }
@@ -2542,11 +2472,10 @@ mod game_tests {
         assert_eq!(game.remove_user("0"), Ok(Some(false)));
         let game: Game<DistributePot> = game.into();
         let game: Game<RemovePlayers> = game.into();
-        let game: Game<DivideDonations> = game.into();
+        let game: Game<UpdateBlinds> = game.into();
         assert!(!game.contains_user("0"));
         assert!(game.contains_player("1"));
         assert!(game.contains_player("2"));
-        let game: Game<UpdateBlinds> = game.into();
         for i in 0..2 {
             assert_eq!(game.data.players[i].user.money, game.data.settings.buy_in);
         }
@@ -2879,8 +2808,6 @@ mod state_tests {
         state = state.step();
         assert!(matches!(state, PokerState::RemovePlayers(_)));
         state = state.step();
-        assert!(matches!(state, PokerState::DivideDonations(_)));
-        state = state.step();
         assert!(matches!(state, PokerState::UpdateBlinds(_)));
         state = state.step();
         assert!(matches!(state, PokerState::BootPlayers(_)));
@@ -2920,8 +2847,6 @@ mod state_tests {
         assert!(matches!(state, PokerState::DistributePot(_)));
         state = state.step();
         assert!(matches!(state, PokerState::RemovePlayers(_)));
-        state = state.step();
-        assert!(matches!(state, PokerState::DivideDonations(_)));
         state = state.step();
         assert!(matches!(state, PokerState::UpdateBlinds(_)));
         state = state.step();
@@ -2981,8 +2906,6 @@ mod state_tests {
         assert!(matches!(state, PokerState::DistributePot(_)));
         state = state.step();
         assert!(matches!(state, PokerState::RemovePlayers(_)));
-        state = state.step();
-        assert!(matches!(state, PokerState::DivideDonations(_)));
         state = state.step();
         assert!(matches!(state, PokerState::UpdateBlinds(_)));
         state = state.step();

@@ -132,10 +132,6 @@ impl Default for Deck {
 /// If the total money in a game ever surpasses ~4.2 billion, then we may
 /// have a problem.
 pub type Usd = u32;
-/// Type alias for decimal dollars. Only used to represent the remainder of
-/// whole dollars in the cases where whole dollars can't be distributed evenly
-/// amongst users.
-pub type Usdf = f32;
 
 /// Type alias for poker user usernames.
 pub type Username = String;
@@ -198,10 +194,10 @@ pub struct PlayerQueues {
     pub to_reset: BTreeSet<Username>,
 }
 
-// By default, a player will be cleaned if they fold 20 rounds with the big
+// By default, a player will be cleaned if they fold 60 rounds with the big
 // blind.
-pub const DEFAULT_BUY_IN: Usd = 200;
-pub const DEFAULT_MIN_BIG_BLIND: Usd = DEFAULT_BUY_IN / 20;
+pub const DEFAULT_BUY_IN: Usd = 600;
+pub const DEFAULT_MIN_BIG_BLIND: Usd = DEFAULT_BUY_IN / 60;
 pub const DEFAULT_MIN_SMALL_BLIND: Usd = DEFAULT_MIN_BIG_BLIND / 2;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -212,7 +208,7 @@ pub struct Blinds {
 
 impl fmt::Display for Blinds {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let repr = format!("${}/{}", self.big, self.small);
+        let repr = format!("${}/{}", self.small, self.big);
         write!(f, "{repr}")
     }
 }
@@ -572,7 +568,6 @@ impl fmt::Display for PotView {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct GameView {
-    pub donations: Usdf,
     pub blinds: Blinds,
     pub spectators: HashSet<User>,
     pub waitlist: VecDeque<User>,

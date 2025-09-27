@@ -22,7 +22,7 @@ USAGE:
 
 OPTIONS:
   --bind    IP:PORT     Server socket bind address  [default: 127.0.0.1:6969]
-  --buy_in  USD         New user starting money     [default: 200]
+  --buy_in  USD         New user starting money     [default: 600]
 
 FLAGS:
   -h, --help            Print help information
@@ -46,7 +46,7 @@ fn main() -> Result<(), Error> {
         bind: pargs
             .value_from_str("--bind")
             .unwrap_or("127.0.0.1:6969".into()),
-        buy_in: pargs.value_from_str("--buy_in").unwrap_or(200),
+        buy_in: pargs.value_from_str("--buy_in").unwrap_or(600),
     };
 
     let game_settings = GameSettings::new(MAX_PLAYERS, DEFAULT_MAX_USERS, args.buy_in);
