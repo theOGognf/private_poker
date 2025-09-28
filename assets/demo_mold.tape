@@ -62,7 +62,7 @@ Set FontSize 16
 Set Width 1200
 Set Height 600
 
-Type "cargo run -r --bin pp_client mold" Sleep 500ms Enter
+Type "pp_client mold" Sleep 500ms Enter
 
 Sleep 2s
 
