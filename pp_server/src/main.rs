@@ -9,7 +9,7 @@ use ctrlc::set_handler;
 use log::info;
 use pico_args::Arguments;
 use private_poker::{
-    DEFAULT_MAX_USERS, GameSettings, MAX_PLAYERS,
+    DEFAULT_BUY_IN, DEFAULT_MAX_USERS, GameSettings, MAX_PLAYERS,
     entities::Usd,
     server::{self, PokerConfig},
 };
@@ -46,7 +46,7 @@ fn main() -> Result<(), Error> {
         bind: pargs
             .value_from_str("--bind")
             .unwrap_or("127.0.0.1:6969".into()),
-        buy_in: pargs.value_from_str("--buy_in").unwrap_or(600),
+        buy_in: pargs.value_from_str("--buy_in").unwrap_or(DEFAULT_BUY_IN),
     };
 
     let game_settings = GameSettings::new(MAX_PLAYERS, DEFAULT_MAX_USERS, args.buy_in);

@@ -55,8 +55,6 @@
 #   Hide                            Hide the subsequent commands from the output
 #   Show                            Show the subsequent commands in the output
 
-Output assets/demo.gif
-
 Require echo
 
 Set Shell "bash"
@@ -64,18 +62,28 @@ Set FontSize 16
 Set Width 1200
 Set Height 600
 
-Type "pp_client ognf" Sleep 500ms Enter
+Type "cargo run -r --bin pp_client mold" Sleep 500ms Enter
 
 Sleep 2s
 
 Type "play" Sleep 500ms Enter
 
-Sleep 2s
+Wait+Screen@60s /it's your turn!/
 
-Type "start" Sleep 500ms Enter
+Sleep 5s
 
-Sleep 2s
+Type "check" Sleep 500ms Enter
 
-Type "spectate" Sleep 500ms Enter
+Sleep 20s
 
-Sleep 100s
+Type "call" Sleep 500ms Enter
+
+Sleep 20s
+
+Type "check" Sleep 500ms Enter
+
+Sleep 20s
+
+Type "all-in" Sleep 500ms Enter
+
+Wait+Screen@60s /in lobby/
