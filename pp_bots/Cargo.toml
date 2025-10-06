@@ -1,6 +1,6 @@
 [package]
 name = "pp_bots"
-version = "2.0.0"
+version = "3.0.0"
 edition = "2024"
 description = "Adaptive poker bots"
 repository = "https://github.com/theOGognf/private_poker"
@@ -11,6 +11,6 @@ license = "Apache-2.0"
 anyhow = "1.0.89"
 ctrlc = { version = "3.4.5", features = ["termination"] }
 pico-args = "0.5.0"
-private_poker = { version = "2.0.0", path = "../private_poker" }
+private_poker = { version = "3.0.0", path = "../private_poker" }
 rand = "0.8.5"
 ratatui = "0.28.1"
