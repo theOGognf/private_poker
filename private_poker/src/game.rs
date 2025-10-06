@@ -103,8 +103,8 @@ impl fmt::Display for GameEvent {
 #[derive(Debug)]
 pub struct GameSettings {
     pub buy_in: Usd,
-    pub min_big_blind: Usd,
     pub min_small_blind: Usd,
+    pub min_big_blind: Usd,
     pub max_players: usize,
     pub max_users: usize,
 }
@@ -116,8 +116,8 @@ impl GameSettings {
         let min_small_blind = min_big_blind / 2;
         Self {
             buy_in,
-            min_big_blind,
             min_small_blind,
+            min_big_blind,
             max_players,
             max_users,
         }
@@ -128,8 +128,8 @@ impl Default for GameSettings {
     fn default() -> Self {
         Self {
             buy_in: DEFAULT_BUY_IN,
-            min_big_blind: DEFAULT_MIN_BIG_BLIND,
             min_small_blind: DEFAULT_MIN_SMALL_BLIND,
+            min_big_blind: DEFAULT_MIN_BIG_BLIND,
             max_players: MAX_PLAYERS,
             max_users: DEFAULT_MAX_USERS,
         }
@@ -1158,9 +1158,6 @@ impl Game<TakeAction> {
                         player.state = PlayerState::AllIn;
                     }
                     BetAction::Call => {
-                        if new_player_investment != pot_call {
-                            return Err(UserError::InvalidBet { bet });
-                        }
                         self.data.player_counts.num_called += 1;
                         player.state = PlayerState::Call;
                     }
