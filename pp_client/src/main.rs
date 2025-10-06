@@ -6,6 +6,8 @@
 //!
 //! [`ratatui`]: https://github.com/ratatui/ratatui
 
+use std::net::SocketAddr;
+
 use anyhow::Error;
 
 use pico_args::Arguments;
@@ -28,8 +30,8 @@ FLAGS:
 ";
 
 struct Args {
+    addr: SocketAddr,
     username: Username,
-    addr: String,
 }
 
 fn main() -> Result<(), Error> {
@@ -44,22 +46,18 @@ fn main() -> Result<(), Error> {
     let args = Args {
         addr: pargs
             .value_from_str("--connect")
-            .unwrap_or("127.0.0.1:6969".into()),
-        username: pargs.free_from_str().unwrap_or(whoami::username()),
+            .unwrap_or("127.0.0.1:6969".parse()?),
+        username: Username::new(pargs.free_from_str().unwrap_or(whoami::username())),
     };
 
     // Doesn't make sense to use the complexity of non-blocking IO
     // for connecting to the poker server, so we try to connect with
     // a blocking client instead. The client is then eventually
     // converted to a non-blocking stream and polled for events.
-    let (client, view) = Client::connect(&args.username, &args.addr)?;
-    let Client {
-        username,
-        addr,
-        stream,
-    } = client;
+    let (client, view) = Client::connect(args.username, &args.addr)?;
+    let Client { username, stream } = client;
     let terminal = ratatui::init();
-    let app_result = App::new(username, addr).run(stream, view, terminal);
+    let app_result = App::new(args.addr, username).run(stream, view, terminal);
     ratatui::restore();
     app_result
 }

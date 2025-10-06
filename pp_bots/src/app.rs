@@ -1,5 +1,6 @@
 use std::{
     fmt::Display,
+    net::SocketAddr,
     sync::{
         Arc, Mutex,
         mpsc::{Receiver, Sender, channel},
@@ -9,7 +10,7 @@ use std::{
 };
 
 use anyhow::Error;
-
+use private_poker::entities::Username;
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
@@ -57,7 +58,7 @@ impl Display for WorkerState {
 }
 
 struct Worker {
-    botname: String,
+    botname: Username,
     state: WorkerState,
     handle: JoinHandle<Result<(), Error>>,
     delete_signaler: Sender<()>,
@@ -101,7 +102,7 @@ fn worker(
 }
 
 pub struct App {
-    addr: String,
+    addr: SocketAddr,
     policy: Arc<Mutex<QLearning>>,
     workers: Vec<Worker>,
     table_state: TableState,
@@ -110,7 +111,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(addr: String, policy: Arc<Mutex<QLearning>>) -> Self {
+    pub fn new(addr: SocketAddr, policy: Arc<Mutex<QLearning>>) -> Self {
         Self {
             addr,
             policy,
@@ -139,15 +140,14 @@ impl App {
                         KeyCode::Home => self.user_input.jump_to_first(),
                         KeyCode::End => self.user_input.jump_to_last(),
                         KeyCode::Enter if !self.user_input.value.is_empty() => {
-                            let botname = self.user_input.submit();
-                            let addr = self.addr.clone();
-                            match Bot::new(&botname, &addr) {
+                            let botname = Username::new(self.user_input.submit());
+                            match Bot::new(botname.clone(), &self.addr) {
                                 Ok(env) => {
                                     let policy = self.policy.clone();
                                     let (tx_server, rx_worker): (Sender<()>, Receiver<()>) =
                                         channel();
                                     let worker = Worker {
-                                        botname: botname.clone(),
+                                        botname,
                                         state: WorkerState::Active,
                                         handle: thread::spawn(move || {
                                             worker(env, &policy, &rx_worker)
@@ -207,7 +207,7 @@ impl App {
         // Render current bots.
         let table = Table::new(
             self.workers.iter().map(|w| {
-                let name_text = Text::raw(w.botname.clone());
+                let name_text = Text::raw(w.botname.to_string());
                 let name_cell = Cell::new(name_text);
 
                 let state_text = Text::from(w.state.to_string());

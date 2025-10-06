@@ -26,7 +26,7 @@ use ratatui::{
 use std::{
     collections::VecDeque,
     io,
-    net::TcpStream,
+    net::{SocketAddr, TcpStream},
     sync::mpsc::{Receiver, Sender, channel},
     thread,
     time::{Duration, Instant},
@@ -96,13 +96,13 @@ fn make_card_span(card: &Card) -> Span<'_> {
     }
 }
 
-fn make_user_row(username: &str, user: &User) -> Row<'static> {
+fn make_user_row(username: &Username, user: &User) -> Row<'static> {
     let mut row = Row::new(vec![
-        Cell::new(Text::from(user.name.clone()).alignment(Alignment::Left)),
+        Cell::new(Text::from(user.name.to_string()).alignment(Alignment::Left)),
         Cell::new(Text::from(format!("${}", user.money)).alignment(Alignment::Right)),
     ]);
 
-    if username == user.name {
+    if username == &user.name {
         row = row.bold().white();
     }
 
@@ -203,7 +203,7 @@ impl TurnWarnings {
 /// App holds the application state.
 pub struct App {
     username: Username,
-    addr: String,
+    addr: SocketAddr,
     /// Whether to display the help menu window
     show_help_menu: bool,
     /// Helps scroll through the help menu window if the terminal is small
@@ -246,10 +246,10 @@ impl App {
                     }
                     Some(&"vote") => match (other.get(1), other.get(2)) {
                         (Some(&"kick"), Some(username)) => {
-                            Ok(UserCommand::CastVote(Vote::Kick((*username).to_string())))
+                            Ok(UserCommand::CastVote(Vote::Kick((*username).into())))
                         }
                         (Some(&"reset"), Some(username)) => Ok(UserCommand::CastVote(Vote::Reset(
-                            Some((*username).to_string()),
+                            Some(Username::new((*username).into())),
                         ))),
                         (Some(&"reset"), None) => Ok(UserCommand::CastVote(Vote::Reset(None))),
                         _ => Err(UNRECOGNIZED_COMMAND_MESSAGE.to_string()),
@@ -261,7 +261,7 @@ impl App {
         match result {
             Ok(command) => {
                 let msg = ClientMessage {
-                    username: self.username.to_string(),
+                    username: self.username.clone(),
                     command,
                 };
                 tx_client.send(msg)?;
@@ -275,7 +275,7 @@ impl App {
         Ok(())
     }
 
-    pub fn new(username: Username, addr: String) -> Self {
+    pub fn new(addr: SocketAddr, username: Username) -> Self {
         // Fill help menu with help text lines. Also add some whitespace as
         // a jank way to add padding on the top and bottom.
         let mut help_handle = ScrollableList::new(MAX_LOG_RECORDS);
@@ -599,7 +599,7 @@ impl App {
                 };
 
                 // Username column.
-                let username_repr = player.user.name.clone();
+                let username_repr = player.user.name.to_string();
 
                 // Money column.
                 let money_repr = format!("${}", player.user.money);
@@ -700,10 +700,12 @@ impl App {
 
         // Render user input area.
         let username = self.username.clone();
-        let addr = self.addr.clone();
         let user_input = Paragraph::new(self.user_input.value.as_str())
             .style(Style::default())
-            .block(block::Block::bordered().title(format!(" {username}@{addr}  ").light_green()));
+            .block(
+                block::Block::bordered()
+                    .title(format!(" {username}@{}  ", self.addr).light_green()),
+            );
         frame.render_widget(user_input, user_input_area);
         frame.set_cursor_position(Position::new(
             // Draw the cursor at the current position in the input field.

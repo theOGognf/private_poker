@@ -4,16 +4,19 @@
 //! rather than an actual poker client.
 
 use anyhow::{Error, bail};
-use std::{net::TcpStream, thread, time::Duration};
+use std::{
+    net::{SocketAddr, TcpStream},
+    thread,
+    time::Duration,
+};
 
 use super::{
     super::{
-        entities::Vote,
+        entities::{Username, Vote},
         game::{
             GameEvent, UserError,
             entities::{Action, GameView},
         },
-        utils::preprocess_username,
     },
     messages::{ClientError, ClientMessage, ServerMessage, UserCommand, UserState},
     utils,
@@ -23,8 +26,7 @@ pub const READ_TIMEOUT: Duration = Duration::from_secs(10);
 pub const WRITE_TIMEOUT: Duration = Duration::from_secs(1);
 
 pub struct Client {
-    pub username: String,
-    pub addr: String,
+    pub username: Username,
     pub stream: TcpStream,
 }
 
@@ -47,16 +49,14 @@ impl Client {
         Ok(())
     }
 
-    pub fn connect(username: &str, addr: &str) -> Result<(Self, GameView), Error> {
-        let username = preprocess_username(username);
-        let addr = addr.parse()?;
+    pub fn connect(username: Username, addr: &SocketAddr) -> Result<(Self, GameView), Error> {
         let mut connect_timeouts = vec![
             Duration::from_secs(1),
             Duration::from_millis(500),
             Duration::from_millis(100),
         ];
         while let Some(connect_timeout) = connect_timeouts.pop() {
-            match TcpStream::connect_timeout(&addr, connect_timeout) {
+            match TcpStream::connect_timeout(addr, connect_timeout) {
                 Ok(mut stream) => {
                     stream.set_read_timeout(Some(READ_TIMEOUT))?;
                     stream.set_write_timeout(Some(WRITE_TIMEOUT))?;
@@ -69,14 +69,7 @@ impl Client {
                     // Then receive the game view.
                     match Client::recv_view(&mut stream) {
                         Ok(view) => {
-                            return Ok((
-                                Self {
-                                    username,
-                                    addr: addr.to_string(),
-                                    stream,
-                                },
-                                view,
-                            ));
+                            return Ok((Self { username, stream }, view));
                         }
                         Err(error) => bail!(error),
                     }
@@ -152,7 +145,7 @@ impl Client {
 
     pub fn show_hand(&mut self) -> Result<(), Error> {
         let msg = ClientMessage {
-            username: self.username.to_string(),
+            username: self.username.clone(),
             command: UserCommand::ShowHand,
         };
         utils::write_prefixed(&mut self.stream, &msg)?;
@@ -161,7 +154,7 @@ impl Client {
 
     pub fn start_game(&mut self) -> Result<(), Error> {
         let msg = ClientMessage {
-            username: self.username.to_string(),
+            username: self.username.clone(),
             command: UserCommand::StartGame,
         };
         utils::write_prefixed(&mut self.stream, &msg)?;
@@ -170,7 +163,7 @@ impl Client {
 
     pub fn take_action(&mut self, action: Action) -> Result<(), Error> {
         let msg = ClientMessage {
-            username: self.username.to_string(),
+            username: self.username.clone(),
             command: UserCommand::TakeAction(action),
         };
         utils::write_prefixed(&mut self.stream, &msg)?;

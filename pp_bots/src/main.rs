@@ -1,7 +1,10 @@
 use anyhow::Error;
 use ctrlc::set_handler;
 use pico_args::Arguments;
-use std::sync::{Arc, Mutex};
+use std::{
+    net::SocketAddr,
+    sync::{Arc, Mutex},
+};
 
 mod app;
 mod bot;
@@ -24,7 +27,7 @@ FLAGS:
 ";
 
 struct Args {
-    addr: String,
+    addr: SocketAddr,
     alpha: f32,
     gamma: f32,
 }
@@ -41,7 +44,7 @@ fn main() -> Result<(), Error> {
     let args = Args {
         addr: pargs
             .value_from_str("--connect")
-            .unwrap_or("127.0.0.1:6969".into()),
+            .unwrap_or("127.0.0.1:6969".parse()?),
         alpha: pargs.value_from_str("--alpha").unwrap_or("0.1".parse()?),
         gamma: pargs.value_from_str("--gamma").unwrap_or("0.95".parse()?),
     };

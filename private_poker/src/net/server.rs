@@ -9,6 +9,7 @@ use std::{
     cmp::max,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
     io,
+    net::SocketAddr,
     sync::mpsc::{Receiver, Sender, channel},
     thread,
     time::{Duration, Instant},
@@ -22,7 +23,6 @@ use super::{
             GameEvent, GameSettings, PokerState,
             entities::{Action, ActionChoices, GameView, Username},
         },
-        utils::preprocess_username,
     },
     messages::{ClientError, ClientMessage, ServerMessage, UserCommand, UserState},
     utils::{read_prefixed, write_prefixed},
@@ -172,18 +172,19 @@ impl TokenManager {
     pub fn associate_token_and_username(
         &mut self,
         token: Token,
-        username: Username,
+        username: &Username,
     ) -> Result<(), ClientError> {
         if self.tokens_to_usernames.contains_key(&token)
-            || self.unconfirmed_usernames_to_tokens.contains_key(&username)
-            || self.confirmed_usernames_to_tokens.contains_key(&username)
+            || self.unconfirmed_usernames_to_tokens.contains_key(username)
+            || self.confirmed_usernames_to_tokens.contains_key(username)
         {
             Err(ClientError::AlreadyAssociated)
         } else if self.recycled_tokens.contains(&token) {
             Err(ClientError::Expired)
         } else {
             self.tokens_to_usernames.insert(token, username.clone());
-            self.unconfirmed_usernames_to_tokens.insert(username, token);
+            self.unconfirmed_usernames_to_tokens
+                .insert(username.clone(), token);
             Ok(())
         }
     }
@@ -235,7 +236,7 @@ impl TokenManager {
         Err(ClientError::DoesNotExist)
     }
 
-    pub fn get_token_with_username(&self, username: &str) -> Result<Token, ClientError> {
+    pub fn get_token_with_username(&self, username: &Username) -> Result<Token, ClientError> {
         self.unconfirmed_usernames_to_tokens
             .get(username)
             .or_else(|| self.confirmed_usernames_to_tokens.get(username))
@@ -338,8 +339,7 @@ impl ServerDataSender {
 /// Run the poker server in two separate threads. The parent thread manages
 /// the poker game state while the child thread manages non-blocking networking
 /// IO.
-pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
-    let addr = addr.parse()?;
+pub fn run(addr: SocketAddr, config: PokerConfig) -> Result<(), Error> {
     let max_network_events = MAX_NETWORK_EVENTS_PER_USER * config.game_settings.max_users;
 
     let (tx_client, rx_client): (Sender<ClientMessage>, Receiver<ClientMessage>) = channel();
@@ -608,8 +608,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                 // We can (maybe) read from the connection.
                                 loop {
                                     match read_prefixed::<ClientMessage, TcpStream>(stream) {
-                                        Ok(mut msg) => {
-                                            msg.username = preprocess_username(&msg.username);
+                                        Ok(msg) => {
                                             let messages =
                                                 messages_to_process.entry(token).or_default();
                                             messages.push_back(msg);
@@ -667,7 +666,7 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                         // Check if the client wasn't able to associate its token with a username
                         // in time, or if that username is already taken.
                         UserCommand::Connect => {
-                            token_manager.associate_token_and_username(token, msg.username.clone())
+                            token_manager.associate_token_and_username(token, &msg.username)
                         }
                         // Check if the client is being faithful and sending messages with
                         // the correct username.
@@ -837,19 +836,20 @@ pub fn run(addr: &str, config: PokerConfig) -> Result<(), Error> {
                                 timeout = Duration::ZERO;
                                 *action = new_action;
                             }),
-                        UserCommand::CastVote(ref vote) => {
-                            match state.cast_vote(&msg.username, vote.clone())? {
-                                Some(Vote::Kick(username)) => state.kick_user(&username),
-                                Some(Vote::Reset(None)) => {
-                                    state.reset_all_money();
-                                    Ok(())
-                                }
-                                Some(Vote::Reset(Some(username))) => {
-                                    state.reset_user_money(&username)
-                                }
-                                None => Ok(()),
-                            }
-                        }
+                        UserCommand::CastVote(ref vote) => state
+                            .cast_vote(&msg.username, vote.clone())
+                            .and_then(|maybe_vote| {
+                                maybe_vote.map_or(Ok(()), |vote| match vote {
+                                    Vote::Kick(username) => state.kick_user(&username),
+                                    Vote::Reset(None) => {
+                                        state.reset_all_money();
+                                        Ok(())
+                                    }
+                                    Vote::Reset(Some(username)) => {
+                                        state.reset_user_money(&username)
+                                    }
+                                })
+                            }),
                     };
 
                     // Get the result from a client's command. If their command
@@ -915,13 +915,13 @@ mod tests {
         let token = token_manager.new_token();
         token_manager.associate_token_and_stream(token, stream);
 
-        let username = "ognf".to_string();
+        let username = "ognf".into();
         assert_eq!(
             token_manager.get_token_with_username(&username),
             Err(ClientError::Unassociated)
         );
         assert_eq!(
-            token_manager.associate_token_and_username(token, username.clone()),
+            token_manager.associate_token_and_username(token, &username),
             Ok(())
         );
         assert_eq!(token_manager.get_token_with_username(&username), Ok(token));
@@ -944,13 +944,13 @@ mod tests {
         token_manager.associate_token_and_stream(token, stream);
         token_manager.recycle_expired_tokens();
 
-        let username = "ognf".to_string();
+        let username = "ognf".into();
         assert_eq!(
             token_manager.get_token_with_username(&username),
             Err(ClientError::Unassociated)
         );
         assert_eq!(
-            token_manager.associate_token_and_username(token, username),
+            token_manager.associate_token_and_username(token, &username),
             Err(ClientError::Expired)
         );
     }
@@ -994,18 +994,18 @@ mod tests {
         let token2 = token_manager.new_token();
         token_manager.associate_token_and_stream(token2, stream2);
 
-        let username = "ognf".to_string();
+        let username = "ognf".into();
         assert_eq!(
-            token_manager.associate_token_and_username(token1, username.clone()),
+            token_manager.associate_token_and_username(token1, &username),
             Ok(())
         );
         assert_eq!(
-            token_manager.associate_token_and_username(token2, username.clone()),
+            token_manager.associate_token_and_username(token2, &username),
             Err(ClientError::AlreadyAssociated)
         );
         assert!(token_manager.recycle_token(token1).is_ok());
         assert_eq!(
-            token_manager.associate_token_and_username(token2, username),
+            token_manager.associate_token_and_username(token2, &username),
             Ok(())
         );
         assert_eq!(token1, token_manager.new_token());

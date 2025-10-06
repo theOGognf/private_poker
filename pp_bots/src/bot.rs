@@ -1,7 +1,7 @@
 use anyhow::{Error, bail};
 use private_poker::{
     Client,
-    entities::{ActionChoice, ActionChoices, GameView, SubHand, Usd, Vote},
+    entities::{ActionChoice, ActionChoices, GameView, SubHand, Usd, Username, Vote},
     functional,
     messages::{ClientMessage, ServerMessage, UserCommand, UserState},
     utils,
@@ -9,7 +9,7 @@ use private_poker::{
 use rand::{Rng, distributions::WeightedIndex, prelude::Distribution, thread_rng};
 use std::{
     collections::{HashMap, HashSet},
-    net::TcpStream,
+    net::{SocketAddr, TcpStream},
     thread,
     time::Duration,
 };
@@ -118,11 +118,11 @@ pub struct Bot {
 }
 
 impl Bot {
-    pub fn new(botname: &str, addr: &str) -> Result<Self, Error> {
+    pub fn new(botname: Username, addr: &SocketAddr) -> Result<Self, Error> {
         let (mut client, view) = Client::connect(botname, addr)?;
         let user = view
             .spectators
-            .get(client.username.as_str())
+            .get(&client.username)
             .expect("user should exist");
         client.stream.set_read_timeout(None)?;
         client.change_state(UserState::Play)?;
@@ -138,7 +138,7 @@ impl Bot {
         // Hand is only empty on the first connection. Naturally, we'll be in
         // spectate when we first connect, so check that our hand isn't empty
         // before we try voting to reset ourself.
-        if !self.hand.is_empty() && self.view.spectators.contains(self.client.username.as_str()) {
+        if !self.hand.is_empty() && self.view.spectators.contains(&self.client.username) {
             // If we were moved to spectate, vote to reset ourself.
             let vote = Vote::Reset(Some(self.client.username.clone()));
             self.client.cast_vote(vote)?;
@@ -243,9 +243,7 @@ impl Bot {
                         self.hand = functional::eval(&cards);
                     // We were forcibly moved to spectate because we don't have enough
                     // money. This means the current game is over.
-                    } else if let Some(user) =
-                        self.view.spectators.get(self.client.username.as_str())
-                    {
+                    } else if let Some(user) = self.view.spectators.get(&self.client.username) {
                         reward += ((user.money as Reward) - (remaining_money as Reward))
                             / (self.starting_money as Reward);
                         return Ok((self.hand.clone(), ActionChoices::default(), reward, true));

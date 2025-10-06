@@ -2,18 +2,6 @@ use bincode::{ErrorKind, deserialize, serialize};
 use serde::{Serialize, de::DeserializeOwned};
 use std::io::{self, Read, Write};
 
-use super::super::constants::MAX_USER_INPUT_LENGTH;
-
-#[must_use]
-pub fn preprocess_username(username: &str) -> String {
-    let mut username: String = username
-        .chars()
-        .map(|c| if c.is_ascii_whitespace() { '_' } else { c })
-        .collect();
-    username.truncate(MAX_USER_INPUT_LENGTH / 2);
-    username
-}
-
 pub fn read_prefixed<T: DeserializeOwned, R: Read>(reader: &mut R) -> io::Result<T> {
     // Read the size as a u32
     let mut len_bytes = [0; 4];

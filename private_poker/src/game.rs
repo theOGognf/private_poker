@@ -275,10 +275,10 @@ pub struct Game<T> {
 
 /// General game methods that can or will be used at various stages of gameplay.
 impl<T> Game<T> {
-    fn as_view(&self, username: &str) -> GameView {
+    fn as_view(&self, username: &Username) -> GameView {
         let mut players = Vec::with_capacity(self.data.settings.max_players);
         for player in &self.data.players {
-            let cards = if player.user.name == username || player.showing {
+            let cards = if &player.user.name == username || player.showing {
                 player.cards.clone()
             } else {
                 vec![]
@@ -306,7 +306,11 @@ impl<T> Game<T> {
 
     /// A user casts a vote. Returns true if the vote is recorded and results
     /// in a passing vote, and false otherwise.
-    pub fn cast_vote(&mut self, username: &str, vote: Vote) -> Result<Option<Vote>, UserError> {
+    pub fn cast_vote(
+        &mut self,
+        username: &Username,
+        vote: Vote,
+    ) -> Result<Option<Vote>, UserError> {
         let num_users = self.get_num_users();
         if num_users > 1 {
             // Make sure the vote is even possible.
@@ -322,7 +326,7 @@ impl<T> Game<T> {
                 _ => {}
             }
             let votes = self.data.votes.entry(vote.clone()).or_default();
-            let is_vote_passing = votes.insert(username.to_string()) && votes.len() > num_users / 2;
+            let is_vote_passing = votes.insert(username.clone()) && votes.len() > num_users / 2;
             // Add an event on the vote's passage, and return a copy of the vote that passed.
             if is_vote_passing {
                 self.pass_vote_with_event(vote.clone());
@@ -347,26 +351,26 @@ impl<T> Game<T> {
         self.data.ledger.insert(name, money);
     }
 
-    pub fn contains_player(&self, username: &str) -> bool {
-        self.data.players.iter().any(|p| p.user.name == username)
+    pub fn contains_player(&self, username: &Username) -> bool {
+        self.data.players.iter().any(|p| &p.user.name == username)
     }
 
-    fn contains_user(&self, username: &str) -> bool {
+    fn contains_user(&self, username: &Username) -> bool {
         self.data.spectators.contains(username)
             || self
                 .data
                 .waitlist
                 .iter()
                 .chain(self.data.players.iter().map(|p| &p.user))
-                .any(|u| u.name == username)
+                .any(|u| &u.name == username)
     }
 
-    pub fn contains_spectator(&self, username: &str) -> bool {
+    pub fn contains_spectator(&self, username: &Username) -> bool {
         self.data.spectators.contains(username)
     }
 
-    pub fn contains_waitlister(&self, username: &str) -> bool {
-        self.data.waitlist.iter().any(|u| u.name == username)
+    pub fn contains_waitlister(&self, username: &Username) -> bool {
+        self.data.waitlist.iter().any(|u| &u.name == username)
     }
 
     pub fn drain_events(&mut self) -> VecDeque<GameEvent> {
@@ -481,7 +485,7 @@ impl<T> Game<T> {
             .chain(self.data.waitlist.iter().map(|u| &u.name))
             .chain(self.data.players.iter().map(|p| &p.user.name))
         {
-            views.insert(username.to_string(), self.as_view(username));
+            views.insert(username.clone(), self.as_view(username));
         }
         views
     }
@@ -517,11 +521,11 @@ impl<T> Game<T> {
     /// Return whether it's the user's turn. This helps determine whether
     /// a user trying to take an action can actually take an action, or
     /// if they're violating rules of play.
-    pub fn is_turn(&self, username: &str) -> bool {
+    pub fn is_turn(&self, username: &Username) -> bool {
         self.data
             .play_positions
             .next_action_idx
-            .is_some_and(|idx| self.data.players[idx].user.name == username)
+            .is_some_and(|idx| &self.data.players[idx].user.name == username)
     }
 
     #[must_use]
@@ -533,7 +537,7 @@ impl<T> Game<T> {
     }
 
     /// Add a new user to the game, making them a spectator.
-    pub fn new_user(&mut self, username: &str) -> Result<bool, UserError> {
+    pub fn new_user(&mut self, username: &Username) -> Result<bool, UserError> {
         if self.get_num_users() == self.data.settings.max_users {
             return Err(UserError::CapacityReached);
         } else if self.contains_user(username) {
@@ -561,7 +565,7 @@ impl<T> Game<T> {
             .remove(username)
             .unwrap_or(self.data.settings.buy_in);
         self.data.spectators.insert(User {
-            name: username.to_string(),
+            name: username.clone(),
             money,
         });
         Ok(true)
@@ -592,47 +596,38 @@ impl<T> Game<T> {
         self.get_next_action_choices()
     }
 
-    fn queue_player_for_kick_with_event(&mut self, username: &str) {
+    fn queue_player_for_kick_with_event(&mut self, username: &Username) {
         self.data
             .events
-            .push_back(GameEvent::KickQueue(username.to_string()));
-        self.data.player_queues.to_kick.insert(username.to_string());
+            .push_back(GameEvent::KickQueue(username.clone()));
+        self.data.player_queues.to_kick.insert(username.clone());
     }
 
-    fn queue_player_for_remove_with_event(&mut self, username: &str) {
+    fn queue_player_for_remove_with_event(&mut self, username: &Username) {
         self.data
             .events
-            .push_back(GameEvent::RemoveQueue(username.to_string()));
+            .push_back(GameEvent::RemoveQueue(username.clone()));
         // Need to remove the player from other queues just in
         // case they changed their mind.
         self.data.player_queues.to_spectate.remove(username);
-        self.data
-            .player_queues
-            .to_remove
-            .insert(username.to_string());
+        self.data.player_queues.to_remove.insert(username.clone());
     }
 
-    fn queue_player_for_reset_with_event(&mut self, username: &str) {
+    fn queue_player_for_reset_with_event(&mut self, username: &Username) {
         self.data
             .events
-            .push_back(GameEvent::ResetUserMoneyQueue(username.to_string()));
-        self.data
-            .player_queues
-            .to_reset
-            .insert(username.to_string());
+            .push_back(GameEvent::ResetUserMoneyQueue(username.clone()));
+        self.data.player_queues.to_reset.insert(username.clone());
     }
 
-    fn queue_player_for_spectate_with_event(&mut self, username: &str) {
+    fn queue_player_for_spectate_with_event(&mut self, username: &Username) {
         self.data
             .events
-            .push_back(GameEvent::SpectateQueue(username.to_string()));
+            .push_back(GameEvent::SpectateQueue(username.clone()));
         // Need to remove the player from other queues just in
         // case they changed their mind.
         self.data.player_queues.to_remove.remove(username);
-        self.data
-            .player_queues
-            .to_spectate
-            .insert(username.to_string());
+        self.data.player_queues.to_spectate.insert(username.clone());
     }
 
     fn seat_player_with_event(&mut self, player: Player) {
@@ -652,7 +647,7 @@ impl<T> Game<T> {
     /// Add a user to the waitlist, putting them in queue to play. The queue
     /// is eventually drained until the table is full and there are no more
     /// seats available for play.
-    pub fn waitlist_user(&mut self, username: &str) -> Result<Option<bool>, UserError> {
+    pub fn waitlist_user(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
         // Need to remove the player from the removal and spectate sets just in
         // case they wanted to do one of those, but then changed their mind and
         // want to play again.
@@ -668,7 +663,7 @@ impl<T> Game<T> {
             self.data.waitlist.push_back(user);
             self.data
                 .events
-                .push_back(GameEvent::Waitlisted(username.to_string()));
+                .push_back(GameEvent::Waitlisted(username.clone()));
             Ok(Some(true))
         } else if self.contains_player(username) {
             // The user is already playing, so we don't need to do anything,
@@ -689,12 +684,12 @@ impl<T> Game<T> {
 macro_rules! impl_user_managers {
     ($($t:ty),+) => {
         $(impl $t {
-            pub fn kick_user(&mut self, username: &str) -> Result<Option<bool>, UserError> {
+            pub fn kick_user(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
                 let user = if let Some(user) = self.data.spectators.take(username) {
                     user
-                } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
+                } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| &u.name == username) {
                     self.data.waitlist.remove(waitlist_idx).expect("waitlister should exist")
-                } else if let Some(player_idx) = self.data.players.iter().position(|p| p.user.name == username) {
+                } else if let Some(player_idx) = self.data.players.iter().position(|p| &p.user.name == username) {
                     self.data.player_queues.to_spectate.remove(username);
                     let player = self.data.players.remove(player_idx);
                     self.data.open_seats.push_back(player.seat_idx);
@@ -702,17 +697,17 @@ macro_rules! impl_user_managers {
                 } else {
                     return Err(UserError::UserDoesNotExist);
                 };
-                self.data.events.push_back(GameEvent::Kicked(username.to_string()));
+                self.data.events.push_back(GameEvent::Kicked(username.clone()));
                 self.cleanup_user(user);
                 Ok(Some(true))
             }
 
-            pub fn remove_user(&mut self, username: &str) -> Result<Option<bool>, UserError> {
+            pub fn remove_user(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
                 let user = if let Some(user) = self.data.spectators.take(username) {
                     user
-                } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
+                } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| &u.name == username) {
                     self.data.waitlist.remove(waitlist_idx).expect("waitlister should exist")
-                } else if let Some(player_idx) = self.data.players.iter().position(|p| p.user.name == username) {
+                } else if let Some(player_idx) = self.data.players.iter().position(|p| &p.user.name == username) {
                     self.data.player_queues.to_spectate.remove(username);
                     let player = self.data.players.remove(player_idx);
                     self.data.open_seats.push_back(player.seat_idx);
@@ -720,25 +715,25 @@ macro_rules! impl_user_managers {
                 } else {
                     return Err(UserError::UserDoesNotExist);
                 };
-                self.data.events.push_back(GameEvent::Removed(username.to_string()));
+                self.data.events.push_back(GameEvent::Removed(username.clone()));
                 self.cleanup_user(user);
                 Ok(Some(true))
             }
 
-            pub fn reset_user_money(&mut self, username: &str) -> Result<Option<bool>, UserError> {
+            pub fn reset_user_money(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
                 if let Some(mut user) = self.data.spectators.take(username) {
                     user.money = self.data.settings.buy_in;
                     self.data.spectators.insert(user);
-                } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
+                } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| &u.name == username) {
                     let user = self.data.waitlist.get_mut(waitlist_idx).expect("waitlister should exist");
                     user.money = self.data.settings.buy_in;
-                } else if let Some(player_idx) = self.data.players.iter().position(|p| p.user.name == username) {
+                } else if let Some(player_idx) = self.data.players.iter().position(|p| &p.user.name == username) {
                     let player = self.data.players.get_mut(player_idx).expect("player should exist");
                     player.user.money = self.data.settings.buy_in;
                 } else {
                     return Err(UserError::UserDoesNotExist);
                 };
-                self.data.events.push_back(GameEvent::ResetUserMoney(username.to_string()));
+                self.data.events.push_back(GameEvent::ResetUserMoney(username.clone()));
                 Ok(Some(true))
             }
 
@@ -759,7 +754,7 @@ macro_rules! impl_user_managers {
                 true
             }
 
-            pub fn spectate_user(&mut self, username: &str) -> Result<Option<bool>, UserError> {
+            pub fn spectate_user(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
                 // The player has already been queued for spectate. Just wait for
                 // the next spectate phase.
                 if self.data.player_queues.to_spectate.contains(username) {
@@ -767,9 +762,9 @@ macro_rules! impl_user_managers {
                 }
                 let user = if self.data.spectators.contains(username) {
                     return Ok(None);
-                } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
+                } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| &u.name == username) {
                     self.data.waitlist.remove(waitlist_idx).expect("waitlister should exist")
-                } else if let Some(player_idx) = self.data.players.iter().position(|p| p.user.name == username) {
+                } else if let Some(player_idx) = self.data.players.iter().position(|p| &p.user.name == username) {
                     self.data.player_queues.to_remove.remove(username);
                     let player = self.data.players.remove(player_idx);
                     self.data.open_seats.push_back(player.seat_idx);
@@ -777,7 +772,7 @@ macro_rules! impl_user_managers {
                 } else {
                     return Err(UserError::UserDoesNotExist);
                 };
-                self.data.events.push_back(GameEvent::Spectated(username.to_string()));
+                self.data.events.push_back(GameEvent::Spectated(username.clone()));
                 self.data.spectators.insert(user);
                 Ok(Some(true))
             }
@@ -792,7 +787,7 @@ macro_rules! impl_user_managers {
 macro_rules! impl_user_managers_with_queue {
     ($($t:ty),+) => {
         $(impl $t {
-            pub fn kick_user(&mut self, username: &str) -> Result<Option<bool>, UserError> {
+            pub fn kick_user(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
                 // The player has already been queued for kick. Just wait for
                 // the next kick phase.
                 if self.data.player_queues.to_kick.contains(username) {
@@ -800,20 +795,20 @@ macro_rules! impl_user_managers_with_queue {
                 }
                 let user = if let Some(user) = self.data.spectators.take(username) {
                     user
-                } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
+                } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| &u.name == username) {
                     self.data.waitlist.remove(waitlist_idx).expect("waitlister should exist")
-                } else if let Some(_) = self.data.players.iter().position(|p| p.user.name == username) {
+                } else if let Some(_) = self.data.players.iter().position(|p| &p.user.name == username) {
                     self.queue_player_for_kick_with_event(username);
                     return Ok(Some(false));
                 } else {
                     return Err(UserError::UserDoesNotExist);
                 };
-                self.data.events.push_back(GameEvent::Kicked(username.to_string()));
+                self.data.events.push_back(GameEvent::Kicked(username.clone()));
                 self.cleanup_user(user);
                 Ok(Some(true))
             }
 
-            pub fn remove_user(&mut self, username: &str) -> Result<Option<bool>, UserError> {
+            pub fn remove_user(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
                 // The player has already been queued for removal. Just wait for
                 // the next removal phase.
                 if self.data.player_queues.to_remove.contains(username) {
@@ -821,33 +816,33 @@ macro_rules! impl_user_managers_with_queue {
                 }
                 let user = if let Some(user) = self.data.spectators.take(username) {
                     user
-                } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
+                } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| &u.name == username) {
                     self.data.waitlist.remove(waitlist_idx).expect("waitlister should exist")
-                } else if let Some(_) = self.data.players.iter().position(|p| p.user.name == username) {
+                } else if let Some(_) = self.data.players.iter().position(|p| &p.user.name == username) {
                     self.queue_player_for_remove_with_event(username);
                     return Ok(Some(false));
                 } else {
                     return Err(UserError::UserDoesNotExist);
                 };
-                self.data.events.push_back(GameEvent::Removed(username.to_string()));
+                self.data.events.push_back(GameEvent::Removed(username.clone()));
                 self.cleanup_user(user);
                 Ok(Some(true))
             }
 
-            pub fn reset_user_money(&mut self, username: &str) -> Result<Option<bool>, UserError> {
+            pub fn reset_user_money(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
                 if let Some(mut user) = self.data.spectators.take(username) {
                     user.money = self.data.settings.buy_in;
                     self.data.spectators.insert(user);
-                } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
+                } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| &u.name == username) {
                     let user = self.data.waitlist.get_mut(waitlist_idx).expect("waitlister should exist");
                     user.money = self.data.settings.buy_in;
-                } else if let Some(_) = self.data.players.iter().position(|p| p.user.name == username) {
+                } else if let Some(_) = self.data.players.iter().position(|p| &p.user.name == username) {
                     self.queue_player_for_reset_with_event(username);
                     return Ok(Some(false));
                 } else {
                     return Err(UserError::UserDoesNotExist);
                 };
-                self.data.events.push_back(GameEvent::ResetUserMoney(username.to_string()));
+                self.data.events.push_back(GameEvent::ResetUserMoney(username.clone()));
                 Ok(Some(true))
             }
 
@@ -857,7 +852,7 @@ macro_rules! impl_user_managers_with_queue {
                 false
             }
 
-            pub fn spectate_user(&mut self, username: &str) -> Result<Option<bool>, UserError> {
+            pub fn spectate_user(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
                 // The player has already been queued for spectate. Just wait for
                 // the next spectate phase.
                 if self.data.player_queues.to_spectate.contains(username) {
@@ -865,15 +860,15 @@ macro_rules! impl_user_managers_with_queue {
                 }
                 let user = if self.data.spectators.contains(username) {
                     return Ok(None)
-                } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| u.name == username) {
+                } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| &u.name == username) {
                     self.data.waitlist.remove(waitlist_idx).expect("waitlister should exist")
-                } else if let Some(_) = self.data.players.iter().position(|p| p.user.name == username) {
+                } else if let Some(_) = self.data.players.iter().position(|p| &p.user.name == username) {
                     self.queue_player_for_spectate_with_event(username);
                     return Ok(Some(false));
                 } else {
                     return Err(UserError::UserDoesNotExist);
                 };
-                self.data.events.push_back(GameEvent::Spectated(username.to_string()));
+                self.data.events.push_back(GameEvent::Spectated(username.clone()));
                 self.data.spectators.insert(user);
                 Ok(Some(true))
             }
@@ -1339,12 +1334,12 @@ impl From<Game<River>> for Game<ShowHands> {
 macro_rules! impl_show_hands {
     ($($t:ty),+) => {
         $(impl $t {
-            pub fn show_hand(&mut self, username: &str) -> Result<(), UserError> {
+            pub fn show_hand(&mut self, username: &Username) -> Result<(), UserError> {
                 match self
                     .data
                     .players
                     .iter_mut()
-                    .find(|p| p.user.name == username)
+                    .find(|p| &p.user.name == username)
                 {
                     Some(player) => {
                         if !player.showing {
@@ -1645,7 +1640,11 @@ impl fmt::Display for PokerState {
 }
 
 impl PokerState {
-    pub fn cast_vote(&mut self, username: &str, vote: Vote) -> Result<Option<Vote>, UserError> {
+    pub fn cast_vote(
+        &mut self,
+        username: &Username,
+        vote: Vote,
+    ) -> Result<Option<Vote>, UserError> {
         match self {
             PokerState::Lobby(game) => game.cast_vote(username, vote),
             PokerState::SeatPlayers(game) => game.cast_vote(username, vote),
@@ -1719,7 +1718,7 @@ impl PokerState {
         }
     }
 
-    pub fn init_start(&mut self, username: &str) -> Result<(), UserError> {
+    pub fn init_start(&mut self, username: &Username) -> Result<(), UserError> {
         match self {
             PokerState::Lobby(game) => {
                 if game.contains_waitlister(username) || game.contains_player(username) {
@@ -1799,7 +1798,7 @@ impl PokerState {
         }
     }
 
-    pub fn show_hand(&mut self, username: &str) -> Result<(), UserError> {
+    pub fn show_hand(&mut self, username: &Username) -> Result<(), UserError> {
         match self {
             PokerState::ShowHands(game) => {
                 game.show_hand(username)?;
@@ -1886,7 +1885,11 @@ impl PokerState {
         }
     }
 
-    pub fn take_action(&mut self, username: &str, action: Action) -> Result<Action, UserError> {
+    pub fn take_action(
+        &mut self,
+        username: &Username,
+        action: Action,
+    ) -> Result<Action, UserError> {
         match self {
             PokerState::TakeAction(game)
                 if !game.is_ready_for_next_phase() && game.is_turn(username) =>
@@ -1902,7 +1905,7 @@ impl PokerState {
 macro_rules! impl_user_managers {
     ($($name:ident),+) => {
         impl PokerState {
-            $(pub fn $name(&mut self, username: &str) -> Result<(), UserError> {
+            $(pub fn $name(&mut self, username: &Username) -> Result<(), UserError> {
                 match self {
                     PokerState::Lobby(game) => {
                         game.$name(username)?;
@@ -1974,14 +1977,14 @@ mod game_tests {
     use super::{
         BootPlayers, CollectBlinds, Deal, DistributePot, Flop, Game, Lobby, MoveButton,
         RemovePlayers, River, SeatPlayers, ShowHands, TakeAction, Turn, UpdateBlinds, UserError,
-        entities::{Action, ActionChoice, Card, PlayerState, Suit},
+        entities::{Action, ActionChoice, Card, PlayerState, Suit, Username},
     };
 
     fn init_2_player_game() -> Game<SeatPlayers> {
         let game = Game::<Lobby>::new();
         let mut game: Game<SeatPlayers> = game.into();
         for i in 0..2 {
-            let username = i.to_string();
+            let username = Username::new(i.to_string());
             game.new_user(&username).unwrap();
             game.waitlist_user(&username).unwrap();
         }
@@ -1992,7 +1995,7 @@ mod game_tests {
         let game = Game::<Lobby>::new();
         let mut game: Game<SeatPlayers> = game.into();
         for i in 0..3 {
-            let username = i.to_string();
+            let username = Username::new(i.to_string());
             game.new_user(&username).unwrap();
             game.waitlist_user(&username).unwrap();
         }
@@ -2329,45 +2332,48 @@ mod game_tests {
     #[test]
     fn manipulating_user_in_lobby() {
         let mut game = Game::<SeatPlayers>::new();
-        let username = "ognf";
+        let username = "ognf".into();
 
-        assert_eq!(game.new_user(username), Ok(true));
-        assert!(game.contains_spectator(username));
+        assert_eq!(game.new_user(&username), Ok(true));
+        assert!(game.contains_spectator(&username));
 
-        assert_eq!(game.new_user(username), Err(UserError::UserAlreadyExists));
+        assert_eq!(game.new_user(&username), Err(UserError::UserAlreadyExists));
 
-        assert_eq!(game.waitlist_user(username), Ok(Some(true)));
-        assert!(game.contains_waitlister(username));
+        assert_eq!(game.waitlist_user(&username), Ok(Some(true)));
+        assert!(game.contains_waitlister(&username));
 
-        assert_eq!(game.spectate_user(username), Ok(Some(true)));
-        assert!(game.contains_spectator(username));
+        assert_eq!(game.spectate_user(&username), Ok(Some(true)));
+        assert!(game.contains_spectator(&username));
 
-        assert_eq!(game.remove_user(username), Ok(Some(true)));
-        assert!(!game.contains_user(username));
+        assert_eq!(game.remove_user(&username), Ok(Some(true)));
+        assert!(!game.contains_user(&username));
 
-        assert_eq!(game.remove_user(username), Err(UserError::UserDoesNotExist));
         assert_eq!(
-            game.waitlist_user(username),
+            game.remove_user(&username),
             Err(UserError::UserDoesNotExist)
         );
         assert_eq!(
-            game.spectate_user(username),
+            game.waitlist_user(&username),
+            Err(UserError::UserDoesNotExist)
+        );
+        assert_eq!(
+            game.spectate_user(&username),
             Err(UserError::UserDoesNotExist)
         );
 
-        assert_eq!(game.new_user(username), Ok(true));
-        assert!(game.contains_spectator(username));
+        assert_eq!(game.new_user(&username), Ok(true));
+        assert!(game.contains_spectator(&username));
 
-        assert_eq!(game.waitlist_user(username), Ok(Some(true)));
-        assert!(game.contains_waitlister(username));
+        assert_eq!(game.waitlist_user(&username), Ok(Some(true)));
+        assert!(game.contains_waitlister(&username));
 
-        assert_eq!(game.remove_user(username), Ok(Some(true)));
-        assert!(!game.contains_user(username));
+        assert_eq!(game.remove_user(&username), Ok(Some(true)));
+        assert!(!game.contains_user(&username));
 
         for i in 0..game.data.settings.max_users {
-            assert_eq!(game.new_user(&i.to_string()), Ok(true));
+            assert_eq!(game.new_user(&Username::new(i.to_string())), Ok(true));
         }
-        assert_eq!(game.new_user(username), Err(UserError::CapacityReached));
+        assert_eq!(game.new_user(&username), Err(UserError::CapacityReached));
     }
 
     #[test]
@@ -2389,7 +2395,7 @@ mod game_tests {
         let game = Game::<Lobby>::new();
         let mut game: Game<SeatPlayers> = game.into();
         for i in 0..game.data.settings.max_users {
-            let username = i.to_string();
+            let username = Username::new(i.to_string());
             assert_eq!(game.new_user(&username), Ok(true));
             assert_eq!(game.waitlist_user(&username), Ok(Some(true)));
         }
@@ -2430,6 +2436,9 @@ mod game_tests {
     #[test]
     fn remove_player() {
         let mut game = init_game_at_showdown_with_2_all_ins();
+        let username0 = "0".into();
+        let username1 = "1".into();
+        let username2 = "2".into();
         game.data.board = vec![
             Card(2, Suit::Diamond),
             Card(4, Suit::Diamond),
@@ -2442,10 +2451,10 @@ mod game_tests {
         let game: Game<DistributePot> = game.into();
         let game: Game<RemovePlayers> = game.into();
         let mut game: Game<UpdateBlinds> = game.into();
-        assert_eq!(game.remove_user("0"), Ok(Some(true)));
-        assert!(!game.contains_user("0"));
-        assert!(game.contains_player("1"));
-        assert!(game.contains_player("2"));
+        assert_eq!(game.remove_user(&username0), Ok(Some(true)));
+        assert!(!game.contains_user(&username0));
+        assert!(game.contains_player(&username1));
+        assert!(game.contains_player(&username2));
         for i in 0..2 {
             assert_eq!(game.data.players[i].user.money, game.data.settings.buy_in);
         }
@@ -2457,6 +2466,9 @@ mod game_tests {
     #[test]
     fn remove_player_with_queue() {
         let mut game = init_game_at_showdown_with_2_all_ins();
+        let username0 = "0".into();
+        let username1 = "1".into();
+        let username2 = "2".into();
         game.data.board = vec![
             Card(2, Suit::Diamond),
             Card(4, Suit::Diamond),
@@ -2466,13 +2478,13 @@ mod game_tests {
         ];
         game.data.players[1].cards = vec![Card(1, Suit::Heart), Card(7, Suit::Heart)];
         game.data.players[2].cards = vec![Card(2, Suit::Heart), Card(5, Suit::Heart)];
-        assert_eq!(game.remove_user("0"), Ok(Some(false)));
+        assert_eq!(game.remove_user(&username0), Ok(Some(false)));
         let game: Game<DistributePot> = game.into();
         let game: Game<RemovePlayers> = game.into();
         let game: Game<UpdateBlinds> = game.into();
-        assert!(!game.contains_user("0"));
-        assert!(game.contains_player("1"));
-        assert!(game.contains_player("2"));
+        assert!(!game.contains_user(&username0));
+        assert!(game.contains_player(&username1));
+        assert!(game.contains_player(&username2));
         for i in 0..2 {
             assert_eq!(game.data.players[i].user.money, game.data.settings.buy_in);
         }
@@ -2551,10 +2563,13 @@ mod game_tests {
     #[test]
     fn seat_players() {
         let game = init_game_at_seat_players();
+        let username0 = "0".into();
+        let username1 = "1".into();
+        let username2 = "2".into();
         assert_eq!(game.data.player_counts.num_active, game.get_num_players());
-        assert!(game.contains_player("0"));
-        assert!(game.contains_player("1"));
-        assert!(game.contains_player("2"));
+        assert!(game.contains_player(&username0));
+        assert!(game.contains_player(&username1));
+        assert!(game.contains_player(&username2));
     }
 
     #[test]
@@ -2749,12 +2764,15 @@ mod game_tests {
 
 #[cfg(test)]
 mod state_tests {
-    use super::{PokerState, UserError, entities::Action};
+    use super::{
+        PokerState, UserError,
+        entities::{Action, Username},
+    };
 
     fn init_state() -> PokerState {
         let mut state = PokerState::new();
         for i in 0..3 {
-            let username = i.to_string();
+            let username = Username::new(i.to_string());
             state.new_user(&username).unwrap();
             state.waitlist_user(&username).unwrap();
         }
@@ -2764,21 +2782,31 @@ mod state_tests {
     #[test]
     fn cant_start_game() {
         let mut state = init_state();
-        assert_eq!(state.init_start("0"), Ok(()));
+        let username0 = "0".into();
+        let username1 = "1".into();
+        let username2 = "2".into();
+        assert_eq!(state.init_start(&username0), Ok(()));
         // At SeatPlayers.
         state = state.step();
-        assert_eq!(state.init_start("0"), Err(UserError::GameAlreadyStarting));
-        assert_eq!(state.remove_user("1"), Ok(()));
-        assert_eq!(state.remove_user("2"), Ok(()));
+        assert_eq!(
+            state.init_start(&username0),
+            Err(UserError::GameAlreadyStarting)
+        );
+        assert_eq!(state.remove_user(&username1), Ok(()));
+        assert_eq!(state.remove_user(&username2), Ok(()));
         // Should be back at Lobby.
         state = state.step();
-        assert_eq!(state.init_start("0"), Err(UserError::NotEnoughPlayers));
+        assert_eq!(
+            state.init_start(&username0),
+            Err(UserError::NotEnoughPlayers)
+        );
     }
 
     #[test]
     fn early_showdown_1_winner_2_early_folds() {
         let mut state = init_state();
-        assert_eq!(state.init_start("0"), Ok(()));
+        let username0 = "0".into();
+        assert_eq!(state.init_start(&username0), Ok(()));
         state = state.step();
         assert!(matches!(state, PokerState::SeatPlayers(_)));
         state = state.step();
@@ -2810,13 +2838,14 @@ mod state_tests {
         assert!(matches!(state, PokerState::BootPlayers(_)));
         state = state.step();
         assert!(matches!(state, PokerState::Lobby(_)));
-        assert_eq!(state.init_start("0"), Ok(()));
+        assert_eq!(state.init_start(&username0), Ok(()));
     }
 
     #[test]
     fn early_showdown_1_winner_2_folds() {
         let mut state = init_state();
-        assert_eq!(state.init_start("0"), Ok(()));
+        let username0 = "0".into();
+        assert_eq!(state.init_start(&username0), Ok(()));
         state = state.step();
         assert!(matches!(state, PokerState::SeatPlayers(_)));
         state = state.step();
@@ -2828,7 +2857,10 @@ mod state_tests {
         state = state.step();
         assert!(matches!(state, PokerState::TakeAction(_)));
         // All-in
-        assert_eq!(state.take_action("0", Action::AllIn), Ok(Action::AllIn));
+        assert_eq!(
+            state.take_action(&username0, Action::AllIn),
+            Ok(Action::AllIn)
+        );
         // 1st fold
         state = state.step();
         // 2nd fold
@@ -2850,13 +2882,16 @@ mod state_tests {
         assert!(matches!(state, PokerState::BootPlayers(_)));
         state = state.step();
         assert!(matches!(state, PokerState::Lobby(_)));
-        assert_eq!(state.init_start("0"), Ok(()));
+        assert_eq!(state.init_start(&username0), Ok(()));
     }
 
     #[test]
     fn early_showdown_1_winner_2_late_folds() {
         let mut state = init_state();
-        assert_eq!(state.init_start("0"), Ok(()));
+        let username0 = "0".into();
+        let username1 = "1".into();
+        let username2 = "2".into();
+        assert_eq!(state.init_start(&username0), Ok(()));
         state = state.step();
         assert!(matches!(state, PokerState::SeatPlayers(_)));
         state = state.step();
@@ -2868,35 +2903,71 @@ mod state_tests {
         state = state.step();
         assert!(matches!(state, PokerState::TakeAction(_)));
         // Call
-        assert_eq!(state.take_action("0", Action::Call), Ok(Action::Call));
+        assert_eq!(
+            state.take_action(&username0, Action::Call),
+            Ok(Action::Call)
+        );
         // Check
-        assert_eq!(state.take_action("1", Action::Call), Ok(Action::Call));
+        assert_eq!(
+            state.take_action(&username1, Action::Call),
+            Ok(Action::Call)
+        );
         // Check
-        assert_eq!(state.take_action("2", Action::Check), Ok(Action::Check));
+        assert_eq!(
+            state.take_action(&username2, Action::Check),
+            Ok(Action::Check)
+        );
         state = state.step();
         assert!(matches!(state, PokerState::Flop(_)));
         state = state.step();
         assert!(matches!(state, PokerState::TakeAction(_)));
         // Check
-        assert_eq!(state.take_action("0", Action::Check), Ok(Action::Check));
+        assert_eq!(
+            state.take_action(&username0, Action::Check),
+            Ok(Action::Check)
+        );
         // Check
-        assert_eq!(state.take_action("1", Action::Check), Ok(Action::Check));
+        assert_eq!(
+            state.take_action(&username1, Action::Check),
+            Ok(Action::Check)
+        );
         // Check
-        assert_eq!(state.take_action("2", Action::Check), Ok(Action::Check));
+        assert_eq!(
+            state.take_action(&username2, Action::Check),
+            Ok(Action::Check)
+        );
         state = state.step();
         assert!(matches!(state, PokerState::Turn(_)));
         state = state.step();
         assert!(matches!(state, PokerState::TakeAction(_)));
-        assert_eq!(state.take_action("0", Action::Check), Ok(Action::Check));
-        assert_eq!(state.take_action("1", Action::Check), Ok(Action::Check));
-        assert_eq!(state.take_action("2", Action::Check), Ok(Action::Check));
+        assert_eq!(
+            state.take_action(&username0, Action::Check),
+            Ok(Action::Check)
+        );
+        assert_eq!(
+            state.take_action(&username1, Action::Check),
+            Ok(Action::Check)
+        );
+        assert_eq!(
+            state.take_action(&username2, Action::Check),
+            Ok(Action::Check)
+        );
         state = state.step();
         assert!(matches!(state, PokerState::River(_)));
         state = state.step();
         assert!(matches!(state, PokerState::TakeAction(_)));
-        assert_eq!(state.take_action("0", Action::AllIn), Ok(Action::AllIn));
-        assert_eq!(state.take_action("1", Action::Fold), Ok(Action::Fold));
-        assert_eq!(state.take_action("2", Action::Fold), Ok(Action::Fold));
+        assert_eq!(
+            state.take_action(&username0, Action::AllIn),
+            Ok(Action::AllIn)
+        );
+        assert_eq!(
+            state.take_action(&username1, Action::Fold),
+            Ok(Action::Fold)
+        );
+        assert_eq!(
+            state.take_action(&username2, Action::Fold),
+            Ok(Action::Fold)
+        );
         state = state.step();
         assert!(matches!(state, PokerState::ShowHands(_)));
         state = state.step();
@@ -2909,6 +2980,6 @@ mod state_tests {
         assert!(matches!(state, PokerState::BootPlayers(_)));
         state = state.step();
         assert!(matches!(state, PokerState::Lobby(_)));
-        assert_eq!(state.init_start("0"), Ok(()));
+        assert_eq!(state.init_start(&username0), Ok(()));
     }
 }

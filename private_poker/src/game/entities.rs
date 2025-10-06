@@ -1,5 +1,5 @@
 use rand::{seq::SliceRandom, thread_rng};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::{
     borrow::Borrow,
     collections::{BTreeSet, HashMap, HashSet, VecDeque},
@@ -133,8 +133,41 @@ impl Default for Deck {
 /// have a problem.
 pub type Usd = u32;
 
-/// Type alias for poker user usernames.
-pub type Username = String;
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct Username(String);
+
+impl Username {
+    pub fn new(s: String) -> Self {
+        let mut username: String = s
+            .chars()
+            .map(|c| if c.is_ascii_whitespace() { '_' } else { c })
+            .collect();
+        username.truncate(constants::MAX_USER_INPUT_LENGTH / 2);
+        Self(username)
+    }
+}
+
+impl fmt::Display for Username {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl<'de> Deserialize<'de> for Username {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(Username::new(s))
+    }
+}
+
+impl From<&str> for Username {
+    fn from(value: &str) -> Self {
+        Self::new(value.to_string())
+    }
+}
 
 /// Type alias for seat positions during the game.
 pub type SeatIndex = usize;
@@ -225,8 +258,8 @@ impl Hash for User {
     }
 }
 
-impl Borrow<str> for User {
-    fn borrow(&self) -> &str {
+impl Borrow<Username> for User {
+    fn borrow(&self) -> &Username {
         &self.name
     }
 }

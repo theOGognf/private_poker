@@ -4,6 +4,8 @@
 //! and exchanging data, and another for updating the poker game state
 //! at fixed intervals and in response to user commands.
 
+use std::net::SocketAddr;
+
 use anyhow::Error;
 use ctrlc::set_handler;
 use log::info;
@@ -29,7 +31,7 @@ FLAGS:
 ";
 
 struct Args {
-    bind: String,
+    bind: SocketAddr,
     buy_in: Usd,
 }
 
@@ -45,7 +47,7 @@ fn main() -> Result<(), Error> {
     let args = Args {
         bind: pargs
             .value_from_str("--bind")
-            .unwrap_or("127.0.0.1:6969".into()),
+            .unwrap_or("127.0.0.1:6969".parse()?),
         buy_in: pargs.value_from_str("--buy_in").unwrap_or(DEFAULT_BUY_IN),
     };
 
@@ -57,7 +59,7 @@ fn main() -> Result<(), Error> {
 
     env_logger::builder().format_target(false).init();
     info!("starting at {}", args.bind);
-    server::run(&args.bind, config)?;
+    server::run(args.bind, config)?;
 
     Ok(())
 }
