@@ -20,7 +20,8 @@ use super::{
         UserError,
         entities::Vote,
         game::{
-            GameEvent, GameSettings, PokerState,
+            GameEvent, GameSettings, GameStateManagement, PhaseDependentUserManagement,
+            PhaseIndependentUserManagement, PokerState,
             entities::{Action, ActionChoices, GameView, Username},
         },
     },
@@ -823,11 +824,11 @@ pub fn run(addr: SocketAddr, config: PokerConfig) -> Result<(), Error> {
                 if let Ok(mut msg) = rx_client.recv_timeout(timeout) {
                     let result = match msg.command {
                         UserCommand::ChangeState(ref new_user_state) => match new_user_state {
-                            UserState::Play => state.waitlist_user(&msg.username),
-                            UserState::Spectate => state.spectate_user(&msg.username),
+                            UserState::Play => state.waitlist_user(&msg.username).map(|_| ()),
+                            UserState::Spectate => state.spectate_user(&msg.username).map(|_| ()),
                         },
-                        UserCommand::Connect => state.new_user(&msg.username),
-                        UserCommand::Disconnect => state.remove_user(&msg.username),
+                        UserCommand::Connect => state.new_user(&msg.username).map(|_| ()),
+                        UserCommand::Disconnect => state.remove_user(&msg.username).map(|_| ()),
                         UserCommand::ShowHand => state.show_hand(&msg.username),
                         UserCommand::StartGame => state.init_start(&msg.username),
                         UserCommand::TakeAction(ref mut action) => state
@@ -840,13 +841,13 @@ pub fn run(addr: SocketAddr, config: PokerConfig) -> Result<(), Error> {
                             .cast_vote(&msg.username, vote.clone())
                             .and_then(|maybe_vote| {
                                 maybe_vote.map_or(Ok(()), |vote| match vote {
-                                    Vote::Kick(username) => state.kick_user(&username),
+                                    Vote::Kick(username) => state.kick_user(&username).map(|_| ()),
                                     Vote::Reset(None) => {
                                         state.reset_all_money();
                                         Ok(())
                                     }
                                     Vote::Reset(Some(username)) => {
-                                        state.reset_user_money(&username)
+                                        state.reset_user_money(&username).map(|_| ())
                                     }
                                 })
                             }),

@@ -1,3 +1,4 @@
+use enum_dispatch::enum_dispatch;
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::{Ordering, max, min},
@@ -264,6 +265,28 @@ pub struct UpdateBlinds {}
 #[derive(Debug)]
 pub struct BootPlayers {}
 
+#[enum_dispatch]
+pub trait GameStateManagement {
+    fn drain_events(&mut self) -> VecDeque<GameEvent>;
+    fn get_views(&self) -> GameViews;
+}
+
+#[enum_dispatch]
+pub trait PhaseDependentUserManagement {
+    fn kick_user(&mut self, username: &Username) -> Result<Option<bool>, UserError>;
+    fn remove_user(&mut self, username: &Username) -> Result<Option<bool>, UserError>;
+    fn reset_all_money(&mut self) -> bool;
+    fn reset_user_money(&mut self, username: &Username) -> Result<Option<bool>, UserError>;
+    fn spectate_user(&mut self, username: &Username) -> Result<Option<bool>, UserError>;
+}
+
+#[enum_dispatch]
+pub trait PhaseIndependentUserManagement {
+    fn cast_vote(&mut self, username: &Username, vote: Vote) -> Result<Option<Vote>, UserError>;
+    fn new_user(&mut self, username: &Username) -> Result<bool, UserError>;
+    fn waitlist_user(&mut self, username: &Username) -> Result<Option<bool>, UserError>;
+}
+
 /// A poker game with data and logic for running a poker game end-to-end.
 /// Any kind of networking, client-server, or complex user management logic
 /// is out-of-scope for this object as its sole focus is game data and logic.
@@ -304,41 +327,6 @@ impl<T> Game<T> {
         }
     }
 
-    /// A user casts a vote. Returns true if the vote is recorded and results
-    /// in a passing vote, and false otherwise.
-    pub fn cast_vote(
-        &mut self,
-        username: &Username,
-        vote: Vote,
-    ) -> Result<Option<Vote>, UserError> {
-        let num_users = self.get_num_users();
-        if num_users > 1 {
-            // Make sure the vote is even possible.
-            match &vote {
-                Vote::Kick(user_target) | Vote::Reset(Some(user_target)) => {
-                    if username == user_target {
-                        return Err(UserError::CannotVoteOnSelf);
-                    } else if !self.contains_user(user_target) {
-                        return Err(UserError::UserDoesNotExist);
-                    }
-                }
-                // No vote-specific validation necessary for other votes.
-                _ => {}
-            }
-            let votes = self.data.votes.entry(vote.clone()).or_default();
-            let is_vote_passing = votes.insert(username.clone()) && votes.len() > num_users / 2;
-            // Add an event on the vote's passage, and return a copy of the vote that passed.
-            if is_vote_passing {
-                self.pass_vote_with_event(vote.clone());
-                Ok(Some(vote))
-            } else {
-                Ok(None)
-            }
-        } else {
-            Err(UserError::NotEnoughPlayers)
-        }
-    }
-
     /// Handle a user being removed/kicked from the game. Rescind all votes
     /// for or by the user, and update the ledger.
     fn cleanup_user(&mut self, user: User) {
@@ -371,10 +359,6 @@ impl<T> Game<T> {
 
     pub fn contains_waitlister(&self, username: &Username) -> bool {
         self.data.waitlist.iter().any(|u| &u.name == username)
-    }
-
-    pub fn drain_events(&mut self) -> VecDeque<GameEvent> {
-        self.data.events.drain(..).collect()
     }
 
     /// Return the index of the player who has the next action, or
@@ -472,24 +456,6 @@ impl<T> Game<T> {
         self.data.spectators.len() + self.data.waitlist.len() + self.data.players.len()
     }
 
-    /// Return independent views of the game for each user. For non-players,
-    /// only the board is shown until the showdown. For players, only their
-    /// hand and the board is shown until the showdown.
-    pub fn get_views(&self) -> GameViews {
-        let mut views = HashMap::with_capacity(self.data.settings.max_users);
-        for username in self
-            .data
-            .spectators
-            .iter()
-            .map(|u| &u.name)
-            .chain(self.data.waitlist.iter().map(|u| &u.name))
-            .chain(self.data.players.iter().map(|p| &p.user.name))
-        {
-            views.insert(username.clone(), self.as_view(username));
-        }
-        views
-    }
-
     /// Return whether the game is ready to move onto the next phase
     /// now that the betting round is over.
     fn is_end_of_round(&self) -> bool {
@@ -534,41 +500,6 @@ impl<T> Game<T> {
             data: GameData::new(),
             state: Lobby::new(),
         }
-    }
-
-    /// Add a new user to the game, making them a spectator.
-    pub fn new_user(&mut self, username: &Username) -> Result<bool, UserError> {
-        if self.get_num_users() == self.data.settings.max_users {
-            return Err(UserError::CapacityReached);
-        } else if self.contains_user(username) {
-            // Check if player already exists but is queued for removal.
-            // This probably means the user disconnected and is trying
-            // to reconnect.
-            return self
-                .data
-                .player_queues
-                .to_remove
-                .remove(username)
-                .then_some(false)
-                .ok_or(UserError::UserAlreadyExists);
-        }
-        // Check the ledger for some memory of the user's money stack.
-        // There are a couple of flaws with this. If a user runs out
-        // of money, they can leave and then rejoin under a different
-        // name to get more money, and if a user uses another user's
-        // name, then they'll take ownership of their money stack.
-        // However, both of these flaws can be avoided by running a
-        // server with some kind of user management.
-        let money = self
-            .data
-            .ledger
-            .remove(username)
-            .unwrap_or(self.data.settings.buy_in);
-        self.data.spectators.insert(User {
-            name: username.clone(),
-            money,
-        });
-        Ok(true)
     }
 
     fn pass_vote_with_event(&mut self, vote: Vote) {
@@ -643,11 +574,103 @@ impl<T> Game<T> {
             .push_back(GameEvent::Spectated(user.name.clone()));
         self.data.spectators.insert(user);
     }
+}
+
+impl<T> GameStateManagement for Game<T> {
+    fn drain_events(&mut self) -> VecDeque<GameEvent> {
+        self.data.events.drain(..).collect()
+    }
+
+    /// Return independent views of the game for each user. For non-players,
+    /// only the board is shown until the showdown. For players, only their
+    /// hand and the board is shown until the showdown.
+    fn get_views(&self) -> GameViews {
+        let mut views = HashMap::with_capacity(self.data.settings.max_users);
+        for username in self
+            .data
+            .spectators
+            .iter()
+            .map(|u| &u.name)
+            .chain(self.data.waitlist.iter().map(|u| &u.name))
+            .chain(self.data.players.iter().map(|p| &p.user.name))
+        {
+            views.insert(username.clone(), self.as_view(username));
+        }
+        views
+    }
+}
+
+impl<T> PhaseIndependentUserManagement for Game<T> {
+    /// A user casts a vote. Returns true if the vote is recorded and results
+    /// in a passing vote, and false otherwise.
+    fn cast_vote(&mut self, username: &Username, vote: Vote) -> Result<Option<Vote>, UserError> {
+        let num_users = self.get_num_users();
+        if num_users > 1 {
+            // Make sure the vote is even possible.
+            match &vote {
+                Vote::Kick(user_target) | Vote::Reset(Some(user_target)) => {
+                    if username == user_target {
+                        return Err(UserError::CannotVoteOnSelf);
+                    } else if !self.contains_user(user_target) {
+                        return Err(UserError::UserDoesNotExist);
+                    }
+                }
+                // No vote-specific validation necessary for other votes.
+                _ => {}
+            }
+            let votes = self.data.votes.entry(vote.clone()).or_default();
+            let is_vote_passing = votes.insert(username.clone()) && votes.len() > num_users / 2;
+            // Add an event on the vote's passage, and return a copy of the vote that passed.
+            if is_vote_passing {
+                self.pass_vote_with_event(vote.clone());
+                Ok(Some(vote))
+            } else {
+                Ok(None)
+            }
+        } else {
+            Err(UserError::NotEnoughPlayers)
+        }
+    }
+
+    /// Add a new user to the game, making them a spectator.
+    fn new_user(&mut self, username: &Username) -> Result<bool, UserError> {
+        if self.get_num_users() == self.data.settings.max_users {
+            return Err(UserError::CapacityReached);
+        } else if self.contains_user(username) {
+            // Check if player already exists but is queued for removal.
+            // This probably means the user disconnected and is trying
+            // to reconnect.
+            return self
+                .data
+                .player_queues
+                .to_remove
+                .remove(username)
+                .then_some(false)
+                .ok_or(UserError::UserAlreadyExists);
+        }
+        // Check the ledger for some memory of the user's money stack.
+        // There are a couple of flaws with this. If a user runs out
+        // of money, they can leave and then rejoin under a different
+        // name to get more money, and if a user uses another user's
+        // name, then they'll take ownership of their money stack.
+        // However, both of these flaws can be avoided by running a
+        // server with some kind of user management.
+        let money = self
+            .data
+            .ledger
+            .remove(username)
+            .unwrap_or(self.data.settings.buy_in);
+        self.data.spectators.insert(User {
+            name: username.clone(),
+            money,
+        });
+        Ok(true)
+    }
 
     /// Add a user to the waitlist, putting them in queue to play. The queue
     /// is eventually drained until the table is full and there are no more
     /// seats available for play.
-    pub fn waitlist_user(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
+    fn waitlist_user(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
         // Need to remove the player from the removal and spectate sets just in
         // case they wanted to do one of those, but then changed their mind and
         // want to play again.
@@ -683,8 +706,8 @@ impl<T> Game<T> {
 // immediately updated since it wouldn't interfere with gameplay.
 macro_rules! impl_user_managers {
     ($($t:ty),+) => {
-        $(impl $t {
-            pub fn kick_user(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
+        $(impl PhaseDependentUserManagement for $t {
+            fn kick_user(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
                 let user = if let Some(user) = self.data.spectators.take(username) {
                     user
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| &u.name == username) {
@@ -702,7 +725,7 @@ macro_rules! impl_user_managers {
                 Ok(Some(true))
             }
 
-            pub fn remove_user(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
+            fn remove_user(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
                 let user = if let Some(user) = self.data.spectators.take(username) {
                     user
                 } else if let Some(waitlist_idx) = self.data.waitlist.iter().position(|u| &u.name == username) {
@@ -720,7 +743,7 @@ macro_rules! impl_user_managers {
                 Ok(Some(true))
             }
 
-            pub fn reset_user_money(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
+            fn reset_user_money(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
                 if let Some(mut user) = self.data.spectators.take(username) {
                     user.money = self.data.settings.buy_in;
                     self.data.spectators.insert(user);
@@ -737,7 +760,7 @@ macro_rules! impl_user_managers {
                 Ok(Some(true))
             }
 
-            pub fn reset_all_money(&mut self) -> bool {
+            fn reset_all_money(&mut self) -> bool {
                 self.data.reset_all_money_after_game = false;
                 let mut spectators: Vec<User> = self.data.spectators.drain().collect();
                 for user in spectators
@@ -754,7 +777,7 @@ macro_rules! impl_user_managers {
                 true
             }
 
-            pub fn spectate_user(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
+            fn spectate_user(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
                 // The player has already been queued for spectate. Just wait for
                 // the next spectate phase.
                 if self.data.player_queues.to_spectate.contains(username) {
@@ -786,8 +809,8 @@ macro_rules! impl_user_managers {
 // updated at a later game state.
 macro_rules! impl_user_managers_with_queue {
     ($($t:ty),+) => {
-        $(impl $t {
-            pub fn kick_user(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
+        $(impl PhaseDependentUserManagement for $t {
+            fn kick_user(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
                 // The player has already been queued for kick. Just wait for
                 // the next kick phase.
                 if self.data.player_queues.to_kick.contains(username) {
@@ -808,7 +831,7 @@ macro_rules! impl_user_managers_with_queue {
                 Ok(Some(true))
             }
 
-            pub fn remove_user(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
+            fn remove_user(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
                 // The player has already been queued for removal. Just wait for
                 // the next removal phase.
                 if self.data.player_queues.to_remove.contains(username) {
@@ -829,7 +852,7 @@ macro_rules! impl_user_managers_with_queue {
                 Ok(Some(true))
             }
 
-            pub fn reset_user_money(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
+            fn reset_user_money(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
                 if let Some(mut user) = self.data.spectators.take(username) {
                     user.money = self.data.settings.buy_in;
                     self.data.spectators.insert(user);
@@ -846,13 +869,13 @@ macro_rules! impl_user_managers_with_queue {
                 Ok(Some(true))
             }
 
-            pub fn reset_all_money(&mut self) -> bool {
+            fn reset_all_money(&mut self) -> bool {
                 self.data.reset_all_money_after_game = true;
                 self.data.events.push_back(GameEvent::ResetAllMoneyQueue);
                 false
             }
 
-            pub fn spectate_user(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
+            fn spectate_user(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
                 // The player has already been queued for spectate. Just wait for
                 // the next spectate phase.
                 if self.data.player_queues.to_spectate.contains(username) {
@@ -1563,6 +1586,11 @@ impl From<Game<BootPlayers>> for Game<Lobby> {
 /// A poker finite state machine. Wrapper around all possible game states,
 /// managing the transition from one state to the next.
 #[derive(Debug)]
+#[enum_dispatch(
+    GameStateManagement,
+    PhaseDependentUserManagement,
+    PhaseIndependentUserManagement
+)]
 pub enum PokerState {
     Lobby(Game<Lobby>),
     SeatPlayers(Game<SeatPlayers>),
@@ -1640,48 +1668,6 @@ impl fmt::Display for PokerState {
 }
 
 impl PokerState {
-    pub fn cast_vote(
-        &mut self,
-        username: &Username,
-        vote: Vote,
-    ) -> Result<Option<Vote>, UserError> {
-        match self {
-            PokerState::Lobby(game) => game.cast_vote(username, vote),
-            PokerState::SeatPlayers(game) => game.cast_vote(username, vote),
-            PokerState::MoveButton(game) => game.cast_vote(username, vote),
-            PokerState::CollectBlinds(game) => game.cast_vote(username, vote),
-            PokerState::Deal(game) => game.cast_vote(username, vote),
-            PokerState::TakeAction(game) => game.cast_vote(username, vote),
-            PokerState::Flop(game) => game.cast_vote(username, vote),
-            PokerState::Turn(game) => game.cast_vote(username, vote),
-            PokerState::River(game) => game.cast_vote(username, vote),
-            PokerState::ShowHands(game) => game.cast_vote(username, vote),
-            PokerState::DistributePot(game) => game.cast_vote(username, vote),
-            PokerState::RemovePlayers(game) => game.cast_vote(username, vote),
-            PokerState::UpdateBlinds(game) => game.cast_vote(username, vote),
-            PokerState::BootPlayers(game) => game.cast_vote(username, vote),
-        }
-    }
-
-    pub fn drain_events(&mut self) -> VecDeque<GameEvent> {
-        match self {
-            PokerState::Lobby(game) => game.drain_events(),
-            PokerState::SeatPlayers(game) => game.drain_events(),
-            PokerState::MoveButton(game) => game.drain_events(),
-            PokerState::CollectBlinds(game) => game.drain_events(),
-            PokerState::Deal(game) => game.drain_events(),
-            PokerState::TakeAction(game) => game.drain_events(),
-            PokerState::Flop(game) => game.drain_events(),
-            PokerState::Turn(game) => game.drain_events(),
-            PokerState::River(game) => game.drain_events(),
-            PokerState::ShowHands(game) => game.drain_events(),
-            PokerState::DistributePot(game) => game.drain_events(),
-            PokerState::RemovePlayers(game) => game.drain_events(),
-            PokerState::UpdateBlinds(game) => game.drain_events(),
-            PokerState::BootPlayers(game) => game.drain_events(),
-        }
-    }
-
     #[must_use]
     pub fn get_action_choices(&self) -> Option<ActionChoices> {
         match self {
@@ -1695,26 +1681,6 @@ impl PokerState {
         match self {
             PokerState::TakeAction(game) => game.get_next_action_username(),
             _ => None,
-        }
-    }
-
-    #[must_use]
-    pub fn get_views(&self) -> GameViews {
-        match self {
-            PokerState::Lobby(game) => game.get_views(),
-            PokerState::SeatPlayers(game) => game.get_views(),
-            PokerState::MoveButton(game) => game.get_views(),
-            PokerState::CollectBlinds(game) => game.get_views(),
-            PokerState::Deal(game) => game.get_views(),
-            PokerState::TakeAction(game) => game.get_views(),
-            PokerState::Flop(game) => game.get_views(),
-            PokerState::Turn(game) => game.get_views(),
-            PokerState::River(game) => game.get_views(),
-            PokerState::ShowHands(game) => game.get_views(),
-            PokerState::DistributePot(game) => game.get_views(),
-            PokerState::RemovePlayers(game) => game.get_views(),
-            PokerState::UpdateBlinds(game) => game.get_views(),
-            PokerState::BootPlayers(game) => game.get_views(),
         }
     }
 
@@ -1748,53 +1714,6 @@ impl PokerState {
             _ => unreachable!(
                 "there can only be 0, 3, 4, or 5 community cards on the board at a time"
             ),
-        }
-    }
-
-    pub fn reset_all_money(&mut self) {
-        match self {
-            PokerState::Lobby(game) => {
-                game.reset_all_money();
-            }
-            PokerState::SeatPlayers(game) => {
-                game.reset_all_money();
-            }
-            PokerState::MoveButton(game) => {
-                game.reset_all_money();
-            }
-            PokerState::CollectBlinds(game) => {
-                game.reset_all_money();
-            }
-            PokerState::Deal(game) => {
-                game.reset_all_money();
-            }
-            PokerState::TakeAction(game) => {
-                game.reset_all_money();
-            }
-            PokerState::Flop(game) => {
-                game.reset_all_money();
-            }
-            PokerState::Turn(game) => {
-                game.reset_all_money();
-            }
-            PokerState::River(game) => {
-                game.reset_all_money();
-            }
-            PokerState::ShowHands(game) => {
-                game.reset_all_money();
-            }
-            PokerState::DistributePot(game) => {
-                game.reset_all_money();
-            }
-            PokerState::RemovePlayers(game) => {
-                game.reset_all_money();
-            }
-            PokerState::UpdateBlinds(game) => {
-                game.reset_all_money();
-            }
-            PokerState::BootPlayers(game) => {
-                game.reset_all_money();
-            }
         }
     }
 
@@ -1902,69 +1821,6 @@ impl PokerState {
     }
 }
 
-macro_rules! impl_user_managers {
-    ($($name:ident),+) => {
-        impl PokerState {
-            $(pub fn $name(&mut self, username: &Username) -> Result<(), UserError> {
-                match self {
-                    PokerState::Lobby(game) => {
-                        game.$name(username)?;
-                    },
-                    PokerState::SeatPlayers(game) => {
-                        game.$name(username)?;
-                    },
-                    PokerState::MoveButton(game)  => {
-                        game.$name(username)?;
-                    },
-                    PokerState::CollectBlinds(game)  => {
-                        game.$name(username)?;
-                    },
-                    PokerState::Deal(game)  => {
-                        game.$name(username)?;
-                    },
-                    PokerState::TakeAction(game) => {
-                        game.$name(username)?;
-                    },
-                    PokerState::Flop(game)  => {
-                        game.$name(username)?;
-                    },
-                    PokerState::Turn(game)  => {
-                        game.$name(username)?;
-                    },
-                    PokerState::River(game)  => {
-                        game.$name(username)?;
-                    },
-                    PokerState::ShowHands(game)  => {
-                        game.$name(username)?;
-                    },
-                    PokerState::DistributePot(game)  => {
-                        game.$name(username)?;
-                    },
-                    PokerState::RemovePlayers(game)  => {
-                        game.$name(username)?;
-                    },
-                    PokerState::UpdateBlinds(game)  => {
-                        game.$name(username)?;
-                    },
-                    PokerState::BootPlayers(game) => {
-                        game.$name(username)?;
-                    },
-                }
-                Ok(())
-            })*
-        }
-    }
-}
-
-impl_user_managers!(
-    kick_user,
-    new_user,
-    remove_user,
-    reset_user_money,
-    spectate_user,
-    waitlist_user
-);
-
 impl From<GameSettings> for PokerState {
     fn from(value: GameSettings) -> Self {
         let game: Game<Lobby> = value.into();
@@ -1976,7 +1832,8 @@ impl From<GameSettings> for PokerState {
 mod game_tests {
     use super::{
         BootPlayers, CollectBlinds, Deal, DistributePot, Flop, Game, Lobby, MoveButton,
-        RemovePlayers, River, SeatPlayers, ShowHands, TakeAction, Turn, UpdateBlinds, UserError,
+        PhaseDependentUserManagement, PhaseIndependentUserManagement, RemovePlayers, River,
+        SeatPlayers, ShowHands, TakeAction, Turn, UpdateBlinds, UserError,
         entities::{Action, ActionChoice, Card, PlayerState, Suit, Username},
     };
 
@@ -2765,7 +2622,7 @@ mod game_tests {
 #[cfg(test)]
 mod state_tests {
     use super::{
-        PokerState, UserError,
+        PhaseDependentUserManagement, PhaseIndependentUserManagement, PokerState, UserError,
         entities::{Action, Username},
     };
 
@@ -2792,8 +2649,8 @@ mod state_tests {
             state.init_start(&username0),
             Err(UserError::GameAlreadyStarting)
         );
-        assert_eq!(state.remove_user(&username1), Ok(()));
-        assert_eq!(state.remove_user(&username2), Ok(()));
+        assert_eq!(state.remove_user(&username1), Ok(Some(true)));
+        assert_eq!(state.remove_user(&username2), Ok(Some(true)));
         // Should be back at Lobby.
         state = state.step();
         assert_eq!(
