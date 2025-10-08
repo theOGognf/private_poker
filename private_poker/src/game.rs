@@ -379,27 +379,24 @@ impl<T> Game<T> {
     /// make, or nothing if there are no actions possible for the current
     /// state.
     fn get_next_action_choices(&self) -> Option<ActionChoices> {
-        match self.data.play_positions.next_action_idx {
-            Some(action_idx) => {
-                let mut action_choices = HashSet::from([ActionChoice::Fold]);
-                let user = &self.data.players[action_idx].user;
-                let raise = self.data.pot.get_min_raise_by_player_idx(action_idx);
-                let call = self.data.pot.get_call_by_player_idx(action_idx);
-                if self.data.player_counts.num_active > 1 || call >= user.money {
-                    action_choices.insert(ActionChoice::AllIn);
-                }
-                if call > 0 && call < user.money {
-                    action_choices.insert(ActionChoice::Call(call));
-                } else if call == 0 {
-                    action_choices.insert(ActionChoice::Check);
-                }
-                if self.data.player_counts.num_active > 1 && user.money > raise {
-                    action_choices.insert(ActionChoice::Raise(raise));
-                }
-                Some(ActionChoices(action_choices))
+        self.data.play_positions.next_action_idx.map(|action_idx| {
+            let mut action_choices = HashSet::from([ActionChoice::Fold]);
+            let user = &self.data.players[action_idx].user;
+            let raise = self.data.pot.get_min_raise_by_player_idx(action_idx);
+            let call = self.data.pot.get_call_by_player_idx(action_idx);
+            if self.data.player_counts.num_active > 1 || call >= user.money {
+                action_choices.insert(ActionChoice::AllIn);
             }
-            None => None,
-        }
+            if call > 0 && call < user.money {
+                action_choices.insert(ActionChoice::Call(call));
+            } else if call == 0 {
+                action_choices.insert(ActionChoice::Check);
+            }
+            if self.data.player_counts.num_active > 1 && user.money > raise {
+                action_choices.insert(ActionChoice::Raise(raise));
+            }
+            ActionChoices(action_choices)
+        })
     }
 
     /// Return the username of the user that has the next turn (or nothing
@@ -616,7 +613,7 @@ impl<T> PhaseIndependentUserManagement for Game<T> {
                     }
                 }
                 // No vote-specific validation necessary for other votes.
-                _ => {}
+                Vote::Reset(None) => {}
             }
             let votes = self.data.votes.entry(vote.clone()).or_default();
             let is_vote_passing = votes.insert(username.clone()) && votes.len() > num_users / 2;
@@ -1064,7 +1061,7 @@ impl From<Game<CollectBlinds>> for Game<Deal> {
                         amount: blind,
                     }
                 }
-                _ => unreachable!(
+                Ordering::Less => unreachable!(
                     "a player can't be in a game if they don't have enough for the big blind"
                 ),
             };
@@ -1503,11 +1500,11 @@ impl From<Game<RemovePlayers>> for Game<UpdateBlinds> {
             // this state transition occurs. That'd cause this method to return
             // an error, but it's really OK if they left since they were going
             // to be removed anyways.
-            value.remove_user(&username).ok();
+            let _ = value.remove_user(&username);
         }
         while let Some(username) = value.data.player_queues.to_kick.pop_first() {
             // See above comment for why this is OK.
-            value.kick_user(&username).ok();
+            let _ = value.kick_user(&username);
         }
         Self {
             data: value.data,
@@ -1529,7 +1526,7 @@ impl From<Game<UpdateBlinds>> for Game<BootPlayers> {
             value.reset_all_money();
         }
         while let Some(username) = value.data.player_queues.to_reset.pop_first() {
-            value.reset_user_money(&username).ok();
+            let _ = value.reset_user_money(&username);
         }
         let min_playable_money = value
             .data
@@ -1574,7 +1571,7 @@ impl From<Game<BootPlayers>> for Game<Lobby> {
             // this state transition occurs. That'd cause this method to return
             // an error, but it's really OK if they left since spectating them
             // is a softer action.
-            value.spectate_user(&username).ok();
+            let _ = value.spectate_user(&username);
         }
         Self {
             data: value.data,
@@ -1617,10 +1614,10 @@ impl Default for PokerState {
 impl fmt::Display for PokerState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let repr = match &self {
-            PokerState::Lobby(_) => "in lobby",
-            PokerState::SeatPlayers(_) => "seating players",
-            PokerState::MoveButton(_) => "moving button",
-            PokerState::CollectBlinds(game) => {
+            Self::Lobby(_) => "in lobby",
+            Self::SeatPlayers(_) => "seating players",
+            Self::MoveButton(_) => "moving button",
+            Self::CollectBlinds(game) => {
                 let big_blind = game.data.blinds.big;
                 let big_blind_username = &game.data.players[game.data.play_positions.big_blind_idx]
                     .user
@@ -1634,34 +1631,34 @@ impl fmt::Display for PokerState {
                     "collecting ${big_blind} from {big_blind_username} and ${small_blind} from {small_blind_username}"
                 )
             }
-            PokerState::Deal(_) => "dealing cards",
-            PokerState::TakeAction(game) => {
+            Self::Deal(_) => "dealing cards",
+            Self::TakeAction(game) => {
                 if game.is_ready_for_next_phase() {
                     "end of betting round"
                 } else {
                     "betting round transition"
                 }
             }
-            PokerState::Flop(_) => "the flop",
-            PokerState::Turn(_) => "the turn",
-            PokerState::River(_) => "the river",
-            PokerState::ShowHands(game) => {
+            Self::Flop(_) => "the flop",
+            Self::Turn(_) => "the turn",
+            Self::River(_) => "the river",
+            Self::ShowHands(game) => {
                 let num_pots = game.get_num_pots();
                 match num_pots {
                     1 => "showing main pot",
                     i => &format!("showing side pot #{}", i - 1),
                 }
             }
-            PokerState::DistributePot(game) => {
+            Self::DistributePot(game) => {
                 let num_pots = game.get_num_pots();
                 match num_pots {
                     1 => "distributing main pot",
                     i => &format!("distributing side pot #{}", i - 1),
                 }
             }
-            PokerState::RemovePlayers(_) => "updating players that joined spectators or left",
-            PokerState::UpdateBlinds(_) => "updating blinds",
-            PokerState::BootPlayers(_) => "spectating players that can't afford the big blind",
+            Self::RemovePlayers(_) => "updating players that joined spectators or left",
+            Self::UpdateBlinds(_) => "updating blinds",
+            Self::BootPlayers(_) => "spectating players that can't afford the big blind",
         };
         write!(f, "{repr}")
     }
@@ -1671,7 +1668,7 @@ impl PokerState {
     #[must_use]
     pub fn get_action_choices(&self) -> Option<ActionChoices> {
         match self {
-            PokerState::TakeAction(game) => game.get_action_choices(),
+            Self::TakeAction(game) => game.get_action_choices(),
             _ => None,
         }
     }
@@ -1679,14 +1676,14 @@ impl PokerState {
     #[must_use]
     pub fn get_next_action_username(&self) -> Option<Username> {
         match self {
-            PokerState::TakeAction(game) => game.get_next_action_username(),
+            Self::TakeAction(game) => game.get_next_action_username(),
             _ => None,
         }
     }
 
     pub fn init_start(&mut self, username: &Username) -> Result<(), UserError> {
         match self {
-            PokerState::Lobby(game) => {
+            Self::Lobby(game) => {
                 if game.contains_waitlister(username) || game.contains_player(username) {
                     game.init_start()?;
                     Ok(())
@@ -1694,7 +1691,7 @@ impl PokerState {
                     Err(UserError::CannotStartGame)
                 }
             }
-            PokerState::SeatPlayers(_) => Err(UserError::GameAlreadyStarting),
+            Self::SeatPlayers(_) => Err(UserError::GameAlreadyStarting),
             _ => Err(UserError::GameAlreadyInProgress),
         }
     }
@@ -1702,15 +1699,15 @@ impl PokerState {
     #[must_use]
     pub fn new() -> Self {
         let game = Game::<Lobby>::new();
-        PokerState::Lobby(game)
+        Self::Lobby(game)
     }
 
-    fn phase_transition(game: Game<TakeAction>) -> PokerState {
+    fn phase_transition(game: Game<TakeAction>) -> Self {
         match game.get_num_community_cards() {
-            0 => PokerState::Flop(game.into()),
-            3 => PokerState::Turn(game.into()),
-            4 => PokerState::River(game.into()),
-            5 => PokerState::ShowHands(game.into()),
+            0 => Self::Flop(game.into()),
+            3 => Self::Turn(game.into()),
+            4 => Self::River(game.into()),
+            5 => Self::ShowHands(game.into()),
             _ => unreachable!(
                 "there can only be 0, 3, 4, or 5 community cards on the board at a time"
             ),
@@ -1719,16 +1716,16 @@ impl PokerState {
 
     pub fn show_hand(&mut self, username: &Username) -> Result<(), UserError> {
         match self {
-            PokerState::ShowHands(game) => {
+            Self::ShowHands(game) => {
                 game.show_hand(username)?;
             }
-            PokerState::DistributePot(game) => {
+            Self::DistributePot(game) => {
                 game.show_hand(username)?;
             }
-            PokerState::RemovePlayers(game) => {
+            Self::RemovePlayers(game) => {
                 game.show_hand(username)?;
             }
-            PokerState::UpdateBlinds(game) => {
+            Self::UpdateBlinds(game) => {
                 game.show_hand(username)?;
             }
             _ => return Err(UserError::CannotShowHand),
@@ -1740,67 +1737,67 @@ impl PokerState {
     #[must_use]
     pub fn step(self) -> Self {
         match self {
-            PokerState::Lobby(game) => {
+            Self::Lobby(game) => {
                 if game.is_ready_to_start() {
-                    PokerState::SeatPlayers(game.into())
+                    Self::SeatPlayers(game.into())
                 } else {
-                    PokerState::Lobby(game)
+                    Self::Lobby(game)
                 }
             }
-            PokerState::SeatPlayers(game) => {
+            Self::SeatPlayers(game) => {
                 if game.get_num_potential_players() >= 2 {
-                    PokerState::MoveButton(game.into())
+                    Self::MoveButton(game.into())
                 } else {
-                    PokerState::Lobby(game.into())
+                    Self::Lobby(game.into())
                 }
             }
-            PokerState::MoveButton(game) => PokerState::CollectBlinds(game.into()),
-            PokerState::CollectBlinds(game) => PokerState::Deal(game.into()),
-            PokerState::Deal(game) => PokerState::TakeAction(game.into()),
-            PokerState::TakeAction(mut game) => {
+            Self::MoveButton(game) => Self::CollectBlinds(game.into()),
+            Self::CollectBlinds(game) => Self::Deal(game.into()),
+            Self::Deal(game) => Self::TakeAction(game.into()),
+            Self::TakeAction(mut game) => {
                 if game.is_ready_for_next_phase() {
-                    PokerState::phase_transition(game)
+                    Self::phase_transition(game)
                 } else {
                     game.act(Action::Fold).expect("force folding should be OK");
                     if game.is_ready_for_next_phase() {
-                        PokerState::phase_transition(game)
+                        Self::phase_transition(game)
                     } else {
-                        PokerState::TakeAction(game)
+                        Self::TakeAction(game)
                     }
                 }
             }
-            PokerState::Flop(game) => {
+            Self::Flop(game) => {
                 if game.is_ready_for_showdown() {
-                    PokerState::Turn(game.into())
+                    Self::Turn(game.into())
                 } else {
-                    PokerState::TakeAction(game.into())
+                    Self::TakeAction(game.into())
                 }
             }
-            PokerState::Turn(game) => {
+            Self::Turn(game) => {
                 if game.is_ready_for_showdown() {
-                    PokerState::River(game.into())
+                    Self::River(game.into())
                 } else {
-                    PokerState::TakeAction(game.into())
+                    Self::TakeAction(game.into())
                 }
             }
-            PokerState::River(game) => {
+            Self::River(game) => {
                 if game.is_ready_for_showdown() {
-                    PokerState::ShowHands(game.into())
+                    Self::ShowHands(game.into())
                 } else {
-                    PokerState::TakeAction(game.into())
+                    Self::TakeAction(game.into())
                 }
             }
-            PokerState::ShowHands(game) => PokerState::DistributePot(game.into()),
-            PokerState::DistributePot(game) => {
+            Self::ShowHands(game) => Self::DistributePot(game.into()),
+            Self::DistributePot(game) => {
                 if game.get_num_pots() >= 2 {
-                    PokerState::ShowHands(game.into())
+                    Self::ShowHands(game.into())
                 } else {
-                    PokerState::RemovePlayers(game.into())
+                    Self::RemovePlayers(game.into())
                 }
             }
-            PokerState::RemovePlayers(game) => PokerState::UpdateBlinds(game.into()),
-            PokerState::UpdateBlinds(game) => PokerState::BootPlayers(game.into()),
-            PokerState::BootPlayers(game) => PokerState::Lobby(game.into()),
+            Self::RemovePlayers(game) => Self::UpdateBlinds(game.into()),
+            Self::UpdateBlinds(game) => Self::BootPlayers(game.into()),
+            Self::BootPlayers(game) => Self::Lobby(game.into()),
         }
     }
 
@@ -1810,9 +1807,7 @@ impl PokerState {
         action: Action,
     ) -> Result<Action, UserError> {
         match self {
-            PokerState::TakeAction(game)
-                if !game.is_ready_for_next_phase() && game.is_turn(username) =>
-            {
+            Self::TakeAction(game) if !game.is_ready_for_next_phase() && game.is_turn(username) => {
                 let sanitized_action = game.act(action)?;
                 Ok(sanitized_action)
             }
@@ -1824,7 +1819,7 @@ impl PokerState {
 impl From<GameSettings> for PokerState {
     fn from(value: GameSettings) -> Self {
         let game: Game<Lobby> = value.into();
-        PokerState::Lobby(game)
+        Self::Lobby(game)
     }
 }
 
@@ -1841,7 +1836,7 @@ mod game_tests {
         let game = Game::<Lobby>::new();
         let mut game: Game<SeatPlayers> = game.into();
         for i in 0..2 {
-            let username = Username::new(i.to_string());
+            let username = i.to_string().into();
             game.new_user(&username).unwrap();
             game.waitlist_user(&username).unwrap();
         }
@@ -1852,7 +1847,7 @@ mod game_tests {
         let game = Game::<Lobby>::new();
         let mut game: Game<SeatPlayers> = game.into();
         for i in 0..3 {
-            let username = Username::new(i.to_string());
+            let username = i.to_string().into();
             game.new_user(&username).unwrap();
             game.waitlist_user(&username).unwrap();
         }
@@ -2189,7 +2184,7 @@ mod game_tests {
     #[test]
     fn manipulating_user_in_lobby() {
         let mut game = Game::<SeatPlayers>::new();
-        let username = "ognf".into();
+        let username = Username::new("ognf");
 
         assert_eq!(game.new_user(&username), Ok(true));
         assert!(game.contains_spectator(&username));
@@ -2228,7 +2223,7 @@ mod game_tests {
         assert!(!game.contains_user(&username));
 
         for i in 0..game.data.settings.max_users {
-            assert_eq!(game.new_user(&Username::new(i.to_string())), Ok(true));
+            assert_eq!(game.new_user(&i.to_string().into()), Ok(true));
         }
         assert_eq!(game.new_user(&username), Err(UserError::CapacityReached));
     }
@@ -2252,7 +2247,7 @@ mod game_tests {
         let game = Game::<Lobby>::new();
         let mut game: Game<SeatPlayers> = game.into();
         for i in 0..game.data.settings.max_users {
-            let username = Username::new(i.to_string());
+            let username = i.to_string().into();
             assert_eq!(game.new_user(&username), Ok(true));
             assert_eq!(game.waitlist_user(&username), Ok(Some(true)));
         }
@@ -2293,9 +2288,9 @@ mod game_tests {
     #[test]
     fn remove_player() {
         let mut game = init_game_at_showdown_with_2_all_ins();
-        let username0 = "0".into();
-        let username1 = "1".into();
-        let username2 = "2".into();
+        let username0 = Username::new("0");
+        let username1 = Username::new("1");
+        let username2 = Username::new("2");
         game.data.board = vec![
             Card(2, Suit::Diamond),
             Card(4, Suit::Diamond),
@@ -2323,9 +2318,9 @@ mod game_tests {
     #[test]
     fn remove_player_with_queue() {
         let mut game = init_game_at_showdown_with_2_all_ins();
-        let username0 = "0".into();
-        let username1 = "1".into();
-        let username2 = "2".into();
+        let username0 = Username::new("0");
+        let username1 = Username::new("1");
+        let username2 = Username::new("2");
         game.data.board = vec![
             Card(2, Suit::Diamond),
             Card(4, Suit::Diamond),
@@ -2420,9 +2415,9 @@ mod game_tests {
     #[test]
     fn seat_players() {
         let game = init_game_at_seat_players();
-        let username0 = "0".into();
-        let username1 = "1".into();
-        let username2 = "2".into();
+        let username0 = Username::new("0");
+        let username1 = Username::new("1");
+        let username2 = Username::new("2");
         assert_eq!(game.data.player_counts.num_active, game.get_num_players());
         assert!(game.contains_player(&username0));
         assert!(game.contains_player(&username1));
@@ -2629,7 +2624,7 @@ mod state_tests {
     fn init_state() -> PokerState {
         let mut state = PokerState::new();
         for i in 0..3 {
-            let username = Username::new(i.to_string());
+            let username = i.to_string().into();
             state.new_user(&username).unwrap();
             state.waitlist_user(&username).unwrap();
         }
@@ -2639,9 +2634,9 @@ mod state_tests {
     #[test]
     fn cant_start_game() {
         let mut state = init_state();
-        let username0 = "0".into();
-        let username1 = "1".into();
-        let username2 = "2".into();
+        let username0 = Username::new("0");
+        let username1 = Username::new("1");
+        let username2 = Username::new("2");
         assert_eq!(state.init_start(&username0), Ok(()));
         // At SeatPlayers.
         state = state.step();
@@ -2662,7 +2657,7 @@ mod state_tests {
     #[test]
     fn early_showdown_1_winner_2_early_folds() {
         let mut state = init_state();
-        let username0 = "0".into();
+        let username0 = Username::new("0");
         assert_eq!(state.init_start(&username0), Ok(()));
         state = state.step();
         assert!(matches!(state, PokerState::SeatPlayers(_)));
@@ -2701,7 +2696,7 @@ mod state_tests {
     #[test]
     fn early_showdown_1_winner_2_folds() {
         let mut state = init_state();
-        let username0 = "0".into();
+        let username0 = Username::new("0");
         assert_eq!(state.init_start(&username0), Ok(()));
         state = state.step();
         assert!(matches!(state, PokerState::SeatPlayers(_)));
@@ -2745,9 +2740,9 @@ mod state_tests {
     #[test]
     fn early_showdown_1_winner_2_late_folds() {
         let mut state = init_state();
-        let username0 = "0".into();
-        let username1 = "1".into();
-        let username2 = "2".into();
+        let username0 = Username::new("0");
+        let username1 = Username::new("1");
+        let username2 = Username::new("2");
         assert_eq!(state.init_start(&username0), Ok(()));
         state = state.step();
         assert!(matches!(state, PokerState::SeatPlayers(_)));

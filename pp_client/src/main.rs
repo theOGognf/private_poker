@@ -47,7 +47,7 @@ fn main() -> Result<(), Error> {
         addr: pargs
             .value_from_str("--connect")
             .unwrap_or("127.0.0.1:6969".parse()?),
-        username: Username::new(pargs.free_from_str().unwrap_or(whoami::username())),
+        username: pargs.free_from_str().unwrap_or(whoami::username()).into(),
     };
 
     // Doesn't make sense to use the complexity of non-blocking IO

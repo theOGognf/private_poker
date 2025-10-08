@@ -30,8 +30,8 @@ pub enum UserState {
 impl fmt::Display for UserState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let repr = match self {
-            UserState::Play => "waitlister",
-            UserState::Spectate => "spectator",
+            Self::Play => "waitlister",
+            Self::Spectate => "spectator",
         };
         write!(f, "{repr}")
     }
@@ -65,13 +65,13 @@ pub enum UserCommand {
 impl fmt::Display for UserCommand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let repr = match &self {
-            UserCommand::ChangeState(state) => &format!("requested to join the {state}s"),
-            UserCommand::Connect => "connected",
-            UserCommand::Disconnect => "disconnected",
-            UserCommand::ShowHand => "showed their hand",
-            UserCommand::StartGame => "started the game",
-            UserCommand::TakeAction(action) => &action.to_string(),
-            UserCommand::CastVote(vote) => &format!("voted to {vote}"),
+            Self::ChangeState(state) => &format!("requested to join the {state}s"),
+            Self::Connect => "connected",
+            Self::Disconnect => "disconnected",
+            Self::ShowHand => "showed their hand",
+            Self::StartGame => "started the game",
+            Self::TakeAction(action) => &action.to_string(),
+            Self::CastVote(vote) => &format!("voted to {vote}"),
         };
         write!(f, "{repr}")
     }
@@ -119,13 +119,13 @@ pub enum ServerMessage {
 impl fmt::Display for ServerMessage {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let repr = match &self {
-            ServerMessage::Ack(msg) => msg.to_string(),
-            ServerMessage::ClientError(error) => error.to_string(),
-            ServerMessage::GameEvent(event) => event.to_string(),
-            ServerMessage::GameView(_) => "game view".to_string(),
-            ServerMessage::Status(status) => status.to_string(),
-            ServerMessage::TurnSignal(action_choices) => action_choices.to_string(),
-            ServerMessage::UserError(error) => error.to_string(),
+            Self::Ack(msg) => msg.to_string(),
+            Self::ClientError(error) => error.to_string(),
+            Self::GameEvent(event) => event.to_string(),
+            Self::GameView(_) => "game view".to_string(),
+            Self::Status(status) => status.to_string(),
+            Self::TurnSignal(action_choices) => action_choices.to_string(),
+            Self::UserError(error) => error.to_string(),
         };
         write!(f, "{repr}")
     }

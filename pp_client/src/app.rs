@@ -246,10 +246,10 @@ impl App {
                     }
                     Some(&"vote") => match (other.get(1), other.get(2)) {
                         (Some(&"kick"), Some(username)) => {
-                            Ok(UserCommand::CastVote(Vote::Kick((*username).into())))
+                            Ok(UserCommand::CastVote(Vote::Kick(Username::new(username))))
                         }
                         (Some(&"reset"), Some(username)) => Ok(UserCommand::CastVote(Vote::Reset(
-                            Some(Username::new((*username).into())),
+                            Some(Username::new(username)),
                         ))),
                         (Some(&"reset"), None) => Ok(UserCommand::CastVote(Vote::Reset(None))),
                         _ => Err(UNRECOGNIZED_COMMAND_MESSAGE.to_string()),

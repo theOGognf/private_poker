@@ -140,7 +140,7 @@ impl App {
                         KeyCode::Home => self.user_input.jump_to_first(),
                         KeyCode::End => self.user_input.jump_to_last(),
                         KeyCode::Enter if !self.user_input.value.is_empty() => {
-                            let botname = Username::new(self.user_input.submit());
+                            let botname: Username = self.user_input.submit().into();
                             match Bot::new(botname.clone(), &self.addr) {
                                 Ok(env) => {
                                     let policy = self.policy.clone();

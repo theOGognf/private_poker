@@ -24,11 +24,11 @@ pub enum Suit {
 impl fmt::Display for Suit {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let repr = match self {
-            Suit::Club => "c",
-            Suit::Spade => "s",
-            Suit::Diamond => "d",
-            Suit::Heart => "h",
-            Suit::Wild => "w",
+            Self::Club => "c",
+            Self::Spade => "s",
+            Self::Diamond => "d",
+            Self::Heart => "h",
+            Self::Wild => "w",
         };
         write!(f, "{repr}")
     }
@@ -72,15 +72,15 @@ pub enum Rank {
 impl fmt::Display for Rank {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let repr = match self {
-            Rank::HighCard => "hi",
-            Rank::OnePair => "1p",
-            Rank::TwoPair => "2p",
-            Rank::ThreeOfAKind => "3k",
-            Rank::Straight => "s8",
-            Rank::Flush => "fs",
-            Rank::FullHouse => "fh",
-            Rank::FourOfAKind => "4k",
-            Rank::StraightFlush => "sf",
+            Self::HighCard => "hi",
+            Self::OnePair => "1p",
+            Self::TwoPair => "2p",
+            Self::ThreeOfAKind => "3k",
+            Self::Straight => "s8",
+            Self::Flush => "fs",
+            Self::FullHouse => "fh",
+            Self::FourOfAKind => "4k",
+            Self::StraightFlush => "sf",
         };
         write!(f, "{repr}")
     }
@@ -137,7 +137,7 @@ pub type Usd = u32;
 pub struct Username(String);
 
 impl Username {
-    pub fn new(s: String) -> Self {
+    pub fn new(s: &str) -> Self {
         let mut username: String = s
             .chars()
             .map(|c| if c.is_ascii_whitespace() { '_' } else { c })
@@ -159,13 +159,13 @@ impl<'de> Deserialize<'de> for Username {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        Ok(Username::new(s))
+        Ok(Self::new(&s))
     }
 }
 
-impl From<&str> for Username {
-    fn from(value: &str) -> Self {
-        Self::new(value.to_string())
+impl From<String> for Username {
+    fn from(value: String) -> Self {
+        Self::new(&value)
     }
 }
 
@@ -276,12 +276,12 @@ pub enum Action {
 impl fmt::Display for Action {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let repr = match self {
-            Action::AllIn => "all-ins (unhinged)",
-            Action::Call => "calls",
-            Action::Check => "checks",
-            Action::Fold => "folds",
-            Action::Raise(Some(amount)) => &format!("raises ${amount}"),
-            Action::Raise(None) => "raises",
+            Self::AllIn => "all-ins (unhinged)",
+            Self::Call => "calls",
+            Self::Check => "checks",
+            Self::Fold => "folds",
+            Self::Raise(Some(amount)) => &format!("raises ${amount}"),
+            Self::Raise(None) => "raises",
         };
         write!(f, "{repr}")
     }
@@ -290,9 +290,9 @@ impl fmt::Display for Action {
 impl From<Bet> for Action {
     fn from(value: Bet) -> Self {
         match value.action {
-            BetAction::AllIn => Action::AllIn,
-            BetAction::Call => Action::Call,
-            BetAction::Raise => Action::Raise(Some(value.amount)),
+            BetAction::AllIn => Self::AllIn,
+            BetAction::Call => Self::Call,
+            BetAction::Raise => Self::Raise(Some(value.amount)),
         }
     }
 }
@@ -313,11 +313,11 @@ pub enum ActionChoice {
 impl Into<usize> for ActionChoice {
     fn into(self) -> usize {
         match self {
-            ActionChoice::AllIn => 0,
-            ActionChoice::Call(_) => 1,
-            ActionChoice::Check => 2,
-            ActionChoice::Fold => 3,
-            ActionChoice::Raise(_) => 4,
+            Self::AllIn => 0,
+            Self::Call(_) => 1,
+            Self::Check => 2,
+            Self::Fold => 3,
+            Self::Raise(_) => 4,
         }
     }
 }
@@ -325,11 +325,11 @@ impl Into<usize> for ActionChoice {
 impl fmt::Display for ActionChoice {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let repr = match self {
-            ActionChoice::AllIn => "all-in".to_string(),
-            ActionChoice::Call(amount) => format!("call (== ${amount})"),
-            ActionChoice::Check => "check".to_string(),
-            ActionChoice::Fold => "fold".to_string(),
-            ActionChoice::Raise(amount) => format!("raise (>= ${amount})"),
+            Self::AllIn => "all-in".to_string(),
+            Self::Call(amount) => format!("call (== ${amount})"),
+            Self::Check => "check".to_string(),
+            Self::Fold => "fold".to_string(),
+            Self::Raise(amount) => format!("raise (>= ${amount})"),
         };
         write!(f, "{repr}")
     }
@@ -357,11 +357,11 @@ impl PartialEq for ActionChoice {
 impl From<ActionChoice> for Action {
     fn from(value: ActionChoice) -> Self {
         match value {
-            ActionChoice::AllIn => Action::AllIn,
-            ActionChoice::Call(_) => Action::Call,
-            ActionChoice::Check => Action::Check,
-            ActionChoice::Fold => Action::Fold,
-            ActionChoice::Raise(amount) => Action::Raise(Some(amount)),
+            ActionChoice::AllIn => Self::AllIn,
+            ActionChoice::Call(_) => Self::Call,
+            ActionChoice::Check => Self::Check,
+            ActionChoice::Fold => Self::Fold,
+            ActionChoice::Raise(amount) => Self::Raise(Some(amount)),
         }
     }
 }
@@ -461,12 +461,12 @@ pub enum PlayerState {
 impl fmt::Display for PlayerState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let repr = match self {
-            PlayerState::AllIn => "all-in",
-            PlayerState::Call => "call",
-            PlayerState::Check => "check",
-            PlayerState::Fold => "folded",
-            PlayerState::Raise => "raise",
-            PlayerState::Wait => "waiting",
+            Self::AllIn => "all-in",
+            Self::Call => "call",
+            Self::Check => "check",
+            Self::Fold => "folded",
+            Self::Raise => "raise",
+            Self::Wait => "waiting",
         };
         write!(f, "{repr:7}")
     }
@@ -483,8 +483,8 @@ pub struct Player {
 
 impl Player {
     #[must_use]
-    pub fn new(user: User, seat_idx: usize) -> Player {
-        Player {
+    pub fn new(user: User, seat_idx: usize) -> Self {
+        Self {
             user,
             state: PlayerState::Wait,
             cards: Vec::with_capacity(2),
@@ -555,8 +555,8 @@ impl Pot {
     }
 
     #[must_use]
-    pub fn new(max_players: usize) -> Pot {
-        Pot {
+    pub fn new(max_players: usize) -> Self {
+        Self {
             investments: HashMap::with_capacity(max_players),
         }
     }
@@ -575,7 +575,7 @@ impl fmt::Display for Vote {
         let repr = match self {
             Self::Kick(username) => format!("kick {username}"),
             Self::Reset(None) => "reset everyone's money".to_string(),
-            Self::Reset(Some(username)) => format!("reset {username}'s money").to_string(),
+            Self::Reset(Some(username)) => format!("reset {username}'s money"),
         };
         write!(f, "{repr}")
     }

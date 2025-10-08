@@ -122,7 +122,7 @@ struct UnconfirmedClient {
 
 impl UnconfirmedClient {
     pub fn new(stream: TcpStream) -> Self {
-        UnconfirmedClient {
+        Self {
             stream,
             t: Instant::now(),
             timeout: Duration::ZERO,
@@ -891,6 +891,7 @@ mod tests {
         net::{TcpListener, TcpStream},
     };
 
+    use crate::entities::Username;
     use crate::net::messages::ClientError;
 
     use super::TokenManager;
@@ -916,7 +917,7 @@ mod tests {
         let token = token_manager.new_token();
         token_manager.associate_token_and_stream(token, stream);
 
-        let username = "ognf".into();
+        let username = Username::new("ognf");
         assert_eq!(
             token_manager.get_token_with_username(&username),
             Err(ClientError::Unassociated)
@@ -945,7 +946,7 @@ mod tests {
         token_manager.associate_token_and_stream(token, stream);
         token_manager.recycle_expired_tokens();
 
-        let username = "ognf".into();
+        let username = Username::new("ognf");
         assert_eq!(
             token_manager.get_token_with_username(&username),
             Err(ClientError::Unassociated)
@@ -995,7 +996,7 @@ mod tests {
         let token2 = token_manager.new_token();
         token_manager.associate_token_and_stream(token2, stream2);
 
-        let username = "ognf".into();
+        let username = Username::new("ognf");
         assert_eq!(
             token_manager.associate_token_and_username(token1, &username),
             Ok(())

@@ -65,9 +65,9 @@ impl Client {
                         command: UserCommand::Connect,
                     };
                     utils::write_prefixed(&mut stream, &msg)?;
-                    Client::recv_ack(&mut stream)?;
+                    Self::recv_ack(&mut stream)?;
                     // Then receive the game view.
-                    match Client::recv_view(&mut stream) {
+                    match Self::recv_view(&mut stream) {
                         Ok(view) => {
                             return Ok((Self { username, stream }, view));
                         }

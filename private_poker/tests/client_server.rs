@@ -4,7 +4,7 @@ use std::{net::SocketAddr, thread, time::Duration};
 
 use private_poker::{
     Client, UserError,
-    game::GameEvent,
+    game::{GameEvent, entities::Username},
     messages,
     server::{self, PokerConfig, ServerTimeouts},
 };
@@ -24,14 +24,14 @@ fn already_associated_err() {
     thread::spawn(move || server::run(addr.clone(), server::PokerConfig::default()));
 
     // Connect, make sure we're spectating.
-    let username = "ognf".into();
+    let username = Username::new("ognf");
     let (client, view) = Client::connect(username, &addr).unwrap();
     assert_eq!(view.spectators.len(), 1);
     assert_eq!(view.waitlist.len(), 0);
     assert!(view.spectators.contains(&client.username));
 
     // Try to connect, but the username is already taken.
-    let username = "ognf".into();
+    let username = Username::new("ognf");
     assert!(Client::connect(username, &addr).is_err());
 }
 
@@ -42,7 +42,7 @@ fn one_user_connects_to_lobby() {
     thread::spawn(move || server::run(addr.clone(), server::PokerConfig::default()));
 
     // Connect, make sure we're spectating.
-    let username = "ognf".into();
+    let username = Username::new("ognf");
     let (mut client, view) = Client::connect(username, &addr).unwrap();
     assert_eq!(view.spectators.len(), 1);
     assert_eq!(view.waitlist.len(), 0);
@@ -97,6 +97,6 @@ fn one_user_fails_to_connect_to_lobby() {
     thread::spawn(move || server::run(addr.clone(), config));
 
     // Try to connect, but we won't be fast enough.
-    let username = "ognf".into();
+    let username = Username::new("ognf");
     assert!(Client::connect(username, &addr).is_err());
 }

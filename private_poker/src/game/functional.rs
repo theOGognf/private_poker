@@ -24,8 +24,8 @@ pub fn argmax(hands: &[Vec<SubHand>]) -> Vec<usize> {
     let mut argmaxes: Vec<usize> = Vec::new();
     let mut best_hand: Option<&[SubHand]> = None;
     for (i, hand) in hands.iter().enumerate() {
-        match best_hand {
-            Some(current_best_hand) => match hand.as_slice().cmp(current_best_hand) {
+        if let Some(current_best_hand) = best_hand {
+            match hand.as_slice().cmp(current_best_hand) {
                 Ordering::Equal => argmaxes.push(i),
                 Ordering::Greater => {
                     argmaxes.clear();
@@ -33,11 +33,10 @@ pub fn argmax(hands: &[Vec<SubHand>]) -> Vec<usize> {
                     best_hand = Some(hand);
                 }
                 Ordering::Less => {}
-            },
-            None => {
-                argmaxes.push(i);
-                best_hand = Some(hand);
             }
+        } else {
+            argmaxes.push(i);
+            best_hand = Some(hand);
         }
     }
     argmaxes
