@@ -1628,7 +1628,7 @@ impl fmt::Display for PokerState {
                     .user
                     .name;
                 &format!(
-                    "collecting ${big_blind} from {big_blind_username} and ${small_blind} from {small_blind_username}"
+                    "collecting ${small_blind} from {small_blind_username} and ${big_blind} from {big_blind_username}"
                 )
             }
             Self::Deal(_) => "dealing cards",
