@@ -44,7 +44,11 @@ pub fn argmax(hands: &[Vec<SubHand>]) -> Vec<usize> {
 
 /// Evaluate any number of cards, returning the best (up to) 5-card hand.
 ///
-/// This function assumes the cards are already sorted in increasing order.
+/// This function assumes the cards are already sorted in increasing order
+/// where ace is 1u8 (low ace) and 14u8 (high ace). This function will
+/// panic with an out of bounds index if passed a card with value less
+/// than or higher than 1u8 and 14u8, respectively.
+///
 /// Cards are grouped into hand rankings and insorted into a heap.
 /// The top subhands are created from the heap and compose a hand.
 /// Multiple hands can then be compared, and the winning hand(s)
@@ -73,8 +77,8 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
     // the highest subhand in each rank.
     let mut subhands_per_rank: BTreeMap<Rank, BTreeSet<SubHand>> = BTreeMap::new();
     // Count number of times a card value appears. Helps track one pair,
-    // two pair, etc.
-    let mut value_counts: HashMap<Value, usize> = HashMap::new();
+    // two pair, etc.. Ace corresponds to the 0th and 13th index.
+    let mut value_counts: [usize; 14] = Default::default();
 
     // Loop through cards in hand assuming the hand is sorted
     // and that each ace appears in the hand twice (at the low
@@ -157,7 +161,7 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
         }
 
         // Now start checking for hands besides straights and flushes.
-        let value_count = value_counts.entry(*value).or_insert(0);
+        let value_count = &mut value_counts[(*value as usize) - 1];
         *value_count += 1;
 
         match *value_count {
