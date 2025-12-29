@@ -1443,8 +1443,7 @@ impl Game<DistributePot> {
                     seats_in_pot.push(*player_idx);
                     let mut cards = player.cards.clone();
                     cards.extend(self.data.board.clone());
-                    functional::prepare_hand(&mut cards);
-                    let hand = functional::eval(&cards);
+                    let hand = functional::eval(cards);
                     hands_in_pot.push(hand);
                 }
             }

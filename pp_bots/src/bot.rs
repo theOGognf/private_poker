@@ -171,8 +171,7 @@ impl Bot {
                     {
                         let mut cards = self.view.board.clone();
                         cards.extend(player.cards.clone());
-                        functional::prepare_hand(&mut cards);
-                        self.hand = functional::eval(&cards);
+                        self.hand = functional::eval(cards);
                         self.starting_money = player.user.money;
                     }
                 }
@@ -239,8 +238,7 @@ impl Bot {
                         }
                         let mut cards = self.view.board.clone();
                         cards.extend(player.cards.clone());
-                        functional::prepare_hand(&mut cards);
-                        self.hand = functional::eval(&cards);
+                        self.hand = functional::eval(cards);
                     // We were forcibly moved to spectate because we don't have enough
                     // money. This means the current game is over.
                     } else if let Some(user) = self.view.spectators.get(&self.client.username) {

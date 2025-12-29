@@ -15,8 +15,8 @@ use super::entities::{Card, Rank, SubHand, Suit, Value};
 ///
 /// let cards1 = [Card(4, Suit::Club), Card(11, Suit::Spade)];
 /// let cards2 = [Card(4, Suit::Club), Card(12, Suit::Spade)];
-/// let hand1 = eval(&cards1);
-/// let hand2 = eval(&cards2);
+/// let hand1 = eval(cards1.to_vec());
+/// let hand2 = eval(cards2.to_vec());
 /// assert_eq!(argmax(&[hand1, hand2]), vec![1])
 /// ```
 #[must_use]
@@ -44,10 +44,8 @@ pub fn argmax(hands: &[Vec<SubHand>]) -> Vec<usize> {
 
 /// Evaluate any number of cards, returning the best (up to) 5-card hand.
 ///
-/// This function assumes the cards are already sorted in increasing order
-/// where ace is 1u8 (low ace) and 14u8 (high ace). This function will
-/// panic with an out of bounds index if passed a card with value higher
-/// than 14u8.
+/// This function will panic with an out of bounds index if passed a card
+/// with value higher than 14u8.
 ///
 /// Cards are grouped into hand rankings and insorted into a heap.
 /// The top subhands are created from the heap and compose a hand.
@@ -60,11 +58,20 @@ pub fn argmax(hands: &[Vec<SubHand>]) -> Vec<usize> {
 /// use private_poker::{entities::{Card, Rank, Suit}, functional::eval};
 ///
 /// let cards = [Card(4, Suit::Club), Card(4, Suit::Heart), Card(11, Suit::Spade)];
-/// let subhands = eval(&cards);
+/// let subhands = eval(cards.to_vec());
 /// assert_eq!(subhands[0].rank, Rank::OnePair)
 /// ```
 #[must_use]
-pub fn eval(cards: &[Card]) -> Vec<SubHand> {
+pub fn eval(mut cards: Vec<Card>) -> Vec<SubHand> {
+    // Sort the hand so it's easier to reason about and add ace-highs to the
+    // hand.
+    cards.sort_unstable();
+    for card_idx in 0..4 {
+        if let Some(Card(1, suit)) = cards.get(card_idx) {
+            cards.push(Card(14, *suit));
+        }
+    }
+
     // Mapping of suit to (sorted) cards within that suit.
     // Used for tracking whether there's a flush or straight flush.
     let mut values_per_suit: HashMap<Suit, Vec<Value>> = HashMap::new();
@@ -91,15 +98,15 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
         // Keep a count of cards for each suit. If the suit count
         // reaches a flush, it's also checked for a straight
         // for the straight flush potential.
-        let values_in_suit = values_per_suit.entry(*suit).or_default();
-        values_in_suit.push(*value);
+        let values_in_suit = values_per_suit.entry(suit).or_default();
+        values_in_suit.push(value);
 
         // Since aces appear in the cards twice, we need to make sure
         // they aren't counted twice for the flush. To get around this,
         // we just subtract one from the flush count in the case of the
         // ace-high since ace-low will be counted already.
         let mut flush_count = values_in_suit.len();
-        if *value == 14 {
+        if value == 14 {
             flush_count -= 1;
         }
 
@@ -122,17 +129,17 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
         // Keep a count of cards that're in sequential order to check for
         // a straight. If the same value appears again, we can keep the
         // straight count the same and don't have to reset.
-        if (straight_prev_value + 1) == *value {
+        if (straight_prev_value + 1) == value {
             straight_count += 1;
-        } else if straight_prev_value == *value {
+        } else if straight_prev_value == value {
         } else {
             straight_count = 1;
         }
 
         // A straight was found.
-        straight_prev_value = *value;
+        straight_prev_value = value;
         if straight_count >= 5 {
-            let straight_values: Vec<Value> = (*value - 4..=*value).rev().collect();
+            let straight_values: Vec<Value> = (value - 4..=value).rev().collect();
             // If a flush with the same values was already pushed,
             // then we can make this a straight flush.
             if let Some(flush_values) = maybe_flush_values
@@ -151,15 +158,15 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
         }
 
         // Now start checking for hands besides straights and flushes.
-        if *value >= 2 {
-            let value_count = &mut value_counts[(*value as usize) - 2];
+        if value >= 2 {
+            let value_count = &mut value_counts[(value as usize) - 2];
             *value_count += 1;
 
             match *value_count {
                 1 => {
                     let high_card_subhand = SubHand {
                         rank: Rank::HighCard,
-                        values: vec![*value],
+                        values: vec![value],
                     };
                     subhands_per_rank
                         .entry(Rank::HighCard)
@@ -170,7 +177,7 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                 2 => {
                     let one_pair_subhand = SubHand {
                         rank: Rank::OnePair,
-                        values: vec![*value; 2],
+                        values: vec![value; 2],
                     };
                     let one_pairs = subhands_per_rank.entry(Rank::OnePair).or_default();
                     one_pairs.insert(one_pair_subhand);
@@ -179,7 +186,7 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                     // Ignore the case where a high ace and low ace get counted
                     // together as a two pair.
                     if let Some(next_best_one_pair) = one_pairs.iter().nth_back(1) {
-                        let mut two_pair_values = vec![*value; 2];
+                        let mut two_pair_values = vec![value; 2];
                         two_pair_values.extend(next_best_one_pair.values.clone());
                         let two_pair_subhand = SubHand {
                             rank: Rank::TwoPair,
@@ -198,7 +205,7 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                         && let Some(best_three_of_a_kind) = three_of_a_kinds.iter().next()
                     {
                         let mut full_house_values = best_three_of_a_kind.values.clone();
-                        full_house_values.extend(vec![*value; 2]);
+                        full_house_values.extend(vec![value; 2]);
                         let full_house_subhand = SubHand {
                             rank: Rank::FullHouse,
                             values: full_house_values,
@@ -214,11 +221,11 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                 3 => {
                     let one_pair_subhand = SubHand {
                         rank: Rank::OnePair,
-                        values: vec![*value; 2],
+                        values: vec![value; 2],
                     };
                     let three_of_a_kind_subhand = SubHand {
                         rank: Rank::ThreeOfAKind,
-                        values: vec![*value; 3],
+                        values: vec![value; 3],
                     };
                     subhands_per_rank
                         .get_mut(&Rank::OnePair)
@@ -234,7 +241,7 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                     if let Some(one_pairs) = subhands_per_rank.get(&Rank::OnePair)
                         && let Some(best_one_pair) = one_pairs.iter().next_back()
                     {
-                        let mut full_house_values = vec![*value; 3];
+                        let mut full_house_values = vec![value; 3];
                         full_house_values.extend(best_one_pair.values.clone());
                         let full_house_subhand = SubHand {
                             rank: Rank::FullHouse,
@@ -252,7 +259,7 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                     if let Some(three_of_a_kinds) = subhands_per_rank.get(&Rank::ThreeOfAKind)
                         && let Some(next_best_three_of_a_kind) = three_of_a_kinds.iter().nth_back(1)
                     {
-                        let mut full_house_values = vec![*value; 3];
+                        let mut full_house_values = vec![value; 3];
                         full_house_values.extend(vec![next_best_three_of_a_kind.values[0]; 2]);
                         let full_house_subhand = SubHand {
                             rank: Rank::FullHouse,
@@ -268,11 +275,11 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
                 4 => {
                     let three_of_a_kind_subhand = SubHand {
                         rank: Rank::ThreeOfAKind,
-                        values: vec![*value; 3],
+                        values: vec![value; 3],
                     };
                     let four_of_a_kind_subhand = SubHand {
                         rank: Rank::FourOfAKind,
-                        values: vec![*value; 4],
+                        values: vec![value; 4],
                     };
                     subhands_per_rank
                         .get_mut(&Rank::ThreeOfAKind)
@@ -333,28 +340,6 @@ pub fn eval(cards: &[Card]) -> Vec<SubHand> {
     hand
 }
 
-/// Prepare a hand for evaluation by sorting it and adding high
-/// aces to it so aces can be treated as 1s in addition to 14s.
-///
-/// # Examples
-///
-/// ```
-/// use private_poker::{entities::{Card, Rank, Suit}, functional::prepare_hand};
-///
-/// let mut cards = vec![Card(11, Suit::Club), Card(1, Suit::Heart), Card(10, Suit::Spade)];
-/// prepare_hand(&mut cards);
-/// assert_eq!(cards, vec![Card(1, Suit::Heart), Card(10, Suit::Spade), Card(11, Suit::Club), Card(14, Suit::Heart)])
-/// ```
-pub fn prepare_hand(cards: &mut Vec<Card>) {
-    cards.sort_unstable();
-    // Add ace highs to the hand for evaluation.
-    for card_idx in 0..4 {
-        if let Some(Card(1, suit)) = cards.get(card_idx) {
-            cards.push(Card(14, *suit));
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{argmax, eval};
@@ -371,8 +356,8 @@ mod tests {
             #[test]
             fn $name() {
                 let (test_hand1, test_hand2, expected_winner) = $value;
-                let hand1 = eval(&test_hand1.cards);
-                let hand2 = eval(&test_hand2.cards);
+                let hand1 = eval(test_hand1.cards);
+                let hand2 = eval(test_hand2.cards);
                 assert_eq!(test_hand1.expected_best_subhand, hand1[0]);
                 assert_eq!(test_hand2.expected_best_subhand, hand2[0]);
                 assert_eq!(expected_winner, argmax(&[hand1, hand2]));
@@ -394,7 +379,6 @@ mod tests {
                         Card(7, Suit::Heart),
                         Card(8, Suit::Heart),
                         Card(9, Suit::Heart),
-                        Card(14, Suit::Heart),
                     ]
             },
             TestHand{
@@ -456,7 +440,7 @@ mod tests {
             TestHand{
                 expected_best_subhand: SubHand {
                     rank: Rank::HighCard,
-                    values: vec![10]
+                    values: vec![14]
                 },
                 cards: vec![
                     Card(1, Suit::Diamond),
@@ -750,8 +734,6 @@ mod tests {
                     Card(1, Suit::Club),
                     Card(1, Suit::Heart),
                     Card(8, Suit::Diamond),
-                    Card(14, Suit::Club),
-                    Card(14, Suit::Heart),
                 ]
             }, vec![1]
         ),
@@ -818,8 +800,6 @@ mod tests {
                     cards: vec![
                         Card(1, Suit::Club),
                         Card(1, Suit::Spade),
-                        Card(14, Suit::Club),
-                        Card(14, Suit::Spade),
                     ]
                 },
                 TestHand{
@@ -832,8 +812,6 @@ mod tests {
                         Card(1, Suit::Spade),
                         Card(13, Suit::Club),
                         Card(13, Suit::Spade),
-                        Card(14, Suit::Club),
-                        Card(14, Suit::Spade),
                     ]
                 }, vec![1]
         ),
@@ -847,9 +825,6 @@ mod tests {
                     Card(1, Suit::Club),
                     Card(1, Suit::Spade),
                     Card(1, Suit::Heart),
-                    Card(14, Suit::Club),
-                    Card(14, Suit::Spade),
-                    Card(14, Suit::Heart),
                 ]
             },
             TestHand{
@@ -863,9 +838,6 @@ mod tests {
                     Card(1, Suit::Heart),
                     Card(13, Suit::Club),
                     Card(13, Suit::Spade),
-                    Card(14, Suit::Club),
-                    Card(14, Suit::Spade),
-                    Card(14, Suit::Heart),
                 ]
             }, vec![1]
         ),
@@ -880,9 +852,6 @@ mod tests {
                     Card(1, Suit::Spade),
                     Card(1, Suit::Heart),
                     Card(13, Suit::Club),
-                    Card(14, Suit::Club),
-                    Card(14, Suit::Spade),
-                    Card(14, Suit::Heart),
                 ]
             },
             TestHand{
@@ -895,9 +864,6 @@ mod tests {
                     Card(1, Suit::Spade),
                     Card(1, Suit::Heart),
                     Card(12, Suit::Club),
-                    Card(14, Suit::Club),
-                    Card(14, Suit::Spade),
-                    Card(14, Suit::Heart),
                 ]
             }, vec![0]
         ),
@@ -908,10 +874,10 @@ mod tests {
                     values: vec![14, 14, 14]
                 },
                 cards: vec![
+                    Card(1, Suit::Spade),
+                    Card(1, Suit::Diamond),
+                    Card(1, Suit::Heart),
                     Card(6, Suit::Heart),
-                    Card(14, Suit::Spade),
-                    Card(14, Suit::Diamond),
-                    Card(14, Suit::Heart),
                 ]
             },
             TestHand{
@@ -920,10 +886,10 @@ mod tests {
                     values: vec![14, 14, 14]
                 },
                 cards: vec![
+                    Card(1, Suit::Spade),
+                    Card(1, Suit::Diamond),
+                    Card(1, Suit::Heart),
                     Card(7, Suit::Heart),
-                    Card(14, Suit::Spade),
-                    Card(14, Suit::Diamond),
-                    Card(14, Suit::Heart),
                 ]
             }, vec![1]
         ),

@@ -632,8 +632,7 @@ impl App {
                 } else {
                     let mut cards = view.board.clone();
                     cards.extend(player.cards.clone());
-                    functional::prepare_hand(&mut cards);
-                    let hand = functional::eval(&cards);
+                    let hand = functional::eval(cards);
                     hand.first()
                         .map_or_else(String::new, |subhand| format!("({})", subhand.rank))
                 };
