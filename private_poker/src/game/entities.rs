@@ -10,6 +10,7 @@ use std::{
 
 use super::constants;
 
+/// Card suit.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum Suit {
     Club,
@@ -56,6 +57,7 @@ impl fmt::Display for Card {
     }
 }
 
+/// Poker hand rankings.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Rank {
     HighCard,
@@ -86,12 +88,14 @@ impl fmt::Display for Rank {
     }
 }
 
+/// A poker hand ranking and its values that make up that ranking.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SubHand {
     pub rank: Rank,
     pub values: Vec<Value>,
 }
 
+/// A deck of cards.
 #[derive(Debug)]
 pub struct Deck {
     cards: [Card; 52],
@@ -133,6 +137,7 @@ impl Default for Deck {
 /// have a problem.
 pub type Usd = u32;
 
+/// A username is just a truncated string without whitespaces.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct Username(String);
 
@@ -193,6 +198,8 @@ impl Default for PlayPositions {
     }
 }
 
+/// Count of players during a game. Useful for tracking whether a round
+/// or game is still ongoing.
 #[derive(Debug, Default)]
 pub struct PlayerCounts {
     /// Count of the number of players active in a hand.
@@ -208,6 +215,8 @@ pub struct PlayerCounts {
     pub num_called: usize,
 }
 
+/// Queues of players to perform user management actions on once the
+/// ongoing game has ended.
 #[derive(Debug, Default)]
 pub struct PlayerQueues {
     /// Queue of users that've been voted to be kicked. We can't
@@ -233,6 +242,7 @@ pub const DEFAULT_BUY_IN: Usd = 600;
 pub const DEFAULT_MIN_BIG_BLIND: Usd = DEFAULT_BUY_IN / 60;
 pub const DEFAULT_MIN_SMALL_BLIND: Usd = DEFAULT_MIN_BIG_BLIND / 2;
 
+/// Representation of blinds.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Blinds {
     pub small: Usd,
@@ -246,6 +256,8 @@ impl fmt::Display for Blinds {
     }
 }
 
+/// User representation. A user is any client connected to the poker game.
+/// Not all users are players, but all players are users.
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct User {
     pub name: Username,
@@ -264,6 +276,8 @@ impl Borrow<Username> for User {
     }
 }
 
+/// Actions declared by players. These are eventually post-processed for
+/// legality and converted into actual action choices.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum Action {
     AllIn,
@@ -297,6 +311,7 @@ impl From<Bet> for Action {
     }
 }
 
+/// A player's action post-processed.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum ActionChoice {
     AllIn,
@@ -472,6 +487,7 @@ impl fmt::Display for PlayerState {
     }
 }
 
+/// A user that's at the table and playing a hand.
 #[derive(Clone, Debug)]
 pub struct Player {
     pub user: User,
@@ -562,6 +578,7 @@ impl Pot {
     }
 }
 
+/// User votes for affecting specific (or all) users.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum Vote {
     // Vote to kick another user.
@@ -581,6 +598,7 @@ impl fmt::Display for Vote {
     }
 }
 
+/// A view of a player from the perspective of a specific user.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PlayerView {
     pub user: User,
@@ -588,6 +606,7 @@ pub struct PlayerView {
     pub cards: Vec<Card>,
 }
 
+/// A simplified view of the pot from user perspectives.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PotView {
     pub size: Usd,
@@ -599,6 +618,7 @@ impl fmt::Display for PotView {
     }
 }
 
+/// A view of the game from the perspective of a specific user.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct GameView {
     pub blinds: Blinds,
@@ -611,4 +631,5 @@ pub struct GameView {
     pub play_positions: PlayPositions,
 }
 
+/// Game views for each user in the game.
 pub type GameViews = HashMap<Username, GameView>;

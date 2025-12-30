@@ -95,9 +95,8 @@ pub fn eval(mut cards: Vec<Card>) -> Vec<SubHand> {
     // easily get the best hand at the end.
     let mut hands: BinaryHeap<SubHand> = BinaryHeap::new();
     for Card(value, suit) in cards {
-        // Keep a count of cards for each suit. If the suit count
-        // reaches a flush, it's also checked for a straight
-        // for the straight flush potential.
+        // Keep a count of cards for each suit to track flush
+        // potential.
         let values_in_suit = values_per_suit.entry(suit).or_default();
         values_in_suit.push(value);
 

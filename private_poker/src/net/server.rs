@@ -70,6 +70,7 @@ fn token_to_string(token: &Token) -> String {
     format!("token({id})")
 }
 
+/// Timeouts for poker game server behavior.
 pub struct ServerTimeouts {
     pub action: Duration,
     pub connect: Duration,
@@ -88,6 +89,7 @@ impl Default for ServerTimeouts {
     }
 }
 
+/// Poker config for eventually instantiating a poker game server.
 #[derive(Default)]
 pub struct PokerConfig {
     pub game_settings: GameSettings,

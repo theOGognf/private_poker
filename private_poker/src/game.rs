@@ -19,6 +19,7 @@ use entities::{
     User, Username, Vote,
 };
 
+/// An error due to a user's action.
 #[derive(Debug, Deserialize, Eq, Error, PartialEq, Serialize)]
 pub enum UserError {
     #[error("can't show hand")]
@@ -53,6 +54,8 @@ pub enum UserError {
     UserAlreadyShowingHand,
 }
 
+/// An event that occurs during a game. Used for user notifications and
+/// logging.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum GameEvent {
     KickQueue(Username),
@@ -101,6 +104,8 @@ impl fmt::Display for GameEvent {
     }
 }
 
+/// Settings for instantiating a game. Also used for initializing some data
+/// structures during a game.
 #[derive(Debug)]
 pub struct GameSettings {
     pub buy_in: Usd,
@@ -142,20 +147,28 @@ pub struct GameData {
     /// Deck of cards. This is instantiated once and reshuffled
     /// each deal.
     deck: Deck,
+    /// Game blinds. These scale according to player money.
     pub blinds: Blinds,
+    /// Users that're just observing the game.
     pub spectators: HashSet<User>,
+    /// Users that've requested to join the next hand as a player.
     pub waitlist: VecDeque<User>,
+    /// Seats available for users to join the hand as players.
     pub open_seats: VecDeque<SeatIndex>,
+    /// Users at the table or in the current hand.
     pub players: Vec<Player>,
-    /// Community cards shared amongst all players.
+    /// Community cards shared amongst all players during each hand.
     pub board: Vec<Card>,
     /// Mapping of running votes to users that are for those running votes.
     votes: HashMap<Vote, HashSet<Username>>,
+    /// Counts of players for tracking hand state.
     player_counts: PlayerCounts,
+    /// Pot for the current hand. Tracks player investments.
     pub pot: Pot,
     /// Queues of players to do things with at a later point of
-    /// an active game.
+    /// an active hand.
     player_queues: PlayerQueues,
+    /// Play positions around the table (dealer, big blind, small blind, etc).
     pub play_positions: PlayPositions,
     /// Stack of game events that give more insight as to what kind
     /// of game updates occur due to user actions or game state
@@ -167,9 +180,11 @@ pub struct GameData {
     /// the value in here is used as their starting money stack.
     ledger: HashMap<Username, Usd>,
     /// If this is set, then users voted to reset everyone's
-    /// money, but a game was in progress, so everyone's money
-    /// will be reset after the game is over.
+    /// money, but a hand was in progress, so everyone's money
+    /// will be reset after the hand is over.
     reset_all_money_after_game: bool,
+    /// Settings used to instantiate the game object. Used for initializing
+    /// other data structures at certain game states.
     settings: GameSettings,
 }
 
@@ -206,6 +221,7 @@ impl From<GameSettings> for GameData {
     }
 }
 
+/// The initial game state. Users wait for a game to start.
 #[derive(Debug)]
 pub struct Lobby {
     start_game: bool,
@@ -224,44 +240,58 @@ impl Lobby {
     }
 }
 
+/// Users on the waitlist are moved to the table based on open seats available.
 #[derive(Debug)]
 pub struct SeatPlayers {}
 
+/// Play positions (dealer, big blind, small blind) are updated.
 #[derive(Debug)]
 pub struct MoveButton {}
 
+/// Blinds are collected from big and small blind positions.
 #[derive(Debug)]
 pub struct CollectBlinds {}
 
+/// The deck is shuffled and all player hands are dealt.
 #[derive(Debug)]
 pub struct Deal {}
 
+/// Players may take actions during their turn.
 #[derive(Clone, Debug)]
 pub struct TakeAction {
     pub action_choices: Option<ActionChoices>,
 }
 
+/// The first three board cards are dealt: the flop.
 #[derive(Debug)]
 pub struct Flop {}
 
+/// The fourth board card is dealt: the turn.
 #[derive(Debug)]
 pub struct Turn {}
 
+/// The fifth and final board card is dealt: the river.
 #[derive(Debug)]
 pub struct River {}
 
+/// Active players are forced to show their hand. Inactive
+/// players may optionally show their hand.
 #[derive(Clone, Debug)]
 pub struct ShowHands {}
 
+/// The pot is distributed to winning players.
 #[derive(Debug)]
 pub struct DistributePot {}
 
+/// Player queues are processed.
 #[derive(Debug)]
 pub struct RemovePlayers {}
 
+/// The game's blinds are updated according to player money.
 #[derive(Debug)]
 pub struct UpdateBlinds {}
 
+/// Players are booted that can't afford the new blinds.
 #[derive(Debug)]
 pub struct BootPlayers {}
 
@@ -298,6 +328,7 @@ pub struct Game<T> {
 
 /// General game methods that can or will be used at various stages of gameplay.
 impl<T> Game<T> {
+    /// Create a user's perspective of the game.
     fn as_view(&self, username: &Username) -> GameView {
         let mut players = Vec::with_capacity(self.data.settings.max_players);
         for player in &self.data.players {
@@ -962,6 +993,7 @@ impl From<Game<SeatPlayers>> for Game<Lobby> {
     }
 }
 
+/// Seat waitlisted users into open seats.
 impl From<Game<SeatPlayers>> for Game<MoveButton> {
     fn from(mut value: Game<SeatPlayers>) -> Self {
         while !value.data.open_seats.is_empty() && !value.data.waitlist.is_empty() {
@@ -1383,6 +1415,7 @@ impl_show_hands!(
     Game<UpdateBlinds>
 );
 
+/// Force active players to show their hands.
 impl From<Game<ShowHands>> for Game<DistributePot> {
     fn from(mut value: Game<ShowHands>) -> Self {
         let num_players_remaining: usize = value
@@ -1471,6 +1504,7 @@ impl Game<DistributePot> {
     }
 }
 
+/// Distribute the pot to winning players.
 impl From<Game<DistributePot>> for Game<ShowHands> {
     fn from(mut value: Game<DistributePot>) -> Self {
         value.distribute();
@@ -1481,6 +1515,7 @@ impl From<Game<DistributePot>> for Game<ShowHands> {
     }
 }
 
+/// Distribute the pot to winning players.
 impl From<Game<DistributePot>> for Game<RemovePlayers> {
     fn from(mut value: Game<DistributePot>) -> Self {
         value.distribute();
