@@ -6,9 +6,9 @@
 //!
 //! [`ratatui`]: https://github.com/ratatui/ratatui
 
-use std::net::SocketAddr;
+use std::net::{SocketAddr, ToSocketAddrs};
 
-use anyhow::Error;
+use anyhow::{Error, anyhow};
 
 use pico_args::Arguments;
 use private_poker::{Client, entities::Username};
@@ -23,7 +23,7 @@ USAGE:
   pp_client [OPTIONS] USERNAME
 
 OPTIONS:
-  --connect IP:PORT     Server socket connection address  [default: 127.0.0.1:6969]
+  --connect HOST:PORT   Server address (hostname or IP)  [default: 127.0.0.1:6969]
 
 FLAGS:
   -h, --help            Print help information
@@ -32,6 +32,12 @@ FLAGS:
 struct Args {
     addr: SocketAddr,
     username: Username,
+}
+
+fn resolve(host: &str) -> Result<SocketAddr, Error> {
+    host.to_socket_addrs()?
+        .next()
+        .ok_or_else(|| anyhow!("could not resolve address: {host}"))
 }
 
 fn main() -> Result<(), Error> {
@@ -43,10 +49,12 @@ fn main() -> Result<(), Error> {
         std::process::exit(0);
     }
 
+    let connect: String = pargs
+        .value_from_str("--connect")
+        .unwrap_or_else(|_| "127.0.0.1:6969".to_string());
+
     let args = Args {
-        addr: pargs
-            .value_from_str("--connect")
-            .unwrap_or("127.0.0.1:6969".parse()?),
+        addr: resolve(&connect)?,
         username: pargs.free_from_str().unwrap_or(whoami::username()).into(),
     };
 
@@ -57,7 +65,7 @@ fn main() -> Result<(), Error> {
     let (client, view) = Client::connect(args.username, &args.addr)?;
     let Client { username, stream } = client;
     let terminal = ratatui::init();
-    let app_result = App::new(args.addr, username).run(stream, view, terminal);
+    let app_result = App::new(connect, username).run(stream, view, terminal);
     ratatui::restore();
     app_result
 }

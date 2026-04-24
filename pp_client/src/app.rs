@@ -26,7 +26,7 @@ use ratatui::{
 use std::{
     collections::VecDeque,
     io,
-    net::{SocketAddr, TcpStream},
+    net::TcpStream,
     sync::mpsc::{Receiver, Sender, channel},
     thread,
     time::{Duration, Instant},
@@ -203,7 +203,7 @@ impl TurnWarnings {
 /// App holds the application state.
 pub struct App {
     username: Username,
-    addr: SocketAddr,
+    addr: String,
     /// Whether to display the help menu window
     show_help_menu: bool,
     /// Helps scroll through the help menu window if the terminal is small
@@ -275,7 +275,7 @@ impl App {
         Ok(())
     }
 
-    pub fn new(addr: SocketAddr, username: Username) -> Self {
+    pub fn new(addr: String, username: Username) -> Self {
         // Fill help menu with help text lines. Also add some whitespace as
         // a jank way to add padding on the top and bottom.
         let mut help_handle = ScrollableList::new(MAX_LOG_RECORDS);
