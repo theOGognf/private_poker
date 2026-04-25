@@ -34,12 +34,6 @@ struct Args {
     username: Username,
 }
 
-fn resolve(host: &str) -> Result<SocketAddr, Error> {
-    host.to_socket_addrs()?
-        .next()
-        .ok_or_else(|| anyhow!("could not resolve address: {host}"))
-}
-
 fn main() -> Result<(), Error> {
     let mut pargs = Arguments::from_env();
 
@@ -54,7 +48,10 @@ fn main() -> Result<(), Error> {
         .unwrap_or_else(|_| "127.0.0.1:6969".to_string());
 
     let args = Args {
-        addr: resolve(&connect)?,
+        addr: connect
+            .to_socket_addrs()?
+            .next()
+            .ok_or(anyhow!("could not resolve address: {connect}"))?,
         username: pargs.free_from_str().unwrap_or(whoami::username()).into(),
     };
 
@@ -65,7 +62,7 @@ fn main() -> Result<(), Error> {
     let (client, view) = Client::connect(args.username, &args.addr)?;
     let Client { username, stream } = client;
     let terminal = ratatui::init();
-    let app_result = App::new(connect, username).run(stream, view, terminal);
+    let app_result = App::new(args.addr, username).run(stream, view, terminal);
     ratatui::restore();
     app_result
 }
