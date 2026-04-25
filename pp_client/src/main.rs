@@ -8,7 +8,7 @@
 
 use std::net::{SocketAddr, ToSocketAddrs};
 
-use anyhow::{Error, anyhow};
+use anyhow::{Context, Error};
 
 use pico_args::Arguments;
 use private_poker::{Client, entities::Username};
@@ -43,15 +43,13 @@ fn main() -> Result<(), Error> {
         std::process::exit(0);
     }
 
-    let connect: String = pargs
-        .value_from_str("--connect")
-        .unwrap_or_else(|_| "127.0.0.1:6969".to_string());
-
     let args = Args {
-        addr: connect
+        addr: pargs
+            .value_from_str("--connect")
+            .unwrap_or("127.0.0.1:6969".to_string())
             .to_socket_addrs()?
             .next()
-            .ok_or(anyhow!("could not resolve address: {connect}"))?,
+            .context("failed to connect to server")?,
         username: pargs.free_from_str().unwrap_or(whoami::username()).into(),
     };
 
