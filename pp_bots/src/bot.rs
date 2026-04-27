@@ -152,15 +152,11 @@ impl Bot {
                 Ok(ServerMessage::Ack(ClientMessage {
                     username,
                     command: UserCommand::CastVote(vote),
-                })) => {
-                    if username != self.client.username {
-                        match vote {
-                            Vote::Kick(user_target) | Vote::Reset(Some(user_target))
-                                if user_target == self.client.username => {}
-                            _ => self.client.cast_vote(vote)?,
-                        }
-                    }
-                }
+                })) if username != self.client.username => match vote {
+                    Vote::Kick(user_target) | Vote::Reset(Some(user_target))
+                        if user_target == self.client.username => {}
+                    _ => self.client.cast_vote(vote)?,
+                },
                 Ok(ServerMessage::GameView(view)) => {
                     self.view = view;
                     if let Some(player) = self
@@ -217,10 +213,8 @@ impl Bot {
                 Ok(ServerMessage::Ack(ClientMessage {
                     username,
                     command: UserCommand::CastVote(vote),
-                })) => {
-                    if username != self.client.username {
-                        self.client.cast_vote(vote)?;
-                    }
+                })) if username != self.client.username => {
+                    self.client.cast_vote(vote)?;
                 }
                 Ok(ServerMessage::GameView(view)) => {
                     self.view = view;
