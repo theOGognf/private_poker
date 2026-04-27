@@ -6,9 +6,9 @@
 //!
 //! [`ratatui`]: https://github.com/ratatui/ratatui
 
-use std::net::SocketAddr;
+use std::net::{SocketAddr, ToSocketAddrs};
 
-use anyhow::Error;
+use anyhow::{Context, Error};
 
 use pico_args::Arguments;
 use private_poker::{Client, entities::Username};
@@ -23,7 +23,7 @@ USAGE:
   pp_client [OPTIONS] USERNAME
 
 OPTIONS:
-  --connect IP:PORT     Server socket connection address  [default: 127.0.0.1:6969]
+  --connect HOST:PORT   Server address (hostname or IP)  [default: 127.0.0.1:6969]
 
 FLAGS:
   -h, --help            Print help information
@@ -46,7 +46,10 @@ fn main() -> Result<(), Error> {
     let args = Args {
         addr: pargs
             .value_from_str("--connect")
-            .unwrap_or("127.0.0.1:6969".parse()?),
+            .unwrap_or("127.0.0.1:6969".to_string())
+            .to_socket_addrs()?
+            .next()
+            .context("failed to connect to server")?,
         username: pargs.free_from_str().unwrap_or(whoami::username()).into(),
     };
 
