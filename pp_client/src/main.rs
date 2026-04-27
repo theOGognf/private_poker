@@ -20,7 +20,7 @@ const HELP: &str = "\
 Connect to a private poker server over TCP
 
 USAGE:
-  pp_client [OPTIONS] USERNAME
+  pp_client USERNAME [OPTIONS]
 
 OPTIONS:
   --connect HOST:PORT   Server address (hostname or IP)  [default: 127.0.0.1:6969]
