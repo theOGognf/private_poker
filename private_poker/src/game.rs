@@ -1449,7 +1449,7 @@ impl Game<DistributePot> {
             .sort_unstable_by(|(_, investment1), (_, investment2)| investment1.cmp(investment2));
         if let Some((_, largest_call)) = investments.last() {
             // Get the pot size and the player indices in the pot.
-            let mut pot_idx = investments.len() - 1;
+            let mut pot_idx = 0;
             let mut pot_call = **largest_call;
             for (idx, (player_idx, investment)) in investments.iter().enumerate().rev() {
                 let player = &self.data.players[**player_idx];
@@ -1458,17 +1458,18 @@ impl Game<DistributePot> {
                 // included in the pot.
                 if player.state != PlayerState::Fold && investment < largest_call {
                     pot_call = **largest_call - **investment;
+                    pot_idx = idx + 1;
                     break;
                 }
-                pot_idx = idx;
             }
 
             // Evaluate the hands in the pot and get the winners.
+            let pot_base = **largest_call - pot_call;
             let mut pot_size: Usd = 0;
             let mut seats_in_pot = Vec::with_capacity(self.data.settings.max_players);
             let mut hands_in_pot = Vec::with_capacity(self.data.settings.max_players);
             for (player_idx, investment) in investments[pot_idx..].as_mut() {
-                let pot_investment = min(pot_call, **investment);
+                let pot_investment = min(pot_call, **investment - pot_base);
                 pot_size += pot_investment;
                 **investment -= pot_investment;
                 let player = &mut self.data.players[**player_idx];
