@@ -94,7 +94,7 @@ pub fn eval(mut cards: Vec<Card>) -> Vec<SubHand> {
     // of 14). We push hands into a binary heap so we can
     // easily get the best hand at the end.
     let mut hands: BinaryHeap<SubHand> = BinaryHeap::new();
-    for Card(value, suit) in cards {
+    for &Card(value, suit) in &cards {
         // Keep a count of cards for each suit to track flush
         // potential.
         let values_in_suit = values_per_suit.entry(suit).or_default();
@@ -335,6 +335,21 @@ pub fn eval(mut cards: Vec<Card>) -> Vec<SubHand> {
         {
             break;
         }
+    }
+    // Four of a kind needs a kicker to break ties, but the early break above
+    // stops collecting subhands once the quads are found.
+    if let Some(best_subhand) = hand.first()
+        && best_subhand.rank == Rank::FourOfAKind
+        && let Some(kicker_value) = cards
+            .iter()
+            .map(|card| if card.0 == 1 { 14 } else { card.0 })
+            .filter(|value| *value != best_subhand.values[0])
+            .max()
+    {
+        hand.push(SubHand {
+            rank: Rank::HighCard,
+            values: vec![kicker_value],
+        });
     }
     hand
 }
