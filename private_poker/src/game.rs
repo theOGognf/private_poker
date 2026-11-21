@@ -1590,7 +1590,6 @@ impl From<Game<BootPlayers>> for Game<Lobby> {
         value.data.board.clear();
         for player in &mut value.data.players {
             if player.user.money < value.data.blinds.big {
-                value.data.open_seats.push_back(player.seat_idx);
                 value
                     .data
                     .player_queues
